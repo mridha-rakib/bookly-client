@@ -2,22 +2,43 @@
 
 import React, { useRef, useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 
 // Components
 import AuthLayout from "@/components/auth/AuthLayout";
+import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/components/ui/sonner";
+import type { VisitType } from "@/lib/api/auth";
+import {
+  useResendProfessionalEmailOtpMutation,
+  useVerifyProfessionalEmailOtpMutation,
+} from "@/lib/auth/hooks";
+import { toUserMessage } from "@/lib/auth/messages";
+import {
+  getRegistrationSession,
+  saveRegistrationSession,
+} from "@/lib/auth/registration-session";
+
+const toBackendVisitType = (visitType: string): VisitType =>
+  visitType === "location" ? "AT_BUSINESS_LOCATION" : "TRAVEL_TO_CUSTOMER";
 
 function ProfessionalVerifyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const email = searchParams.get("email") || "";
   const visitType = searchParams.get("type") || "travel";
+  const sessionIdParam = searchParams.get("sessionId") || "";
   const flow = searchParams.get("flow") || "";
 
   const [otp, setOtp] = useState<string[]>(["", "", "", ""]);
   const [activeBox, setActiveBox] = useState<number>(0);
   const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
+  const verifyEmailOtp = useVerifyProfessionalEmailOtpMutation();
+  const resendEmailOtp = useResendProfessionalEmailOtpMutation();
+  const isSubmitting = verifyEmailOtp.isPending;
+  const isResending = resendEmailOtp.isPending;
+
+  const getSessionId = () =>
+    sessionIdParam || getRegistrationSession("professional", email)?.sessionId || "";
 
   useEffect(() => {
     inputsRef.current[0]?.focus();
@@ -52,15 +73,52 @@ function ProfessionalVerifyContent() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const otpValue = otp.join("");
     if (otpValue.length === 4) {
       if (flow === "reset") {
         router.push(`/professional/new-password?email=${encodeURIComponent(email)}&type=${visitType}`);
       } else {
-        router.push(`/professional/signup?email=${encodeURIComponent(email)}&type=${visitType}`);
+        const sessionId = getSessionId();
+
+        if (!sessionId) {
+          toast.error("Registration session could not be found. Please start again.");
+          return;
+        }
+
+        try {
+          await verifyEmailOtp.mutateAsync({ sessionId, code: otpValue });
+          saveRegistrationSession({
+            portal: "professional",
+            email,
+            sessionId,
+            currentStep: "EMAIL_VERIFIED",
+            visitType: toBackendVisitType(visitType),
+          });
+          router.push(
+            `/professional/signup?email=${encodeURIComponent(email)}&type=${visitType}&sessionId=${encodeURIComponent(sessionId)}`,
+          );
+        } catch (error) {
+          toast.error(toUserMessage(error));
+        }
       }
+    }
+  };
+
+  const handleResend = async () => {
+    const sessionId = getSessionId();
+
+    if (!sessionId) {
+      toast.error("Registration session could not be found. Please start again.");
+      return;
+    }
+
+    try {
+      await resendEmailOtp.mutateAsync(sessionId);
+      toast.success("Verification code sent.");
+    } catch (error) {
+      toast.error(toUserMessage(error));
     }
   };
 
@@ -115,10 +173,10 @@ function ProfessionalVerifyContent() {
           {/* Verify Button */}
           <button
             type="submit"
-            disabled={otp.join("").length < 4}
+            disabled={otp.join("").length < 4 || isSubmitting}
             className="w-full max-w-[520px] h-12 bg-[#1A1A1A] hover:bg-black text-white font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Verify
+            {isSubmitting ? <Spinner className="text-white" /> : "Verify"}
           </button>
 
           {/* Resend text */}
@@ -126,8 +184,9 @@ function ProfessionalVerifyContent() {
             Didn&apos;t receive OTP?{" "}
             <button
               type="button"
+              disabled={isResending}
               className="text-[#240183] font-semibold hover:underline cursor-pointer"
-              onClick={() => console.log("Resend OTP")}
+              onClick={handleResend}
             >
               Resend code
             </button>

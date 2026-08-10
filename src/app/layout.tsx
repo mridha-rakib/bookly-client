@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
+import Providers from "./providers";
 import "./globals.css";
 
 const poppins = Poppins({
@@ -28,7 +29,9 @@ export default function RootLayout({
       className={`${poppins.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col font-poppins" suppressHydrationWarning>{children}</body>
+      <body className="min-h-full flex flex-col font-poppins" suppressHydrationWarning>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

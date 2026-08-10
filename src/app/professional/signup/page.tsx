@@ -12,12 +12,30 @@ import AuthCard from "@/components/auth/AuthCard";
 import { InputField, SelectField, PhoneInputField } from "@/components/auth/InputField";
 import SuccessModal from "@/components/auth/SuccessModal";
 import PhoneVerificationStep2 from "@/components/auth/PhoneVerificationStep2";
+import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/components/ui/sonner";
+import type { VisitType } from "@/lib/api/auth";
+import {
+  useResendProfessionalPhoneOtpMutation,
+  useSendProfessionalPhoneOtpMutation,
+  useSubmitProfessionalProfileMutation,
+  useVerifyProfessionalPhoneOtpMutation,
+} from "@/lib/auth/hooks";
+import { toUserMessage } from "@/lib/auth/messages";
+import {
+  getRegistrationSession,
+  saveRegistrationSession,
+} from "@/lib/auth/registration-session";
+
+const toBackendVisitType = (visitType: string): VisitType =>
+  visitType === "location" ? "AT_BUSINESS_LOCATION" : "TRAVEL_TO_CUSTOMER";
 
 function ProfessionalSignupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const emailParam = searchParams.get("email") || "";
   const visitType = searchParams.get("type") || "travel";
+  const sessionIdParam = searchParams.get("sessionId") || "";
 
   const [step, setStep] = useState<1 | 2>(1);
   const [firstName, setFirstName] = useState("");
@@ -29,8 +47,16 @@ function ProfessionalSignupContent() {
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
+  const submitProfile = useSubmitProfessionalProfileMutation();
+  const sendPhoneOtp = useSendProfessionalPhoneOtpMutation();
+  const resendPhoneOtp = useResendProfessionalPhoneOtpMutation();
+  const verifyPhoneOtp = useVerifyProfessionalPhoneOtpMutation();
+  const isSubmittingProfile = submitProfile.isPending || sendPhoneOtp.isPending;
 
-  const handleFinishSignupSubmit = (e: React.FormEvent) => {
+  const getSessionId = () =>
+    sessionIdParam || getRegistrationSession("professional", emailParam)?.sessionId || "";
+
+  const handleFinishSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!password) {
       setPasswordError("Password is required");
@@ -41,11 +67,78 @@ function ProfessionalSignupContent() {
       return;
     }
     setPasswordError("");
-    setStep(2);
+
+    const sessionId = getSessionId();
+
+    if (!sessionId) {
+      setPasswordError("Registration session could not be found. Please start again.");
+      return;
+    }
+
+    try {
+      await submitProfile.mutateAsync({
+        sessionId,
+        firstName,
+        lastName,
+        gender: gender as "male" | "female" | "other",
+        countryCode,
+        phone,
+        password,
+        agreeTerms,
+      });
+      await sendPhoneOtp.mutateAsync(sessionId);
+      saveRegistrationSession({
+        portal: "professional",
+        email: emailParam,
+        sessionId,
+        currentStep: "PHONE_OTP_SENT",
+        visitType: toBackendVisitType(visitType),
+      });
+      setStep(2);
+    } catch (error) {
+      setPasswordError(toUserMessage(error));
+    }
   };
 
-  const handlePhoneVerifySuccess = () => {
-    router.push(`/professional/business-form?email=${encodeURIComponent(emailParam)}&type=${visitType}`);
+  const handlePhoneVerifySuccess = async (code: string) => {
+    const sessionId = getSessionId();
+
+    if (!sessionId) {
+      toast.error("Registration session could not be found. Please start again.");
+      return;
+    }
+
+    try {
+      await verifyPhoneOtp.mutateAsync({ sessionId, code });
+      saveRegistrationSession({
+        portal: "professional",
+        email: emailParam,
+        sessionId,
+        currentStep: "PHONE_VERIFIED",
+        visitType: toBackendVisitType(visitType),
+      });
+      router.push(
+        `/professional/business-form?email=${encodeURIComponent(emailParam)}&type=${visitType}&sessionId=${encodeURIComponent(sessionId)}`,
+      );
+    } catch (error) {
+      toast.error(toUserMessage(error));
+    }
+  };
+
+  const handleResendPhoneOtp = async () => {
+    const sessionId = getSessionId();
+
+    if (!sessionId) {
+      toast.error("Registration session could not be found. Please start again.");
+      return;
+    }
+
+    try {
+      await resendPhoneOtp.mutateAsync(sessionId);
+      toast.success("Verification code sent.");
+    } catch (error) {
+      toast.error(toUserMessage(error));
+    }
   };
 
   const handleBack = () => {
@@ -147,10 +240,10 @@ function ProfessionalSignupContent() {
 
               <button
                 type="submit"
-                disabled={!agreeTerms}
+                disabled={!agreeTerms || isSubmittingProfile}
                 className="w-full max-w-[520px] h-12 bg-[#1A1A1A] hover:bg-black text-white font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed mt-4"
               >
-                Agree & create account
+                {isSubmittingProfile ? <Spinner className="text-white" /> : "Agree & create account"}
               </button>
             </form>
           </AuthCard>
@@ -159,7 +252,10 @@ function ProfessionalSignupContent() {
             countryCode={countryCode}
             mobileNumber={phone}
             onVerify={handlePhoneVerifySuccess}
+            onResend={handleResendPhoneOtp}
             onBack={handleBack}
+            isVerifying={verifyPhoneOtp.isPending}
+            isResending={resendPhoneOtp.isPending}
           />
         )}
       </AuthLayout>

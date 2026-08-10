@@ -15,11 +15,26 @@ import {
 import BusinessFormStep1 from "@/components/business-form/BusinessFormStep1";
 import CategorySelectorStep2 from "@/components/business-form/CategorySelectorStep2";
 import SuccessPendingApprovalStep3 from "@/components/business-form/SuccessPendingApprovalStep3";
+import type { BusinessDetailsInput } from "@/lib/api/auth";
+import {
+  useCompleteBusinessOwnerMutation,
+  useSaveBusinessDetailsMutation,
+  useSaveCategoriesMutation,
+} from "@/lib/auth/hooks";
+import { toUserMessage } from "@/lib/auth/messages";
+import {
+  clearRegistrationSession,
+  getRegistrationSession,
+  saveRegistrationSession,
+} from "@/lib/auth/registration-session";
+import { getAuthenticatedUserHomePath } from "@/lib/auth/routes";
+import { toast } from "@/components/ui/sonner";
 
 function BusinessFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const emailParam = searchParams.get("email") || "sfsd@gmail.com";
+  const sessionIdParam = searchParams.get("sessionId") || "";
 
   // Form Steps State (1: Info Form, 2: Category Selector, 3: Success Screen)
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -42,6 +57,13 @@ function BusinessFormContent() {
   // Step 2 Selection State
   const [selectedCategory, setSelectedCategory] = useState<string>("Beauty & Wellness");
   const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>(["Beauty & Wellness", "Sports & Activities", "Experience & Tours"]);
+  const saveBusinessDetails = useSaveBusinessDetailsMutation();
+  const saveCategories = useSaveCategoriesMutation();
+  const completeBusinessOwner = useCompleteBusinessOwnerMutation();
+  const [completionRedirectPath, setCompletionRedirectPath] = useState("/business-dashboard");
+
+  const getSessionId = () =>
+    sessionIdParam || getRegistrationSession("professional", emailParam)?.sessionId || "";
 
   // Category Configuration
   const categories = [
@@ -66,17 +88,71 @@ function BusinessFormContent() {
     }
   };
 
-  const handleNext = (e: React.FormEvent) => {
+  const handleNext = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStep(2);
+    const sessionId = getSessionId();
+
+    if (!sessionId) {
+      toast.error("Registration session could not be found. Please start again.");
+      return;
+    }
+
+    try {
+      await saveBusinessDetails.mutateAsync({
+        sessionId,
+        businessName,
+        ownerName,
+        city: city as BusinessDetailsInput["city"],
+        countryCode,
+        mobileNumber,
+        area,
+        streetName,
+        streetNumber,
+        floorUnit,
+        aptRoom,
+        briefDesc,
+        coordinates,
+        searchQuery,
+      });
+      const registration = getRegistrationSession("professional", emailParam);
+      saveRegistrationSession({
+        portal: "professional",
+        email: emailParam,
+        sessionId,
+        currentStep: "BUSINESS_DETAILS_SUBMITTED",
+        visitType: registration?.visitType,
+      });
+      setStep(2);
+    } catch (error) {
+      toast.error(toUserMessage(error));
+    }
   };
 
-  const handleDone = () => {
-    setStep(3);
+  const handleDone = async () => {
+    const sessionId = getSessionId();
+
+    if (!sessionId) {
+      toast.error("Registration session could not be found. Please start again.");
+      return;
+    }
+
+    try {
+      await saveCategories.mutateAsync({
+        sessionId,
+        selectedCategory,
+        selectedSubcategories,
+      });
+      const auth = await completeBusinessOwner.mutateAsync(sessionId);
+      setCompletionRedirectPath(getAuthenticatedUserHomePath(auth.user));
+      clearRegistrationSession();
+      setStep(3);
+    } catch (error) {
+      toast.error(toUserMessage(error));
+    }
   };
 
   const handleGoToDashboard = () => {
-    router.push("/");
+    router.push(completionRedirectPath);
   };
 
   return (

@@ -2,6 +2,18 @@
 
 import React from "react";
 
+// Shared with DashboardCreateBusiness prefill mapping so real backend
+// category/subcategory values can be matched to these exact option labels.
+export const serviceCategoryOptions = [
+  "BEAUTY & WELLNESS",
+  "HEALTH & FITNESS",
+  "SPORTS & ACTIVITIES",
+  "EXPERIENCE & TOURS",
+  "ENTERTAINMENT & EVENTS",
+  "PETS & HOME",
+  "AUTOMOTIVE"
+];
+
 interface ServiceCategorySectionProps {
   selectedCategory: string;
   setSelectedCategory: (v: string) => void;
@@ -25,25 +37,8 @@ export default function ServiceCategorySection({
   addCustomCategory,
   removeCustomCategory
 }: ServiceCategorySectionProps) {
-  const mainCategories = [
-    "BEAUTY & WELLNESS",
-    "HEALTH & FITNESS",
-    "SPORTS & ACTIVITIES",
-    "EXPERIENCE & TOURS",
-    "ENTERTAINMENT & EVENTS",
-    "PETS & HOME",
-    "AUTOMOTIVE"
-  ];
-
-  const subCategories = [
-    "BEAUTY & WELLNESS",
-    "HEALTH & FITNESS",
-    "SPORTS & ACTIVITIES",
-    "EXPERIENCE & TOURS",
-    "ENTERTAINMENT & EVENTS",
-    "PETS & HOME",
-    "AUTOMOTIVE"
-  ];
+  const mainCategories = serviceCategoryOptions;
+  const subCategories = serviceCategoryOptions;
 
   return (
     <div className="flex flex-col gap-6 w-full">

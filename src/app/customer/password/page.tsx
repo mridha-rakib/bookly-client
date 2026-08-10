@@ -9,6 +9,9 @@ import { SquareLock01Icon } from "@hugeicons/core-free-icons";
 import AuthLayout from "@/components/auth/AuthLayout";
 import AuthCard from "@/components/auth/AuthCard";
 import { InputField } from "@/components/auth/InputField";
+import { Spinner } from "@/components/ui/spinner";
+import { useCustomerLoginMutation } from "@/lib/auth/hooks";
+import { toUserMessage } from "@/lib/auth/messages";
 
 function PasswordPageContent() {
   const router = useRouter();
@@ -17,15 +20,22 @@ function PasswordPageContent() {
 
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const login = useCustomerLoginMutation();
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!password) {
       setPasswordError("Please enter your password");
       return;
     }
     setPasswordError("");
-    localStorage.setItem("isLoggedIn", "true");
-    router.push("/");
+
+    try {
+      await login.mutateAsync({ email, password });
+      router.push("/");
+    } catch (error) {
+      setPasswordError(toUserMessage(error));
+    }
   };
 
   return (
@@ -58,9 +68,10 @@ function PasswordPageContent() {
 
           <button
             type="submit"
+            disabled={login.isPending}
             className="w-full max-w-[520px] h-12 bg-[#1A1A1A] hover:bg-black text-white font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer mt-2"
           >
-            Login
+            {login.isPending ? <Spinner className="text-white" /> : "Login"}
           </button>
         </form>
       </AuthCard>

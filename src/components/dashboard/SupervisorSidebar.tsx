@@ -110,7 +110,7 @@ export default function SupervisorSidebar({
         ) : (
           <>
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 flex items-center justify-center shrink-0">
+              <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
                 <Image src="/img/smallBlacklogo.svg" alt="Bookly" className="w-full h-full object-contain" fill />
               </div>
               <div className="flex flex-col leading-none">

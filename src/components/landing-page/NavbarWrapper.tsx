@@ -2,28 +2,28 @@
 
 import React, { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
+import { useAuthStore } from "@/lib/auth/store";
 
 export default function NavbarWrapper() {
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const status = useAuthStore((state) => state.status);
+  const logout = useAuthStore((state) => state.logout);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("isLoggedIn");
-      if (saved === "true") {
-        setIsLoggedIn(true);
-      }
+      localStorage.removeItem("isLoggedIn");
     }
   }, []);
 
   const handleSetIsLoggedIn = (val: boolean) => {
-    setIsLoggedIn(val);
-    localStorage.setItem("isLoggedIn", val ? "true" : "false");
+    if (!val) {
+      void logout();
+    }
   };
 
   return (
     <Navbar
-      isLoggedIn={isLoggedIn}
+      isLoggedIn={status === "authenticated"}
       setIsLoggedIn={handleSetIsLoggedIn}
       selectedLanguage={selectedLanguage}
       setSelectedLanguage={setSelectedLanguage}

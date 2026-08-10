@@ -12,11 +12,26 @@ import AuthCard from "@/components/auth/AuthCard";
 import { InputField, SelectField, PhoneInputField } from "@/components/auth/InputField";
 import SuccessModal from "@/components/auth/SuccessModal";
 import PhoneVerificationStep2 from "@/components/auth/PhoneVerificationStep2";
+import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/components/ui/sonner";
+import {
+  useCompleteCustomerPhoneOtpMutation,
+  useResendCustomerPhoneOtpMutation,
+  useSendCustomerPhoneOtpMutation,
+  useSubmitCustomerProfileMutation,
+} from "@/lib/auth/hooks";
+import { toUserMessage } from "@/lib/auth/messages";
+import {
+  clearRegistrationSession,
+  getRegistrationSession,
+  saveRegistrationSession,
+} from "@/lib/auth/registration-session";
 
 function SignupFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const emailParam = searchParams.get("email") || "";
+  const sessionIdParam = searchParams.get("sessionId") || "";
 
   const [step, setStep] = useState<1 | 2>(1);
   const [firstName, setFirstName] = useState("");
@@ -28,8 +43,16 @@ function SignupFormContent() {
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
+  const submitProfile = useSubmitCustomerProfileMutation();
+  const sendPhoneOtp = useSendCustomerPhoneOtpMutation();
+  const resendPhoneOtp = useResendCustomerPhoneOtpMutation();
+  const completePhoneOtp = useCompleteCustomerPhoneOtpMutation();
+  const isSubmittingProfile = submitProfile.isPending || sendPhoneOtp.isPending;
 
-  const handleFinishSignupSubmit = (e: React.FormEvent) => {
+  const getSessionId = () =>
+    sessionIdParam || getRegistrationSession("customer", emailParam)?.sessionId || "";
+
+  const handleFinishSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!password) {
       setPasswordError("Password is required");
@@ -40,11 +63,69 @@ function SignupFormContent() {
       return;
     }
     setPasswordError("");
-    setStep(2);
+
+    const sessionId = getSessionId();
+
+    if (!sessionId) {
+      setPasswordError("Registration session could not be found. Please start again.");
+      return;
+    }
+
+    try {
+      await submitProfile.mutateAsync({
+        sessionId,
+        firstName,
+        lastName,
+        gender: gender as "male" | "female" | "other",
+        countryCode,
+        phone,
+        password,
+        agreeTerms,
+      });
+      await sendPhoneOtp.mutateAsync(sessionId);
+      saveRegistrationSession({
+        portal: "customer",
+        email: emailParam,
+        sessionId,
+        currentStep: "PHONE_OTP_SENT",
+      });
+      setStep(2);
+    } catch (error) {
+      setPasswordError(toUserMessage(error));
+    }
   };
 
-  const handlePhoneVerifySuccess = () => {
-    setIsSuccessOpen(true);
+  const handlePhoneVerifySuccess = async (code: string) => {
+    const sessionId = getSessionId();
+
+    if (!sessionId) {
+      toast.error("Registration session could not be found. Please start again.");
+      return;
+    }
+
+    try {
+      await completePhoneOtp.mutateAsync({ sessionId, code });
+      clearRegistrationSession();
+      setIsSuccessOpen(true);
+    } catch (error) {
+      toast.error(toUserMessage(error));
+    }
+  };
+
+  const handleResendPhoneOtp = async () => {
+    const sessionId = getSessionId();
+
+    if (!sessionId) {
+      toast.error("Registration session could not be found. Please start again.");
+      return;
+    }
+
+    try {
+      await resendPhoneOtp.mutateAsync(sessionId);
+      toast.success("Verification code sent.");
+    } catch (error) {
+      toast.error(toUserMessage(error));
+    }
   };
 
   const handleBack = () => {
@@ -146,10 +227,10 @@ function SignupFormContent() {
 
               <button
                 type="submit"
-                disabled={!agreeTerms}
+                disabled={!agreeTerms || isSubmittingProfile}
                 className="w-full max-w-[520px] h-12 bg-[#1A1A1A] hover:bg-black text-white font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed mt-4"
               >
-                Agree & create account
+                {isSubmittingProfile ? <Spinner className="text-white" /> : "Agree & create account"}
               </button>
             </form>
           </AuthCard>
@@ -158,7 +239,10 @@ function SignupFormContent() {
             countryCode={countryCode}
             mobileNumber={phone}
             onVerify={handlePhoneVerifySuccess}
+            onResend={handleResendPhoneOtp}
             onBack={handleBack}
+            isVerifying={completePhoneOtp.isPending}
+            isResending={resendPhoneOtp.isPending}
           />
         )}
       </AuthLayout>

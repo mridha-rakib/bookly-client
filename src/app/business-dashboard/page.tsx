@@ -17,6 +17,7 @@ import {
 
 // Reused component
 import { initialBookingsData, initialClientsData } from "@/utils/dashboardMockData";
+import RequireBusinessOwner from "@/components/auth/RequireBusinessOwner";
 
 // Modular Dashboard sub-components
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
@@ -73,7 +74,7 @@ interface Client {
   avatar?: string;
 }
 
-export default function BusinessDashboard() {
+function BusinessDashboardContent() {
   const [activeTab, setActiveTab] = useState("Calendar");
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showFooterMenu, setShowFooterMenu] = useState(true);
@@ -126,6 +127,7 @@ export default function BusinessDashboard() {
   const [showNoShowModal, setShowNoShowModal] = useState(false);
   const [isCreatingBusiness, setIsCreatingBusiness] = useState(false);
   const [businessProfileMode, setBusinessProfileMode] = useState<"create" | "edit" | "view">("create");
+  const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(null);
 
   // Clients Data states
   const [clientsData, setClientsData] = useState<Client[]>(initialClientsData as Client[]);
@@ -598,25 +600,24 @@ export default function BusinessDashboard() {
     if (activeTab === "Business Profile") {
       if (isCreatingBusiness) {
         return (
-          <DashboardCreateBusiness 
-            onBack={() => setIsCreatingBusiness(false)} 
+          <DashboardCreateBusiness
+            onBack={() => setIsCreatingBusiness(false)}
             mode={businessProfileMode}
+            businessId={selectedBusinessId ?? undefined}
           />
         );
       }
       return (
-        <DashboardBusinessProfile 
-          onAddBusiness={() => {
-            setIsCreatingBusiness(true);
-            setBusinessProfileMode("create");
-          }} 
-          onEditBusiness={() => {
+        <DashboardBusinessProfile
+          onEditBusiness={(businessId) => {
             setIsCreatingBusiness(true);
             setBusinessProfileMode("edit");
+            setSelectedBusinessId(businessId);
           }}
-          onViewBusiness={() => {
+          onViewBusiness={(businessId) => {
             setIsCreatingBusiness(true);
             setBusinessProfileMode("view");
+            setSelectedBusinessId(businessId);
           }}
         />
       );
@@ -730,5 +731,13 @@ export default function BusinessDashboard() {
         }}
       />
     </div>
+  );
+}
+
+export default function BusinessDashboard() {
+  return (
+    <RequireBusinessOwner>
+      <BusinessDashboardContent />
+    </RequireBusinessOwner>
   );
 }

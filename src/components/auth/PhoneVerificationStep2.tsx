@@ -1,19 +1,25 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
+import { Spinner } from "@/components/ui/spinner";
 
 export interface PhoneVerificationStep2Props {
   countryCode: string;
   mobileNumber: string;
-  onVerify: () => void;
+  onVerify: (code: string) => void | Promise<void>;
   onBack: () => void;
+  onResend?: () => void | Promise<void>;
+  isVerifying?: boolean;
+  isResending?: boolean;
 }
 
 export default function PhoneVerificationStep2({
   countryCode,
   mobileNumber,
   onVerify,
-  onBack,
+  onResend,
+  isVerifying = false,
+  isResending = false,
 }: PhoneVerificationStep2Props) {
   const [otp, setOtp] = useState<string[]>(["", "", "", ""]);
   const [activeBox, setActiveBox] = useState<number>(0);
@@ -52,11 +58,11 @@ export default function PhoneVerificationStep2({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const otpValue = otp.join("");
     if (otpValue.length === 4) {
-      onVerify();
+      await onVerify(otpValue);
     }
   };
 
@@ -104,10 +110,10 @@ export default function PhoneVerificationStep2({
         {/* Verify Button */}
         <button
           type="submit"
-          disabled={otp.join("").length < 4}
+          disabled={otp.join("").length < 4 || isVerifying}
           className="w-full max-w-[520px] h-12 bg-[#1A1A1A] hover:bg-black text-white font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Verify
+          {isVerifying ? <Spinner className="text-white" /> : "Verify"}
         </button>
 
         {/* Resend text */}
@@ -115,8 +121,9 @@ export default function PhoneVerificationStep2({
           Didn&apos;t receive OTP?{" "}
           <button
             type="button"
+            disabled={isResending}
             className="text-[#240183] font-semibold hover:underline cursor-pointer"
-            onClick={() => console.log("Resend Phone OTP")}
+            onClick={onResend}
           >
             Resend code
           </button>

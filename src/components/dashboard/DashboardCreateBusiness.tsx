@@ -3,7 +3,7 @@ import Image from "next/image";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowLeft02Icon,
@@ -21,7 +21,7 @@ import {
 import BusinessInfoSection from "../create-business/BusinessInfoSection";
 import AddressSection from "../create-business/AddressSection";
 import LocationSection from "../create-business/LocationSection";
-import ServiceCategorySection from "../create-business/ServiceCategorySection";
+import ServiceCategorySection, { serviceCategoryOptions } from "../create-business/ServiceCategorySection";
 import PhotosSection from "../create-business/PhotosSection";
 import OpeningHoursSection from "../create-business/OpeningHoursSection";
 import BookingTimeControlSection from "../create-business/BookingTimeControlSection";
@@ -29,10 +29,17 @@ import ClosedPeriodsSection from "../create-business/ClosedPeriodsSection";
 import LeadTimeSettingsSection from "../create-business/LeadTimeSettingsSection";
 import AdditionalInfoSection from "../create-business/AdditionalInfoSection";
 import TravelFeesSection from "../create-business/TravelFeesSection";
+import { buildGoogleMapsEmbedUrl } from "@/lib/maps/google-maps";
+import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/components/ui/sonner";
+import type { BusinessCity, UpdateBusinessInput } from "@/lib/api/business";
+import { useBusinessQuery, useUpdateBusinessMutation } from "@/lib/business/hooks";
+import { toUserMessage } from "@/lib/auth/messages";
 
 interface DashboardCreateBusinessProps {
   onBack: () => void;
   mode?: "create" | "edit" | "view";
+  businessId?: string;
 }
 
 const timeOptions = [
@@ -42,9 +49,11 @@ const timeOptions = [
   "18:00", "18:30", "19:00", "19:30", "20:00", "20:30", "21:00", "21:30", "22:00", "22:30", "23:00", "23:30"
 ];
 
-export default function DashboardCreateBusiness({ onBack, mode = "create" }: DashboardCreateBusinessProps) {
+export default function DashboardCreateBusiness({ onBack, mode = "create", businessId }: DashboardCreateBusinessProps) {
   const modeTitle = mode === "edit" ? "Edit Business" : mode === "view" ? "View Business" : "Create Business";
   const modeSubtitle = mode === "edit" ? "Edit your business details" : mode === "view" ? "View your business details" : "Create your business at our platform";
+  const isReadOnly = mode === "view";
+
   // Business Active Toggle
   const [isActive, setIsActive] = useState(true);
 
@@ -252,14 +261,113 @@ export default function DashboardCreateBusiness({ onBack, mode = "create" }: Das
 
   // Map Coordinates (Larnaca Cyprus default: 34.9172, 33.6232)
   const [searchLocation, setSearchLocation] = useState("Larnaca, Cyprus");
-  const [mapUrl, setMapUrl] = useState("https://maps.google.com/maps?q=34.9172,33.6232&t=&z=14&ie=UTF8&iwloc=&output=embed");
+  const [mapUrl, setMapUrl] = useState(buildGoogleMapsEmbedUrl("34.9172,33.6232"));
 
   const handleLocationSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchLocation.trim()) {
-      setMapUrl(`https://maps.google.com/maps?q=${encodeURIComponent(searchLocation)}&t=&z=14&ie=UTF8&iwloc=&output=embed`);
+      setMapUrl(buildGoogleMapsEmbedUrl(searchLocation));
     }
   };
+
+  // Real Business Profile data (edit/view only — "create" stays local/mocked; see report).
+  const {
+    data: business,
+    isLoading: isLoadingBusiness,
+    isError: isBusinessError,
+    error: businessError,
+  } = useBusinessQuery(mode !== "create" ? businessId : undefined);
+  const updateBusinessMutation = useUpdateBusinessMutation();
+
+  useEffect(() => {
+    if (isBusinessError) {
+      toast.error(toUserMessage(businessError));
+    }
+  }, [isBusinessError, businessError]);
+
+  const matchCategoryOption = (value: string): string =>
+    serviceCategoryOptions.find((option) => option.toUpperCase() === value.toUpperCase()) ?? value;
+
+  // Prefilling independently-editable local form state from an async detail fetch is not the
+  // "derived state" anti-pattern the set-state-in-effect rule targets; it can only run once the
+  // query resolves, so it is intentionally scoped to `business?.id` below and disabled here.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!business) {
+      return;
+    }
+
+    setBusinessName(business.name);
+    setPhoneCode(business.phone.countryCode);
+    setPhoneNumber(business.phone.nationalNumber);
+    const matchedCountry = countries.find((country) => country.code === business.phone.countryCode);
+    if (matchedCountry) {
+      setPhoneFlag(matchedCountry.flag);
+    }
+    setCity(business.address.city);
+    setStreetName(business.address.streetName);
+    setStreetNumber(business.address.streetNumber);
+    setNeighborhood(business.address.area);
+    setFloorUnit(business.address.floorUnit ?? "");
+    setRoomNo(business.address.aptRoom ?? "");
+    setSelectedCategory(matchCategoryOption(business.category));
+    setSelectedSubcategories(business.subcategories.map(matchCategoryOption));
+    if (business.location?.searchQuery) {
+      setSearchLocation(business.location.searchQuery);
+      setMapUrl(buildGoogleMapsEmbedUrl(business.location.searchQuery));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [business?.id]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const handleSaveChanges = () => {
+    if (mode !== "edit" || !businessId || updateBusinessMutation.isPending) {
+      onBack();
+      return;
+    }
+
+    const input: UpdateBusinessInput = {
+      name: businessName,
+      city: city as BusinessCity,
+      area: neighborhood,
+      streetName,
+      streetNumber,
+      category: selectedCategory,
+      subcategories: selectedSubcategories,
+    };
+
+    if (floorUnit) input.floorUnit = floorUnit;
+    if (roomNo) input.aptRoom = roomNo;
+    if (phoneNumber) {
+      input.countryCode = phoneCode;
+      input.nationalNumber = phoneNumber;
+    }
+    if (searchLocation) input.searchQuery = searchLocation;
+
+    updateBusinessMutation.mutate(
+      { businessId, input },
+      {
+        onSuccess: () => {
+          toast.success("Business updated");
+          onBack();
+        },
+        onError: (error) => {
+          toast.error(toUserMessage(error));
+        },
+      },
+    );
+  };
+
+  if (mode !== "create" && isLoadingBusiness) {
+    return (
+      <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] select-none font-poppins">
+        <DashboardHeader title="Business Profile" subtitle={modeSubtitle} />
+        <div className="flex-1 flex items-center justify-center">
+          <Spinner className="text-[#111111] size-6" />
+        </div>
+      </main>
+    );
+  }
 
   if (viewingAllImages) {
     return (
@@ -411,6 +519,10 @@ export default function DashboardCreateBusiness({ onBack, mode = "create" }: Das
 
       {/* Main Form container */}
       <div className="flex flex-col gap-10 w-full pb-24 pl-0 md:pl-[120px] box-border">
+
+      {/* Linked (Secondary) businesses are View-only: disabling the fieldset makes every
+          field/control inert without touching any child component's markup or styling. */}
+      <fieldset disabled={isReadOnly} className="contents">
 
         {/* 1. Active Toggle block */}
         <div className="flex flex-row justify-between items-center w-full h-[41px] border-b border-[#E8E8E4]/60 pb-4">
@@ -575,6 +687,8 @@ export default function DashboardCreateBusiness({ onBack, mode = "create" }: Das
           </div>
         </div>
 
+      </fieldset>
+
         {/* 13. Footer Actions (Save Changes / Cancel) */}
         <div className="flex flex-row justify-end items-center gap-3 w-full border-t border-neutral-200 pt-6 mt-4">
           <button
@@ -585,8 +699,9 @@ export default function DashboardCreateBusiness({ onBack, mode = "create" }: Das
           </button>
 
           <button
-            onClick={onBack}
-            className="h-9 px-6 bg-[#1C1B1C] hover:bg-black text-white font-poppins font-medium text-xs rounded-lg transition-colors"
+            onClick={handleSaveChanges}
+            disabled={isReadOnly || updateBusinessMutation.isPending}
+            className="h-9 px-6 bg-[#1C1B1C] hover:bg-black text-white font-poppins font-medium text-xs rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Save changes
           </button>

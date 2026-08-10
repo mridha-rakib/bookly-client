@@ -2,21 +2,38 @@
 
 import React, { useRef, useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 
 // Components
 import AuthLayout from "@/components/auth/AuthLayout";
+import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/components/ui/sonner";
+import {
+  useResendCustomerEmailOtpMutation,
+  useVerifyCustomerEmailOtpMutation,
+} from "@/lib/auth/hooks";
+import { toUserMessage } from "@/lib/auth/messages";
+import {
+  getRegistrationSession,
+  saveRegistrationSession,
+} from "@/lib/auth/registration-session";
 
 function VerifyPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const email = searchParams.get("email") || "";
+  const sessionIdParam = searchParams.get("sessionId") || "";
   const flow = searchParams.get("flow") || "";
 
   const [otp, setOtp] = useState<string[]>(["", "", "", ""]);
   const [activeBox, setActiveBox] = useState<number>(0);
   const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
+  const verifyEmailOtp = useVerifyCustomerEmailOtpMutation();
+  const resendEmailOtp = useResendCustomerEmailOtpMutation();
+  const isSubmitting = verifyEmailOtp.isPending;
+  const isResending = resendEmailOtp.isPending;
+
+  const getSessionId = () =>
+    sessionIdParam || getRegistrationSession("customer", email)?.sessionId || "";
 
   useEffect(() => {
     inputsRef.current[0]?.focus();
@@ -51,15 +68,51 @@ function VerifyPageContent() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const otpValue = otp.join("");
     if (otpValue.length === 4) {
       if (flow === "reset") {
         router.push(`/customer/new-password?email=${encodeURIComponent(email)}`);
       } else {
-        router.push(`/customer/signup?email=${encodeURIComponent(email)}`);
+        const sessionId = getSessionId();
+
+        if (!sessionId) {
+          toast.error("Registration session could not be found. Please start again.");
+          return;
+        }
+
+        try {
+          await verifyEmailOtp.mutateAsync({ sessionId, code: otpValue });
+          saveRegistrationSession({
+            portal: "customer",
+            email,
+            sessionId,
+            currentStep: "EMAIL_VERIFIED",
+          });
+          router.push(
+            `/customer/signup?email=${encodeURIComponent(email)}&sessionId=${encodeURIComponent(sessionId)}`,
+          );
+        } catch (error) {
+          toast.error(toUserMessage(error));
+        }
       }
+    }
+  };
+
+  const handleResend = async () => {
+    const sessionId = getSessionId();
+
+    if (!sessionId) {
+      toast.error("Registration session could not be found. Please start again.");
+      return;
+    }
+
+    try {
+      await resendEmailOtp.mutateAsync(sessionId);
+      toast.success("Verification code sent.");
+    } catch (error) {
+      toast.error(toUserMessage(error));
     }
   };
 
@@ -114,10 +167,10 @@ function VerifyPageContent() {
           {/* Verify Button */}
           <button
             type="submit"
-            disabled={otp.join("").length < 4}
+            disabled={otp.join("").length < 4 || isSubmitting}
             className="w-full max-w-[520px] h-12 bg-[#1A1A1A] hover:bg-black text-white font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Verify
+            {isSubmitting ? <Spinner className="text-white" /> : "Verify"}
           </button>
 
           {/* Resend text */}
@@ -125,8 +178,9 @@ function VerifyPageContent() {
             Didn&apos;t receive OTP?{" "}
             <button
               type="button"
+              disabled={isResending}
               className="text-[#240183] font-semibold hover:underline cursor-pointer"
-              onClick={() => console.log("Resend OTP")}
+              onClick={handleResend}
             >
               Resend code
             </button>

@@ -10,13 +10,23 @@ import AuthLayout from "@/components/auth/AuthLayout";
 import AuthCard from "@/components/auth/AuthCard";
 import { InputField } from "@/components/auth/InputField";
 import SocialButton from "@/components/auth/SocialButton";
+import { Spinner } from "@/components/ui/spinner";
+import { toUserMessage } from "@/lib/auth/messages";
+import { saveRegistrationSession } from "@/lib/auth/registration-session";
+import {
+  useCustomerEntryMutation,
+  useSendCustomerEmailOtpMutation,
+} from "@/lib/auth/hooks";
 
 export default function CustomerAuthPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
+  const customerEntry = useCustomerEntryMutation();
+  const sendEmailOtp = useSendCustomerEmailOtpMutation();
+  const isSubmitting = customerEntry.isPending || sendEmailOtp.isPending;
 
-  const handleEmailSubmit = (e: React.FormEvent) => {
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) {
       setEmailError("Please enter your email");
@@ -27,8 +37,44 @@ export default function CustomerAuthPage() {
       return;
     }
     setEmailError("");
-    // Navigate to OTP verification page
-    router.push(`/customer/verify?email=${encodeURIComponent(email)}`);
+
+    try {
+      const result = await customerEntry.mutateAsync(email);
+
+      if (result.nextStep === "PASSWORD_LOGIN") {
+        router.push(`/customer/password?email=${encodeURIComponent(email)}`);
+        return;
+      }
+
+      if (result.nextStep === "PORTAL_MISMATCH") {
+        setEmailError("This email belongs to a different Bookly portal.");
+        return;
+      }
+
+      if (!result.sessionId) {
+        setEmailError("Registration session could not be started. Please try again.");
+        return;
+      }
+
+      saveRegistrationSession({
+        portal: "customer",
+        email,
+        sessionId: result.sessionId,
+        currentStep: result.currentStep,
+      });
+      await sendEmailOtp.mutateAsync(result.sessionId);
+      saveRegistrationSession({
+        portal: "customer",
+        email,
+        sessionId: result.sessionId,
+        currentStep: "EMAIL_OTP_SENT",
+      });
+      router.push(
+        `/customer/verify?email=${encodeURIComponent(email)}&sessionId=${encodeURIComponent(result.sessionId)}`,
+      );
+    } catch (error) {
+      setEmailError(toUserMessage(error));
+    }
   };
 
   return (
@@ -53,9 +99,10 @@ export default function CustomerAuthPage() {
 
             <button
               type="submit"
+              disabled={isSubmitting}
               className="w-full max-w-[520px] h-12 bg-[#1A1A1A] hover:bg-black text-white font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer"
             >
-              Continue
+              {isSubmitting ? <Spinner className="text-white" /> : "Continue"}
             </button>
           </form>
 

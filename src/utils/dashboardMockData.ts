@@ -1,4 +1,4 @@
-import { StarIcon, CalendarCheck2Icon, ReceiptTextIcon, Cancel01Icon } from "@hugeicons/core-free-icons";
+import { StarIcon, CalendarCheckIcon, ReceiptTextIcon, Cancel01Icon } from "@hugeicons/core-free-icons";
 
 export const initialBookingsData = [
   {
@@ -625,7 +625,7 @@ export const initialActivityFeed = [
     type: "confirm",
     text: "Nikos P. confirmed for tomorrow at 10:30.",
     time: "1 hr ago",
-    icon: CalendarCheck2Icon,
+    icon: CalendarCheckIcon,
     bg: "bg-blue-50",
     color: "text-blue-600"
   },

@@ -10,6 +10,17 @@ import AuthLayout from "@/components/auth/AuthLayout";
 import AuthCard from "@/components/auth/AuthCard";
 import { InputField } from "@/components/auth/InputField";
 import SocialButton from "@/components/auth/SocialButton";
+import { Spinner } from "@/components/ui/spinner";
+import type { VisitType } from "@/lib/api/auth";
+import {
+  useProfessionalEntryMutation,
+  useSendProfessionalEmailOtpMutation,
+} from "@/lib/auth/hooks";
+import { toUserMessage } from "@/lib/auth/messages";
+import { saveRegistrationSession } from "@/lib/auth/registration-session";
+
+const toBackendVisitType = (visitType: string): VisitType =>
+  visitType === "location" ? "AT_BUSINESS_LOCATION" : "TRAVEL_TO_CUSTOMER";
 
 function ProfessionalAuthContent() {
   const router = useRouter();
@@ -18,8 +29,11 @@ function ProfessionalAuthContent() {
 
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
+  const professionalEntry = useProfessionalEntryMutation();
+  const sendEmailOtp = useSendProfessionalEmailOtpMutation();
+  const isSubmitting = professionalEntry.isPending || sendEmailOtp.isPending;
 
-  const handleEmailSubmit = (e: React.FormEvent) => {
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) {
       setEmailError("Please enter your email");
@@ -30,7 +44,47 @@ function ProfessionalAuthContent() {
       return;
     }
     setEmailError("");
-    router.push(`/professional/verify?email=${encodeURIComponent(email)}&type=${visitType}`);
+
+    try {
+      const backendVisitType = toBackendVisitType(visitType);
+      const result = await professionalEntry.mutateAsync({ email, visitType: backendVisitType });
+
+      if (result.nextStep === "PASSWORD_LOGIN") {
+        router.push(`/professional/password?email=${encodeURIComponent(email)}&type=${visitType}`);
+        return;
+      }
+
+      if (result.nextStep === "PORTAL_MISMATCH") {
+        setEmailError("This email belongs to a different Bookly portal.");
+        return;
+      }
+
+      if (!result.sessionId) {
+        setEmailError("Registration session could not be started. Please try again.");
+        return;
+      }
+
+      saveRegistrationSession({
+        portal: "professional",
+        email,
+        sessionId: result.sessionId,
+        currentStep: result.currentStep,
+        visitType: backendVisitType,
+      });
+      await sendEmailOtp.mutateAsync(result.sessionId);
+      saveRegistrationSession({
+        portal: "professional",
+        email,
+        sessionId: result.sessionId,
+        currentStep: "EMAIL_OTP_SENT",
+        visitType: backendVisitType,
+      });
+      router.push(
+        `/professional/verify?email=${encodeURIComponent(email)}&type=${visitType}&sessionId=${encodeURIComponent(result.sessionId)}`,
+      );
+    } catch (error) {
+      setEmailError(toUserMessage(error));
+    }
   };
 
   return (
@@ -54,9 +108,10 @@ function ProfessionalAuthContent() {
 
           <button
             type="submit"
+            disabled={isSubmitting}
             className="w-full max-w-[520px] h-12 bg-[#1A1A1A] hover:bg-black text-white font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer"
           >
-            Continue
+            {isSubmitting ? <Spinner className="text-white" /> : "Continue"}
           </button>
         </form>
 

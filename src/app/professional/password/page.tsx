@@ -10,6 +10,10 @@ import AuthLayout from "@/components/auth/AuthLayout";
 import AuthCard from "@/components/auth/AuthCard";
 import { InputField } from "@/components/auth/InputField";
 import SuccessModal from "@/components/auth/SuccessModal";
+import { Spinner } from "@/components/ui/spinner";
+import { useProfessionalLoginMutation } from "@/lib/auth/hooks";
+import { toUserMessage } from "@/lib/auth/messages";
+import { getAuthenticatedUserHomePath } from "@/lib/auth/routes";
 
 function PasswordPageContent() {
   const router = useRouter();
@@ -20,15 +24,24 @@ function PasswordPageContent() {
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
+  const [successRedirectPath, setSuccessRedirectPath] = useState("/");
+  const login = useProfessionalLoginMutation();
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!password) {
       setPasswordError("Please enter your password");
       return;
     }
     setPasswordError("");
-    setIsSuccessOpen(true);
+
+    try {
+      const auth = await login.mutateAsync({ email, password });
+      setSuccessRedirectPath(getAuthenticatedUserHomePath(auth.user));
+      setIsSuccessOpen(true);
+    } catch (error) {
+      setPasswordError(toUserMessage(error));
+    }
   };
 
   return (
@@ -61,9 +74,10 @@ function PasswordPageContent() {
 
           <button
             type="submit"
+            disabled={login.isPending}
             className="w-full max-w-[520px] h-12 bg-[#1A1A1A] hover:bg-black text-white font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer mt-2"
           >
-            Login
+            {login.isPending ? <Spinner className="text-white" /> : "Login"}
           </button>
         </form>
       </AuthCard>
@@ -74,9 +88,7 @@ function PasswordPageContent() {
         onClose={() => setIsSuccessOpen(false)}
         onContinue={() => {
           setIsSuccessOpen(false);
-          localStorage.setItem("isLoggedIn", "true");
-          // Redirect to professional dashboard or homepage
-          router.push("/");
+          router.push(successRedirectPath);
         }}
       />
     </AuthLayout>

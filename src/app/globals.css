@@ -295,3 +295,12 @@ body {
     top: 250px !important;
   }
 }
+
+[data-sonner-toaster][data-sonner-theme='light'] {
+  --success-bg: #f1f8fa;
+  --success-border: #8EBAC5;
+  --success-text: #1A1A1A;
+  --error-bg: #fff5f5;
+  --error-border: #E24B4A;
+  --error-text: #E24B4A;
+}

@@ -1,25 +1,35 @@
 "use client";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   PencilEdit02Icon,
   Location05Icon
 } from "@hugeicons/core-free-icons";
 
+import AddBusinessLinkModal from "@/components/dashboard/AddBusinessLinkModal";
+import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/components/ui/sonner";
+import type { BusinessCard as BusinessCardDto } from "@/lib/api/business";
+import { useMyBusinessProfileQuery } from "@/lib/business/hooks";
+import { toUserMessage } from "@/lib/auth/messages";
+
 interface BusinessCardProps {
   type: "Primary" | "Secondary";
   title: string;
-  rating: number;
-  reviews: number;
+  rating?: number;
+  reviews?: number;
   categories: string[];
   location: string;
-  startingPrice: string;
-  image: string;
+  startingPrice?: string;
+  image?: string;
   onEdit?: () => void;
   onView?: () => void;
 }
+
+// Backend does not provide real media yet; reuse the existing generic placeholder image.
+const FALLBACK_BUSINESS_IMAGE = "/image/profile.jpg";
 
 export function BusinessCard({
   type,
@@ -40,16 +50,16 @@ export function BusinessCard({
       {/* Image Container */}
       <div className="relative flex flex-col items-start p-1 gap-2.5 isolation-isolate w-[372px] h-[241px] shrink-0">
         <img
-          src={image}
+          src={image ?? FALLBACK_BUSINESS_IMAGE}
           alt={title}
           className="w-[364px] h-[233px] rounded-lg object-cover"
           draggable="false"
         />
         {/* Overlay Badge */}
-        <div 
+        <div
           className={`absolute flex flex-row justify-center items-center px-3 py-0.5 gap-2.5 h-6 left-[9px] top-[17.4px] rounded-full z-10 shadow-sm ${
-            isPrimary 
-              ? "bg-[#8EBAC5] w-[71px]" 
+            isPrimary
+              ? "bg-[#8EBAC5] w-[71px]"
               : "bg-[#E0E0E0] w-[90px]"
           }`}
         >
@@ -66,17 +76,17 @@ export function BusinessCard({
           <h3 className="w-[211px] h-16 font-poppins font-medium text-lg text-[#1C1B1C] leading-[32px] line-clamp-2">
             {title}
           </h3>
-          
+
           {/* Rating */}
           <div className="flex flex-row items-center gap-2 w-[118px] h-5 shrink-0 select-none">
             <div className="flex flex-row items-center gap-1 w-[58px] h-5">
               <span className="text-[20px] text-[#E49D12] select-none leading-none">★</span>
               <span className="w-7 h-5 font-poppins font-medium text-lg text-[#1C1B1C] leading-5">
-                {rating}
+                {rating !== undefined ? rating.toFixed(1) : "—"}
               </span>
             </div>
             <span className="w-[52px] h-5 font-poppins font-medium text-lg text-[#757575] leading-5">
-              ({reviews})
+              {reviews !== undefined ? `(${reviews})` : ""}
             </span>
           </div>
         </div>
@@ -110,13 +120,13 @@ export function BusinessCard({
               Starting Price
             </span>
             <span className="font-poppins font-medium text-2xl text-[#1C1B1C] leading-[30px]">
-              {startingPrice}
+              {startingPrice ?? "—"}
             </span>
           </div>
 
           {/* Button Frame */}
           {isPrimary ? (
-            <button 
+            <button
               onClick={onEdit}
               className="flex flex-row justify-center items-center p-3 gap-2 w-[88px] h-12 bg-[#131313] hover:bg-black text-white rounded-xl transition-all select-none"
             >
@@ -126,7 +136,7 @@ export function BusinessCard({
               </span>
             </button>
           ) : (
-            <button 
+            <button
               onClick={onView}
               className="flex flex-row justify-center items-center p-3 gap-2.5 w-[63px] h-11 bg-[#131313] hover:bg-black text-white rounded-xl transition-all select-none"
             >
@@ -142,43 +152,58 @@ export function BusinessCard({
 }
 
 interface DashboardBusinessProfileProps {
-  onAddBusiness?: () => void;
-  onEditBusiness?: () => void;
-  onViewBusiness?: () => void;
+  onEditBusiness?: (businessId: string) => void;
+  onViewBusiness?: (businessId: string) => void;
 }
 
-export default function DashboardBusinessProfile({ 
-  onAddBusiness,
+// Card DTO only carries {city, area}; street-level detail lives on the detail endpoint.
+const toCardLocation = (business: BusinessCardDto): string =>
+  [business.address.area, business.address.city].filter(Boolean).join(", ");
+
+export default function DashboardBusinessProfile({
   onEditBusiness,
   onViewBusiness
 }: DashboardBusinessProfileProps) {
+  const { data, isLoading, isError, error } = useMyBusinessProfileQuery();
+  const [isAddBusinessModalOpen, setIsAddBusinessModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (isError) {
+      toast.error(toUserMessage(error));
+    }
+  }, [isError, error]);
+
+  const primary = data?.primary ?? null;
+  const secondary = data?.secondary ?? [];
+  const activeCount = (primary ? 1 : 0) + secondary.length;
+
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] select-none font-poppins w-full">
-      <DashboardHeader 
-        title="Business Profile" 
-        subtitle="Public facing information shown on your booking page" 
+      <DashboardHeader
+        title="Business Profile"
+        subtitle="Public facing information shown on your booking page"
       />
       <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col gap-6">
 
       {/* Frame 2147240061 Wrapper */}
       <div className="flex flex-col items-start gap-5 w-full">
-        
+
         {/* Container (Toolbar) */}
         <div className="flex flex-row justify-between items-center w-full h-[37.6px]">
-          
-          {/* 2 Active Pill Container */}
+
+          {/* Active Pill Container */}
           <div className="box-border flex flex-row items-center px-4 py-2 gap-2 w-[102px] h-[38px] bg-white border border-[#F5F5F4] shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)] rounded-full">
             {/* Dot */}
             <span className="w-1.5 h-1.5 bg-[#1D9E75] rounded-full shrink-0" />
-            {/* 2 Active Text */}
+            {/* Active Text */}
             <span className="w-[56px] h-5 font-poppins font-medium text-sm text-[#1F8900] leading-5 shrink-0 select-none">
-              2 Active
+              {activeCount} Active
             </span>
           </div>
 
           {/* Add existing business button */}
-          <button 
-            onClick={onAddBusiness}
+          <button
+            onClick={() => setIsAddBusinessModalOpen(true)}
             className="flex flex-row items-center px-3.5 py-[7px] gap-1.5 w-[190px] h-[37.6px] bg-[#111111] hover:bg-black text-white rounded-lg transition-colors shadow-sm select-none cursor-pointer"
           >
             <svg className="w-3.5 h-3.5 text-white shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -191,34 +216,43 @@ export default function DashboardBusinessProfile({
         </div>
 
         {/* Frame 2147240196 (Cards list) */}
-        <div className="flex flex-row flex-wrap items-start gap-5 w-full select-none">
-          <BusinessCard
-            type="Primary"
-            title="Soho Vintage Barbers | Sheikh Zayed Road"
-            rating={4.9}
-            reviews={299}
-            categories={["Barber", "Salon"]}
-            location="Sheikh Zayed Road, Dubai"
-            startingPrice="$12"
-            image="/image/profile.jpg"
-            onEdit={onEditBusiness}
-          />
+        {isLoading ? (
+          <div className="flex items-center justify-center w-full py-24">
+            <Spinner className="text-[#111111] size-6" />
+          </div>
+        ) : (
+          <div className="flex flex-row flex-wrap items-start gap-5 w-full select-none">
+            {primary && (
+              <BusinessCard
+                type="Primary"
+                title={primary.name}
+                categories={primary.subcategories}
+                location={toCardLocation(primary)}
+                onEdit={() => onEditBusiness?.(primary.id)}
+              />
+            )}
 
-          <BusinessCard
-            type="Secondary"
-            title="Soho Vintage Barbers | Sheikh Zayed Road"
-            rating={4.9}
-            reviews={299}
-            categories={["Barber", "Salon"]}
-            location="Sheikh Zayed Road, Dubai"
-            startingPrice="$12"
-            image="/image/profile.jpg"
-            onView={onViewBusiness}
-          />
-        </div>
+            {secondary.map((business) => (
+              <BusinessCard
+                key={business.id}
+                type="Secondary"
+                title={business.name}
+                categories={business.subcategories}
+                location={toCardLocation(business)}
+                onView={() => onViewBusiness?.(business.id)}
+              />
+            ))}
+          </div>
+        )}
 
       </div>
-    
-      </div></main>
+
+      </div>
+
+      <AddBusinessLinkModal
+        isOpen={isAddBusinessModalOpen}
+        onClose={() => setIsAddBusinessModalOpen(false)}
+      />
+      </main>
   );
 }
