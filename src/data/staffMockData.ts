@@ -1,5 +1,5 @@
 export interface Staff {
-  id: number;
+  id: number | string;
   name: string;
   role: "Owner" | "Supervisor" | "Staff";
   subRole: string;
@@ -11,6 +11,7 @@ export interface Staff {
   cardRoleText?: string;
   email?: string;
   phone?: string;
+  avatarUrl?: string;
 }
 
 export interface TableRow {
@@ -23,6 +24,7 @@ export interface TableRow {
   services: string;
   accessTitle: string;
   accessSubtitle: string;
+  avatarUrl?: string;
 }
 
 export const initialStaffMembers: Staff[] = [

@@ -23,6 +23,8 @@ import {
   Logout01Icon
 } from "@hugeicons/core-free-icons";
 
+import { useAuthStore } from "@/lib/auth/store";
+
 interface DashboardSidebarProps {
   isCollapsed: boolean;
   setIsCollapsed: (val: boolean) => void;
@@ -43,6 +45,13 @@ export default function DashboardSidebar({
   footerMenuRef
 }: DashboardSidebarProps) {
   const [profileImage, setProfileImage] = useState("/businessDashboard/downLogo.png");
+  const logout = useAuthStore((state) => state.logout);
+  const isLoggingOut = useAuthStore((state) => state.isLoggingOut);
+
+  const handleLogout = () => {
+    setShowFooterMenu(false);
+    void logout();
+  };
 
   useEffect(() => {
     const loadProfileImage = () => {
@@ -239,12 +248,15 @@ export default function DashboardSidebar({
                 <span className="font-manrope font-medium text-xs text-[#111111]">Contact Support</span>
               </button>
               {/* Logout */}
-              <button 
-                onClick={() => setShowFooterMenu(false)}
-                className="flex items-center gap-3 py-2 px-2.5 hover:bg-[#A8BEC1] rounded-lg text-left transition-all cursor-pointer w-full"
+              <button
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                className="flex items-center gap-3 py-2 px-2.5 hover:bg-[#A8BEC1] rounded-lg text-left transition-all cursor-pointer w-full disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <HugeiconsIcon icon={Logout01Icon} className="w-5 h-5 text-[#111111] shrink-0" />
-                <span className="font-manrope font-medium text-xs text-[#111111]">Logout</span>
+                <span className="font-manrope font-medium text-xs text-[#111111]">
+                  {isLoggingOut ? "Logging out..." : "Logout"}
+                </span>
               </button>
             </div>
           </>

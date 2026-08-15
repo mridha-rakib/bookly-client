@@ -28,6 +28,16 @@ const codeMessages: Record<string, string> = {
   BUSINESS_LINK_NOT_FOUND: "That business link no longer exists.",
   BUSINESS_LINK_VERIFICATION_NOT_FOUND: "This verification request was not found or expired.",
   BUSINESS_LINK_VERIFICATION_CONSUMED: "This verification code has already been used.",
+  STAFF_BUSINESS_NOT_FOUND: "We couldn't find that business.",
+  STAFF_BUSINESS_ACCESS_DENIED: "You do not have access to manage staff for this business.",
+  STAFF_NOT_FOUND: "We couldn't find that staff member.",
+  STAFF_EMAIL_ALREADY_EXISTS: "An account with this email already exists.",
+  STAFF_ROLE_NOT_ALLOWED: "That role cannot be assigned to a staff member.",
+  STAFF_PHONE_INVALID: "Enter a valid phone number, including the country code.",
+  STAFF_OWNER_ROW_NOT_EDITABLE: "The business owner cannot be edited or removed from Staff.",
+  STAFF_TRANSACTION_UNAVAILABLE: "Staff changes cannot be completed right now. Please try again.",
+  STAFF_TEMP_PASSWORD_EMAIL_FAILED:
+    "The staff account was created, but the welcome email could not be sent.",
 };
 
 export const toUserMessage = (error: unknown): string => {
@@ -38,4 +48,23 @@ export const toUserMessage = (error: unknown): string => {
   }
 
   return apiError.message || "Something went wrong. Please try again.";
+};
+
+/**
+ * Maps backend Zod validation details (`{ path, message }[]`, already carried on
+ * BooklyApiError.errors) to a flat `{ fieldName: message }` object so forms can show
+ * an inline error next to the field the backend actually rejected, instead of only a
+ * generic toast.
+ */
+export const getFieldErrors = (error: unknown): Record<string, string> => {
+  const apiError = error instanceof BooklyApiError ? error : normalizeApiError(error);
+  const fieldErrors: Record<string, string> = {};
+
+  for (const detail of apiError.errors) {
+    if (detail.path && !fieldErrors[detail.path]) {
+      fieldErrors[detail.path] = detail.message;
+    }
+  }
+
+  return fieldErrors;
 };

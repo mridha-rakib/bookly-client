@@ -1,9 +1,20 @@
 "use client";
 
 import React from "react";
-import { availabilityTableData } from "@/data/staffMockData";
+import Image from "next/image";
+import { availabilityTableData, TableRow } from "@/data/staffMockData";
 
-export default function StaffAvailabilityTable() {
+export type StaffAvailabilityRow = TableRow;
+
+interface StaffAvailabilityTableProps {
+  /** Real rows for the current business. Omit to keep the existing mock-driven behavior
+   * (used by the not-yet-wired Staff/Supervisor dashboard variants of this screen). */
+  rows?: StaffAvailabilityRow[];
+}
+
+export default function StaffAvailabilityTable({ rows }: StaffAvailabilityTableProps) {
+  const data = rows ?? availabilityTableData;
+
   return (
     <div className="w-full bg-white border border-[#E1DED6] rounded-[16px] mb-8">
       {/* Card Header */}
@@ -24,12 +35,22 @@ export default function StaffAvailabilityTable() {
             </tr>
           </thead>
           <tbody>
-            {availabilityTableData.map((row, idx) => (
+            {data.map((row, idx) => (
               <tr key={idx} className="border-t border-[#E8E5DE] hover:bg-[#FAFAF9] transition-colors">
                 <td className="py-6 px-6 align-top">
                   <div className="flex items-start gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0 ${row.avatarBg}`}>
-                      {row.avatarText}
+                    <div className={`w-10 h-10 rounded-full overflow-hidden flex items-center justify-center text-white font-semibold text-sm shrink-0 ${row.avatarBg}`}>
+                      {row.avatarUrl ? (
+                        <Image
+                          src={row.avatarUrl}
+                          alt={row.name}
+                          width={40}
+                          height={40}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        row.avatarText
+                      )}
                     </div>
                     <div className="flex flex-col font-poppins">
                       <span className="text-[#2F312D] font-semibold text-base">{row.name}</span>
@@ -57,9 +78,9 @@ export default function StaffAvailabilityTable() {
                 <td className="py-6 px-6 align-top text-base text-[#2F312D] font-medium font-poppins">{row.services}</td>
                 <td className="py-6 px-6 align-top">
                   <div className="flex flex-col font-poppins">
-                    <span className={`font-semibold text-[15px] ${row.name === "Elena G."
+                    <span className={`font-semibold text-[15px] ${row.role === "Owner"
                         ? "text-[#2F7B65]"
-                        : row.name === "Vivi M."
+                        : row.role === "Supervisor"
                           ? "text-[#2F5F9F]"
                           : "text-[#3F413D]"
                       }`}>

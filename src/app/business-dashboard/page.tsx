@@ -77,7 +77,7 @@ interface Client {
 function BusinessDashboardContent() {
   const [activeTab, setActiveTab] = useState("Calendar");
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [showFooterMenu, setShowFooterMenu] = useState(true);
+  const [showFooterMenu, setShowFooterMenu] = useState(false);
   const footerMenuRef = useRef<HTMLDivElement>(null);
 
   // Bookings Data & Filters

@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
+import type { BusinessCity } from "@/lib/constants/cities";
 
 export type UserRole = "CUSTOMER" | "BUSINESS_OWNER" | "SUPERVISOR" | "STAFF" | "SUPER_ADMIN";
 export type UserStatus = "ACTIVE" | "DORMANT" | "SUSPENDED";
@@ -71,6 +72,13 @@ export interface RegistrationProgress {
   emailVerified: boolean;
   phoneVerified: boolean;
   expiresAt: string;
+  // Authoritative identity/contact data captured earlier in registration (profile
+  // submission + phone OTP verification). firstName/lastName/phone are only present
+  // once those steps have actually completed.
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: { countryCode: string; nationalNumber: string };
 }
 
 export interface ProfileInput {
@@ -88,7 +96,7 @@ export interface BusinessDetailsInput {
   sessionId: string;
   businessName: string;
   ownerName: string;
-  city: "Larnaca" | "Limassol" | "Nicosia" | "Paphos";
+  city: BusinessCity;
   countryCode: string;
   mobileNumber: string;
   area: string;

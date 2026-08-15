@@ -1,14 +1,15 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { PencilEdit02Icon } from "@hugeicons/core-free-icons";
 import { Staff } from "@/data/staffMockData";
 
 interface StaffCardProps {
   staff: Staff;
-  onToggleStatus: (id: number) => void;
-  onEdit: (id: number) => void;
+  onToggleStatus: (id: number | string) => void;
+  onEdit: (id: number | string) => void;
   canEdit?: boolean;
 }
 
@@ -21,11 +22,11 @@ export default function StaffCard({ staff, onToggleStatus, onEdit, canEdit = tru
       <div className="absolute right-6 top-6">
         <button
           type="button"
-          disabled={staff.role === "Owner" || staff.role === "Supervisor" || !canEdit}
+          disabled={staff.role === "Owner" || !canEdit}
           onClick={() => onToggleStatus(staff.id)}
           className={`w-[38px] h-[21px] rounded-full p-[3px] transition-colors duration-200 focus:outline-none flex items-center ${
             staff.status === "Active" ? "bg-[#0F6E56]" : "bg-neutral-300"
-          } ${staff.role === "Owner" || staff.role === "Supervisor" || !canEdit ? "cursor-not-allowed opacity-80" : "cursor-pointer"}`}
+          } ${staff.role === "Owner" || !canEdit ? "cursor-not-allowed opacity-80" : "cursor-pointer"}`}
         >
           <div
             className={`w-[15px] h-[15px] bg-white rounded-full transition-transform duration-200 ${
@@ -38,7 +39,7 @@ export default function StaffCard({ staff, onToggleStatus, onEdit, canEdit = tru
       {/* Avatar circle */}
       <div className="flex flex-col items-center pb-4">
         <div
-          className={`w-14 h-14 rounded-full flex items-center justify-center text-white font-semibold text-lg ${
+          className={`w-14 h-14 rounded-full overflow-hidden flex items-center justify-center text-white font-semibold text-lg ${
             staff.role === "Owner"
               ? "bg-[#7C3AED]"
               : staff.role === "Supervisor"
@@ -46,7 +47,17 @@ export default function StaffCard({ staff, onToggleStatus, onEdit, canEdit = tru
               : "bg-[#10B981]"
           }`}
         >
-          {staff.avatarText}
+          {staff.avatarUrl ? (
+            <Image
+              src={staff.avatarUrl}
+              alt={staff.name}
+              width={56}
+              height={56}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            staff.avatarText
+          )}
         </div>
       </div>
 

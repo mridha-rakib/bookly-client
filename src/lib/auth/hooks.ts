@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { authApi } from "@/lib/api/auth";
 import { useAuthStore } from "@/lib/auth/store";
@@ -85,3 +85,14 @@ export const useCompleteBusinessOwnerMutation = () => {
     onSuccess: setAuth,
   });
 };
+
+// Authoritative registration-session data (email, verified name/phone) for hydrating
+// read-only identity fields — survives refresh/remount since it's re-fetched from the
+// server rather than kept only in transient React state.
+export const useProfessionalRegistrationProgressQuery = (sessionId: string) =>
+  useQuery({
+    queryKey: ["professional-registration-progress", sessionId],
+    queryFn: () => authApi.professionalProgress(sessionId),
+    enabled: Boolean(sessionId),
+    retry: 1,
+  });

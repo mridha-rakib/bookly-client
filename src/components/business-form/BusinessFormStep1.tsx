@@ -4,6 +4,7 @@ import React from "react";
 import dynamic from "next/dynamic";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { BUSINESS_CITIES } from "@/lib/constants/cities";
 
 // Dynamically import the map to avoid SSR issues with Leaflet
 const BusinessMap = dynamic(() => import("./BusinessMap"), {
@@ -17,6 +18,16 @@ const BusinessMap = dynamic(() => import("./BusinessMap"), {
     </div>
   ),
 });
+
+export interface BusinessFormStep1Errors {
+  businessName?: string;
+  ownerName?: string;
+  mobileNumber?: string;
+  area?: string;
+  streetName?: string;
+  streetNumber?: string;
+  briefDesc?: string;
+}
 
 export interface BusinessFormStep1Props {
   emailParam: string;
@@ -46,6 +57,7 @@ export interface BusinessFormStep1Props {
   setCoordinates: (coords: { lat: number; lng: number }) => void;
   searchQuery: string;
   setSearchQuery: (val: string) => void;
+  errors?: BusinessFormStep1Errors;
   onSubmit: (e: React.FormEvent) => void;
 }
 
@@ -77,6 +89,7 @@ export default function BusinessFormStep1({
   setCoordinates,
   searchQuery,
   setSearchQuery,
+  errors = {},
   onSubmit,
 }: BusinessFormStep1Props) {
   const [isOpen, setIsOpen] = React.useState(false);
@@ -119,10 +132,12 @@ export default function BusinessFormStep1({
               type="text"
               value={businessName}
               onChange={(e) => setBusinessName(e.target.value)}
-              required
               placeholder="Business Name"
               className="w-full h-[52px] bg-white border border-[#E8E8E4] rounded-lg px-3 py-1.5 text-base text-[#212121] placeholder-[#212121]/50 focus:outline-none focus:border-[#8EBAC5]"
             />
+            {errors.businessName && (
+              <span className="text-xs text-red-500 pl-1">{errors.businessName}</span>
+            )}
           </div>
           <div className="flex-1 flex flex-col gap-2">
             <label className="text-sm font-normal text-[#111111]">Owner Name *</label>
@@ -130,10 +145,12 @@ export default function BusinessFormStep1({
               type="text"
               value={ownerName}
               onChange={(e) => setOwnerName(e.target.value)}
-              required
               placeholder="Owner Name"
-              className="w-full h-[52px] bg-white border border-[#E8E8E4] rounded-lg px-3 py-1.5 text-base text-[#212121] placeholder-[#212121]/50 focus:outline-none focus:border-[#8EBAC5]"
+              disabled
+              title="Owner name comes from your registration profile and can't be edited here"
+              className="w-full h-[52px] bg-[#E0E0E0] border border-[#E8E8E4] rounded-lg px-3 py-1.5 text-base text-[#808080] placeholder-[#808080]/50 cursor-not-allowed focus:outline-none"
             />
+            {errors.ownerName && <span className="text-xs text-red-500 pl-1">{errors.ownerName}</span>}
           </div>
         </div>
 
@@ -156,10 +173,11 @@ export default function BusinessFormStep1({
                 onChange={(e) => setCity(e.target.value)}
                 className="w-full h-[52px] bg-white border border-[#E8E8E4] rounded-lg pl-3 pr-10 text-base text-[#212121] focus:outline-none focus:border-[#8EBAC5] appearance-none cursor-pointer"
               >
-                <option value="Larnaca">Larnaca</option>
-                <option value="Limassol">Limassol</option>
-                <option value="Nicosia">Nicosia</option>
-                <option value="Paphos">Paphos</option>
+                {BUSINESS_CITIES.map((cityOption) => (
+                  <option key={cityOption} value={cityOption}>
+                    {cityOption}
+                  </option>
+                ))}
               </select>
               <HugeiconsIcon
                 icon={ArrowDown01Icon}
@@ -195,7 +213,9 @@ export default function BusinessFormStep1({
                     <button
                       type="button"
                       onClick={() => setIsOpen(!isOpen)}
-                      className="flex items-center gap-1.5 cursor-pointer focus:outline-none w-full"
+                      disabled
+                      title="Mobile number comes from your verified registration phone and can't be edited here"
+                      className="flex items-center gap-1.5 cursor-not-allowed focus:outline-none w-full"
                     >
                       <img
                         src={current.flag}
@@ -241,11 +261,15 @@ export default function BusinessFormStep1({
               type="tel"
               value={mobileNumber}
               onChange={(e) => setMobileNumber(e.target.value.replace(/\D/g, ""))}
-              required
               placeholder="1234556666"
-              className="flex-1 bg-[#E0E0E0] rounded-r-xl px-4 text-sm text-[#808080] font-normal focus:outline-none"
+              disabled
+              title="Mobile number comes from your verified registration phone and can't be edited here"
+              className="flex-1 bg-[#E0E0E0] rounded-r-xl px-4 text-sm text-[#808080] font-normal cursor-not-allowed focus:outline-none"
             />
           </div>
+          {errors.mobileNumber && (
+            <span className="text-xs text-red-500 pl-1">{errors.mobileNumber}</span>
+          )}
         </div>
 
         {/* Address Sections */}
@@ -260,10 +284,10 @@ export default function BusinessFormStep1({
               type="text"
               value={area}
               onChange={(e) => setArea(e.target.value)}
-              required
               placeholder="e.g. Mackenzie, finikoudes"
               className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-lg px-3 py-2 text-sm text-[#212121] placeholder-[#1C1C1A]/50 focus:outline-none focus:border-[#8EBAC5]"
             />
+            {errors.area && <span className="text-xs text-red-500 pl-1">{errors.area}</span>}
           </div>
 
           <div className="flex flex-col md:flex-row gap-4 w-full">
@@ -275,10 +299,12 @@ export default function BusinessFormStep1({
                 type="text"
                 value={streetName}
                 onChange={(e) => setStreetName(e.target.value)}
-                required
                 placeholder="e.g. Emrou"
                 className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-lg px-3 py-2 text-sm text-[#212121] placeholder-[#1C1C1A]/50 focus:outline-none focus:border-[#8EBAC5]"
               />
+              {errors.streetName && (
+                <span className="text-xs text-red-500 pl-1">{errors.streetName}</span>
+              )}
             </div>
             <div className="flex-1 flex flex-col gap-2">
               <label className="text-sm font-normal text-[#111111] flex gap-0.5">
@@ -288,10 +314,12 @@ export default function BusinessFormStep1({
                 type="text"
                 value={streetNumber}
                 onChange={(e) => setStreetNumber(e.target.value)}
-                required
                 placeholder="e.g. 14"
                 className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-lg px-3 py-2 text-sm text-[#212121] placeholder-[#1C1C1A]/50 focus:outline-none focus:border-[#8EBAC5]"
               />
+              {errors.streetNumber && (
+                <span className="text-xs text-red-500 pl-1">{errors.streetNumber}</span>
+              )}
             </div>
           </div>
 
@@ -339,10 +367,10 @@ export default function BusinessFormStep1({
             type="text"
             value={briefDesc}
             onChange={(e) => setBriefDesc(e.target.value)}
-            required
             placeholder="write about your business"
             className="w-full h-[52px] bg-white border border-[#E8E8E4] rounded-lg px-3 py-1.5 text-base text-[#212121] placeholder-[#212121]/50 focus:outline-none focus:border-[#8EBAC5]"
           />
+          {errors.briefDesc && <span className="text-xs text-red-500 pl-1">{errors.briefDesc}</span>}
         </div>
 
         {/* Next Button Row */}

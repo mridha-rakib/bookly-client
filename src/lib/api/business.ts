@@ -1,9 +1,11 @@
 import { apiRequest } from "@/lib/api/client";
 import type { VisitType } from "@/lib/api/auth";
+import type { BusinessCity } from "@/lib/constants/cities";
 
+export type { BusinessCity } from "@/lib/constants/cities";
 export type BusinessStatus = "PENDING" | "APPROVED" | "WARNING" | "SUSPENDED";
 export type BusinessRelationship = "OWNER" | "LINKED";
-export type BusinessCity = "Larnaca" | "Limassol" | "Nicosia" | "Paphos";
+export type BusinessMediaRole = "PROFILE" | "GALLERY";
 
 export interface BusinessPhone {
   countryCode: string;
@@ -31,6 +33,35 @@ export interface BusinessLocation {
   searchQuery?: string;
 }
 
+export interface BusinessProfileMedia {
+  id: string;
+  url: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BusinessMedia extends BusinessProfileMedia {
+  businessId: string;
+  role: BusinessMediaRole;
+  originalFileName?: string;
+  sortOrder: number;
+}
+
+export interface BusinessTravelCitySetting {
+  city: BusinessCity;
+  active: boolean;
+  feeCents: number;
+}
+
+export interface BusinessTravelSettings {
+  businessId: string;
+  cities: BusinessTravelCitySetting[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // Card shape returned by GET /businesses/my-profile (primary + secondary[]).
 export interface BusinessCard {
   id: string;
@@ -40,6 +71,7 @@ export interface BusinessCard {
   category: string;
   subcategories: string[];
   address: BusinessCardAddress;
+  profileMedia?: BusinessProfileMedia;
   createdAt: string;
 }
 
@@ -105,6 +137,45 @@ export const businessApi = {
       method: "PATCH",
       url: `/businesses/${businessId}`,
       data: input,
+    }),
+
+  getBusinessMedia: (businessId: string) =>
+    apiRequest<BusinessMedia[]>({ method: "GET", url: `/businesses/${businessId}/media` }),
+
+  uploadBusinessMedia: (businessId: string, file: File) => {
+    const data = new FormData();
+    data.append("file", file);
+
+    return apiRequest<BusinessMedia>({
+      method: "POST",
+      url: `/businesses/${businessId}/media`,
+      data,
+    });
+  },
+
+  deleteBusinessMedia: (businessId: string, mediaId: string) =>
+    apiRequest<undefined>({
+      method: "DELETE",
+      url: `/businesses/${businessId}/media/${mediaId}`,
+    }),
+
+  setBusinessProfileMedia: (businessId: string, mediaId: string) =>
+    apiRequest<BusinessMedia>({
+      method: "PATCH",
+      url: `/businesses/${businessId}/media/${mediaId}/profile`,
+    }),
+
+  getBusinessTravelSettings: (businessId: string) =>
+    apiRequest<BusinessTravelSettings>({
+      method: "GET",
+      url: `/businesses/${businessId}/travel-settings`,
+    }),
+
+  updateBusinessTravelSettings: (businessId: string, cities: BusinessTravelCitySetting[]) =>
+    apiRequest<BusinessTravelSettings>({
+      method: "PUT",
+      url: `/businesses/${businessId}/travel-settings`,
+      data: { cities },
     }),
 
   // Step 1 of linking: sends an OTP to the entered target account email. Does not

@@ -2,12 +2,21 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { businessApi, type BusinessDetail, type UpdateBusinessInput } from "@/lib/api/business";
+import {
+  businessApi,
+  type BusinessDetail,
+  type BusinessTravelCitySetting,
+  type BusinessMediaRole,
+  type UpdateBusinessInput,
+} from "@/lib/api/business";
 
 export const businessKeys = {
   all: ["businesses"] as const,
   profile: () => [...businessKeys.all, "profile"] as const,
   detail: (businessId: string) => [...businessKeys.all, "detail", businessId] as const,
+  media: (businessId: string) => [...businessKeys.all, "media", businessId] as const,
+  travelSettings: (businessId: string) =>
+    [...businessKeys.all, "travel-settings", businessId] as const,
 };
 
 export const useMyBusinessProfileQuery = () =>
@@ -32,6 +41,83 @@ export const useUpdateBusinessMutation = () => {
     onSuccess: (business: BusinessDetail) => {
       queryClient.setQueryData(businessKeys.detail(business.id), business);
       void queryClient.invalidateQueries({ queryKey: businessKeys.profile() });
+    },
+  });
+};
+
+export const useBusinessMediaQuery = (businessId: string | undefined) =>
+  useQuery({
+    queryKey: businessKeys.media(businessId ?? ""),
+    queryFn: () => businessApi.getBusinessMedia(businessId as string),
+    enabled: Boolean(businessId),
+  });
+
+export const useUploadBusinessMediaMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ businessId, file }: { businessId: string; file: File }) =>
+      businessApi.uploadBusinessMedia(businessId, file),
+    onSuccess: (_media, variables) => {
+      void queryClient.invalidateQueries({ queryKey: businessKeys.media(variables.businessId) });
+    },
+  });
+};
+
+export const useDeleteBusinessMediaMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      businessId,
+      mediaId,
+    }: {
+      businessId: string;
+      mediaId: string;
+      role?: BusinessMediaRole;
+    }) => businessApi.deleteBusinessMedia(businessId, mediaId),
+    onSuccess: (_result, variables) => {
+      void queryClient.invalidateQueries({ queryKey: businessKeys.media(variables.businessId) });
+      if (variables.role === "PROFILE") {
+        void queryClient.invalidateQueries({ queryKey: businessKeys.profile() });
+      }
+    },
+  });
+};
+
+export const useSetBusinessProfileMediaMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ businessId, mediaId }: { businessId: string; mediaId: string }) =>
+      businessApi.setBusinessProfileMedia(businessId, mediaId),
+    onSuccess: (_media, variables) => {
+      void queryClient.invalidateQueries({ queryKey: businessKeys.media(variables.businessId) });
+      void queryClient.invalidateQueries({ queryKey: businessKeys.profile() });
+    },
+  });
+};
+
+export const useBusinessTravelSettingsQuery = (businessId: string | undefined) =>
+  useQuery({
+    queryKey: businessKeys.travelSettings(businessId ?? ""),
+    queryFn: () => businessApi.getBusinessTravelSettings(businessId as string),
+    enabled: Boolean(businessId),
+  });
+
+export const useUpdateBusinessTravelSettingsMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      businessId,
+      cities,
+    }: {
+      businessId: string;
+      cities: BusinessTravelCitySetting[];
+    }) => businessApi.updateBusinessTravelSettings(businessId, cities),
+    onSuccess: (settings) => {
+      queryClient.setQueryData(businessKeys.travelSettings(settings.businessId), settings);
     },
   });
 };

@@ -50,16 +50,16 @@ export default function StaffStaffList() {
 
   // Show all staff members including Owner and Supervisor
   const [staffMembers, setStaffMembers] = useState<Staff[]>(initialStaffMembers);
-  const [editingStaffId, setEditingStaffId] = useState<number | null>(null);
+  const [editingStaffId, setEditingStaffId] = useState<number | string | null>(null);
 
-  const toggleStaffStatus = (id: number) => {
+  const toggleStaffStatus = (id: number | string) => {
     const target = staffMembers.find(s => s.id === id);
     // Staff cannot toggle Owner or Supervisor status
     if (target?.role === "Owner" || target?.role === "Supervisor") return;
     setStaffMembers(staffMembers.map(s => s.id === id ? { ...s, status: s.status === "Active" ? "Inactive" : "Active" } : s));
   };
 
-  const handleEditStaff = (id: number) => {
+  const handleEditStaff = (id: number | string) => {
     const member = staffMembers.find(s => s.id === id);
     if (member) {
       // Ensure we cannot edit Owner and Supervisor role details

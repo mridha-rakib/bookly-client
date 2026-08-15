@@ -2,8 +2,14 @@
 
 import React from "react";
 
+export interface TravelFeeRow {
+  name: string;
+  active: boolean;
+  fee: string;
+}
+
 interface TravelFeesSectionProps {
-  cityFees: any[];
+  cityFees: TravelFeeRow[];
   toggleCityActive: (idx: number) => void;
   updateCityFee: (idx: number, val: string) => void;
 }

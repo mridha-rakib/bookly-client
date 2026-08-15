@@ -1,19 +1,44 @@
 "use client";
 
 import Image from "next/image";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { MoreVerticalIcon, ViewIcon, Delete02Icon } from "@hugeicons/core-free-icons";
+import type { BusinessMedia } from "@/lib/api/business";
 
 interface PhotosSectionProps {
-  photos: string[];
-  setPhotos: React.Dispatch<React.SetStateAction<string[]>>;
+  photos: BusinessMedia[];
   onSeeAll: () => void;
+  onUploadImages: (files: FileList) => void;
+  onViewImage?: (url: string) => void;
+  onDeleteImage: (media: BusinessMedia) => void;
+  onMakeProfilePic: (media: BusinessMedia) => void;
+  canMutate: boolean;
+  isUploading?: boolean;
 }
 
-export default function PhotosSection({ photos, setPhotos, onSeeAll }: PhotosSectionProps) {
+export default function PhotosSection({
+  photos,
+  onSeeAll,
+  onUploadImages,
+  onViewImage,
+  onDeleteImage,
+  onMakeProfilePic,
+  canMutate,
+  isUploading = false,
+}: PhotosSectionProps) {
   const [activeMenuIdx, setActiveMenuIdx] = useState<number | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleViewImage = (url: string) => {
+    if (onViewImage) {
+      onViewImage(url);
+      return;
+    }
+
+    setPreviewImage(url);
+  };
 
   // Close dropdown on click outside
   React.useEffect(() => {
@@ -37,17 +62,37 @@ export default function PhotosSection({ photos, setPhotos, onSeeAll }: PhotosSec
 
       <div className="flex flex-col gap-4 w-full">
         {/* Upload Button container */}
-        <div className="flex justify-end">
-          <button type="button" className="h-9 px-4 bg-[#111111] text-white rounded-lg text-xs font-semibold hover:bg-black transition-colors cursor-pointer">
-            Upload Images
-          </button>
-        </div>
+        {canMutate && (
+          <div className="flex justify-end">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                if (event.target.files?.length) {
+                  onUploadImages(event.target.files);
+                  event.target.value = "";
+                }
+              }}
+            />
+            <button
+              type="button"
+              disabled={isUploading}
+              onClick={() => fileInputRef.current?.click()}
+              className="h-9 px-4 bg-[#111111] text-white rounded-lg text-xs font-semibold hover:bg-black transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Upload Images
+            </button>
+          </div>
+        )}
 
         {/* Photo Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full relative">
-          {photos.map((src, idx) => (
-            <div key={idx} className="relative aspect-[4/3] rounded-xl overflow-visible border border-neutral-200 bg-neutral-100 group">
-              <Image src={src} className="w-full h-full object-cover rounded-xl" alt={`Business photo ${idx + 1}`} fill />
+          {photos.map((media, idx) => (
+            <div key={media.id} className="relative aspect-[4/3] rounded-xl overflow-visible border border-neutral-200 bg-neutral-100 group">
+              <Image src={media.url} className="w-full h-full object-cover rounded-xl" alt={`Business photo ${idx + 1}`} fill />
               
               {/* Circular 3-dot overlay button */}
               <button
@@ -67,23 +112,22 @@ export default function PhotosSection({ photos, setPhotos, onSeeAll }: PhotosSec
                   onClick={(e) => e.stopPropagation()}
                   className="absolute right-3 top-10 bg-white border border-neutral-100 rounded-lg shadow-xl py-1 w-[140px] z-20"
                 >
+                  {canMutate && media.role !== "PROFILE" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onMakeProfilePic(media);
+                        setActiveMenuIdx(null);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs font-medium text-neutral-800 hover:bg-neutral-50 border-b border-neutral-100/50 cursor-pointer block"
+                    >
+                      Make profile pic
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
-                      const updated = [...photos];
-                      const item = updated.splice(idx, 1)[0];
-                      updated.unshift(item);
-                      setPhotos(updated);
-                      setActiveMenuIdx(null);
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs font-medium text-neutral-800 hover:bg-neutral-50 border-b border-neutral-100/50 cursor-pointer block"
-                  >
-                    Make profile pic
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPreviewImage(src);
+                      handleViewImage(media.url);
                       setActiveMenuIdx(null);
                     }}
                     className="w-full text-left px-3 py-2 text-xs font-medium text-neutral-800 hover:bg-neutral-50 border-b border-neutral-100/50 flex items-center gap-2 cursor-pointer"
@@ -91,17 +135,19 @@ export default function PhotosSection({ photos, setPhotos, onSeeAll }: PhotosSec
                     <HugeiconsIcon icon={ViewIcon} className="w-3.5 h-3.5 text-neutral-600" />
                     <span>View</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPhotos(photos.filter((_, i) => i !== idx));
-                      setActiveMenuIdx(null);
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer"
-                  >
-                    <HugeiconsIcon icon={Delete02Icon} className="w-3.5 h-3.5 text-red-600" />
-                    <span>Delete</span>
-                  </button>
+                  {canMutate && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onDeleteImage(media);
+                        setActiveMenuIdx(null);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer"
+                    >
+                      <HugeiconsIcon icon={Delete02Icon} className="w-3.5 h-3.5 text-red-600" />
+                      <span>Delete</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>

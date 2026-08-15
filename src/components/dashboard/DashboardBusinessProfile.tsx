@@ -20,7 +20,8 @@ interface BusinessCardProps {
   title: string;
   rating?: number;
   reviews?: number;
-  categories: string[];
+  category?: string;
+  subcategories: string[];
   location: string;
   startingPrice?: string;
   image?: string;
@@ -28,15 +29,31 @@ interface BusinessCardProps {
   onView?: () => void;
 }
 
-// Backend does not provide real media yet; reuse the existing generic placeholder image.
 const FALLBACK_BUSINESS_IMAGE = "/image/profile.jpg";
+
+// Category may occasionally repeat one of the subcategory labels verbatim; dedupe so
+// the same label never renders twice, but every distinct real value is kept and shown —
+// the chip row wraps and the card grows to fit them all (see the Tags section below).
+const buildDisplayChips = (category: string | undefined, subcategories: string[]): string[] => {
+  const seen = new Set<string>();
+  const chips: string[] = [];
+  for (const value of [category, ...subcategories]) {
+    const trimmed = value?.trim();
+    if (trimmed && !seen.has(trimmed.toLowerCase())) {
+      seen.add(trimmed.toLowerCase());
+      chips.push(trimmed);
+    }
+  }
+  return chips;
+};
 
 export function BusinessCard({
   type,
   title,
   rating,
   reviews,
-  categories,
+  category,
+  subcategories,
   location,
   startingPrice,
   image,
@@ -44,20 +61,21 @@ export function BusinessCard({
   onView
 }: BusinessCardProps) {
   const isPrimary = type === "Primary";
+  const displayChips = buildDisplayChips(category, subcategories);
 
   return (
-    <div className="box-border flex flex-col items-start gap-5 w-[372px] h-[507px] rounded-xl bg-white border border-[#E8E6FF] overflow-hidden shadow-sm font-poppins">
+    <div className="box-border flex flex-col items-start gap-5 w-[372px] min-h-[507px] rounded-xl bg-white border border-[#E8E6FF] overflow-hidden shadow-sm font-poppins">
       {/* Image Container */}
-      <div className="relative flex flex-col items-start p-1 gap-2.5 isolation-isolate w-[372px] h-[241px] shrink-0">
+      <div className="relative w-full h-[233px] shrink-0">
         <img
           src={image ?? FALLBACK_BUSINESS_IMAGE}
           alt={title}
-          className="w-[364px] h-[233px] rounded-lg object-cover"
+          className="w-full h-full rounded-t-xl object-cover"
           draggable="false"
         />
         {/* Overlay Badge */}
         <div
-          className={`absolute flex flex-row justify-center items-center px-3 py-0.5 gap-2.5 h-6 left-[9px] top-[17.4px] rounded-full z-10 shadow-sm ${
+          className={`absolute flex flex-row justify-center items-center px-3 py-0.5 gap-2.5 h-6 left-3 top-3 rounded-full z-10 shadow-sm ${
             isPrimary
               ? "bg-[#8EBAC5] w-[71px]"
               : "bg-[#E0E0E0] w-[90px]"
@@ -70,7 +88,7 @@ export function BusinessCard({
       </div>
 
       {/* Details Area */}
-      <div className="flex flex-col justify-center items-start px-5 pb-5 pt-0 gap-4 w-[372px] h-[246px]">
+      <div className="flex flex-col justify-start items-start px-5 pb-5 pt-0 gap-4 w-[372px] min-h-[246px] flex-1">
         {/* Title & Star Rating */}
         <div className="flex flex-row justify-between items-start gap-4 w-[332px] h-16 shrink-0">
           <h3 className="w-[211px] h-16 font-poppins font-medium text-lg text-[#1C1B1C] leading-[32px] line-clamp-2">
@@ -82,21 +100,21 @@ export function BusinessCard({
             <div className="flex flex-row items-center gap-1 w-[58px] h-5">
               <span className="text-[20px] text-[#E49D12] select-none leading-none">★</span>
               <span className="w-7 h-5 font-poppins font-medium text-lg text-[#1C1B1C] leading-5">
-                {rating !== undefined ? rating.toFixed(1) : "—"}
+                {rating !== undefined ? rating.toFixed(1) : "0.0"}
               </span>
             </div>
             <span className="w-[52px] h-5 font-poppins font-medium text-lg text-[#757575] leading-5">
-              {reviews !== undefined ? `(${reviews})` : ""}
+              {`(${reviews ?? 0})`}
             </span>
           </div>
         </div>
 
         {/* Tags */}
-        <div className="flex flex-row items-start gap-2 h-6 shrink-0 select-none">
-          {categories.map((cat, i) => (
-            <div key={i} className="box-border flex flex-row justify-center items-center px-3 py-0.5 border border-[#4E5F78] rounded-full shrink-0">
+        <div className="flex flex-row flex-wrap items-start gap-2 w-full min-w-0 shrink-0 select-none">
+          {displayChips.map((chip, i) => (
+            <div key={i} className="box-border flex flex-row justify-center items-center px-3 py-0.5 border border-[#4E5F78] rounded-full shrink-0 max-w-full">
               <span className="font-poppins font-medium text-xs text-[#4E5F78] leading-5 uppercase tracking-wider text-center select-none">
-                {cat}
+                {chip}
               </span>
             </div>
           ))}
@@ -106,7 +124,7 @@ export function BusinessCard({
         <div className="flex flex-col items-start gap-2 h-6 shrink-0 select-none w-full">
           <div className="flex flex-row items-center gap-2 w-full">
             <HugeiconsIcon icon={Location05Icon} className="w-4 h-4 text-neutral-400 shrink-0" />
-            <span className="font-poppins font-medium text-base text-[#757575] leading-6 select-none truncate">
+            <span className="font-poppins font-medium text-base text-[#757575] leading-6 select-none truncate min-w-0 flex-1">
               {location}
             </span>
           </div>
@@ -221,13 +239,15 @@ export default function DashboardBusinessProfile({
             <Spinner className="text-[#111111] size-6" />
           </div>
         ) : (
-          <div className="flex flex-row flex-wrap items-start gap-5 w-full select-none">
+          <div className="flex flex-row flex-wrap items-stretch gap-5 w-full select-none">
             {primary && (
               <BusinessCard
                 type="Primary"
                 title={primary.name}
-                categories={primary.subcategories}
+                category={primary.category}
+                subcategories={primary.subcategories}
                 location={toCardLocation(primary)}
+                image={primary.profileMedia?.url}
                 onEdit={() => onEditBusiness?.(primary.id)}
               />
             )}
@@ -237,8 +257,10 @@ export default function DashboardBusinessProfile({
                 key={business.id}
                 type="Secondary"
                 title={business.name}
-                categories={business.subcategories}
+                category={business.category}
+                subcategories={business.subcategories}
                 location={toCardLocation(business)}
+                image={business.profileMedia?.url}
                 onView={() => onViewBusiness?.(business.id)}
               />
             ))}

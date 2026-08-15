@@ -19,6 +19,7 @@ export interface CategorySelectorStep2Props {
   selectedSubcategories: string[];
   handleSubcategoryToggle: (sub: string) => void;
   onDone: () => void;
+  error?: string;
 }
 
 export default function CategorySelectorStep2({
@@ -28,6 +29,7 @@ export default function CategorySelectorStep2({
   selectedSubcategories,
   handleSubcategoryToggle,
   onDone,
+  error,
 }: CategorySelectorStep2Props) {
   return (
     <div className="w-full max-w-[1443px] flex flex-col items-center gap-[72px] mt-10 px-4 md:px-8 xl:px-0">
@@ -97,6 +99,9 @@ export default function CategorySelectorStep2({
             );
           })}
         </div>
+        {error && (
+          <span className="text-xs text-red-500 text-center md:text-left">{error}</span>
+        )}
       </div>
 
       {/* Done Button Row */}

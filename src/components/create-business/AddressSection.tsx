@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { BUSINESS_CITIES } from "@/lib/constants/cities";
 
 interface AddressSectionProps {
   city: string;
@@ -47,11 +48,11 @@ export default function AddressSection({
               onChange={(e) => setCity(e.target.value)}
               className="w-full h-full appearance-none bg-white border border-[#D5D2C9] rounded-lg px-3 pr-10 text-xs font-poppins focus:outline-none focus:border-black cursor-pointer"
             >
-              <option value="Larnaca">Larnaca</option>
-              <option value="Limassol">Limassol</option>
-              <option value="Nicosia">Nicosia</option>
-              <option value="Paphos">Paphos</option>
-              <option value="Famagusta">Famagusta</option>
+              {BUSINESS_CITIES.map((cityOption) => (
+                <option key={cityOption} value={cityOption}>
+                  {cityOption}
+                </option>
+              ))}
             </select>
             <div className="absolute right-3 top-3.5 pointer-events-none text-neutral-500">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

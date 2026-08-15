@@ -28,13 +28,23 @@ import BookingTimeControlSection from "../create-business/BookingTimeControlSect
 import ClosedPeriodsSection from "../create-business/ClosedPeriodsSection";
 import LeadTimeSettingsSection from "../create-business/LeadTimeSettingsSection";
 import AdditionalInfoSection from "../create-business/AdditionalInfoSection";
-import TravelFeesSection from "../create-business/TravelFeesSection";
+import TravelFeesSection, { type TravelFeeRow } from "../create-business/TravelFeesSection";
 import { buildGoogleMapsEmbedUrl } from "@/lib/maps/google-maps";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/sonner";
-import type { BusinessCity, UpdateBusinessInput } from "@/lib/api/business";
-import { useBusinessQuery, useUpdateBusinessMutation } from "@/lib/business/hooks";
+import type { BusinessCity, BusinessMedia, UpdateBusinessInput } from "@/lib/api/business";
+import {
+  useBusinessMediaQuery,
+  useBusinessQuery,
+  useBusinessTravelSettingsQuery,
+  useDeleteBusinessMediaMutation,
+  useSetBusinessProfileMediaMutation,
+  useUpdateBusinessMutation,
+  useUpdateBusinessTravelSettingsMutation,
+  useUploadBusinessMediaMutation,
+} from "@/lib/business/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
+import { BUSINESS_CITIES } from "@/lib/constants/cities";
 
 interface DashboardCreateBusinessProps {
   onBack: () => void;
@@ -48,6 +58,21 @@ const timeOptions = [
   "12:00", "12:30", "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", "17:00", "17:30",
   "18:00", "18:30", "19:00", "19:30", "20:00", "20:30", "21:00", "21:30", "22:00", "22:30", "23:00", "23:30"
 ];
+
+const buildDefaultTravelFeeRows = (): TravelFeeRow[] =>
+  BUSINESS_CITIES.map((city) => ({ name: city, active: false, fee: "0.00" }));
+
+const centsToFeeText = (feeCents: number): string => (feeCents / 100).toFixed(2);
+
+const feeTextToCents = (fee: string): number | null => {
+  const normalized = fee.trim();
+
+  if (!/^\d+(\.\d{0,2})?$/.test(normalized)) {
+    return null;
+  }
+
+  return Math.round(Number(normalized) * 100);
+};
 
 export default function DashboardCreateBusiness({ onBack, mode = "create", businessId }: DashboardCreateBusinessProps) {
   const modeTitle = mode === "edit" ? "Edit Business" : mode === "view" ? "View Business" : "Create Business";
@@ -124,14 +149,6 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
   const removeCustomCategory = (cat: string) => {
     setCustomCategories(customCategories.filter((c) => c !== cat));
   };
-
-  // Photos List
-  const [photos, setPhotos] = useState<string[]>([
-    "/businessProfilePage/businessProfileImage.jpg",
-    "/businessProfilePage/businessProfileImage2.jpg",
-    "/businessProfilePage/businessProfileImage3.jpg"
-  ]);
-  const [showPhotoMenuIdx, setShowPhotoMenuIdx] = useState<number | null>(null);
 
   // See-All Images View states
   const [viewingAllImages, setViewingAllImages] = useState(false);
@@ -240,14 +257,7 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
   };
 
   // Travel Fees states
-  const [cityFees, setCityFees] = useState([
-    { name: "Larnaca", active: true, fee: "0.00" },
-    { name: "Limasol", active: false, fee: "20.00" },
-    { name: "Nicosia", active: false, fee: "0.00" },
-    { name: "Paphos", active: false, fee: "30.00" },
-    { name: "Ayia Napa", active: false, fee: "40.00" },
-    { name: "Protaras", active: false, fee: "50.00" }
-  ]);
+  const [cityFees, setCityFees] = useState<TravelFeeRow[]>(buildDefaultTravelFeeRows);
   const toggleCityActive = (idx: number) => {
     const updated = [...cityFees];
     updated[idx].active = !updated[idx].active;
@@ -278,12 +288,46 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     error: businessError,
   } = useBusinessQuery(mode !== "create" ? businessId : undefined);
   const updateBusinessMutation = useUpdateBusinessMutation();
+  const {
+    data: businessMedia = [],
+    isError: isBusinessMediaError,
+    error: businessMediaError,
+  } = useBusinessMediaQuery(mode !== "create" ? businessId : undefined);
+  const {
+    data: travelSettings,
+    isError: isTravelSettingsError,
+    error: travelSettingsError,
+  } = useBusinessTravelSettingsQuery(mode !== "create" ? businessId : undefined);
+  const uploadBusinessMediaMutation = useUploadBusinessMediaMutation();
+  const deleteBusinessMediaMutation = useDeleteBusinessMediaMutation();
+  const setBusinessProfileMediaMutation = useSetBusinessProfileMediaMutation();
+  const updateBusinessTravelSettingsMutation = useUpdateBusinessTravelSettingsMutation();
+  const canMutateMedia = mode === "edit" && Boolean(businessId);
+  const displayMedia = [...businessMedia].sort((left, right) => {
+    if (left.role !== right.role) {
+      return left.role === "PROFILE" ? -1 : 1;
+    }
+
+    return left.sortOrder - right.sortOrder;
+  });
 
   useEffect(() => {
     if (isBusinessError) {
       toast.error(toUserMessage(businessError));
     }
   }, [isBusinessError, businessError]);
+
+  useEffect(() => {
+    if (isBusinessMediaError) {
+      toast.error(toUserMessage(businessMediaError));
+    }
+  }, [isBusinessMediaError, businessMediaError]);
+
+  useEffect(() => {
+    if (isTravelSettingsError) {
+      toast.error(toUserMessage(travelSettingsError));
+    }
+  }, [isTravelSettingsError, travelSettingsError]);
 
   const matchCategoryOption = (value: string): string =>
     serviceCategoryOptions.find((option) => option.toUpperCase() === value.toUpperCase()) ?? value;
@@ -312,16 +356,62 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     setRoomNo(business.address.aptRoom ?? "");
     setSelectedCategory(matchCategoryOption(business.category));
     setSelectedSubcategories(business.subcategories.map(matchCategoryOption));
-    if (business.location?.searchQuery) {
-      setSearchLocation(business.location.searchQuery);
-      setMapUrl(buildGoogleMapsEmbedUrl(business.location.searchQuery));
+    // Registration persists the owner-selected shop location as Business.location
+    // {lat, lng, searchQuery}. The map must reflect that exact spot, so lat/lng (the
+    // precise pin) takes priority over the human-readable searchQuery text, which is
+    // only used to fill the search box display and as a fallback when coordinates are
+    // unavailable. The structured address is a last resort for businesses with no
+    // persisted location at all — it must never override real registration coordinates.
+    if (business.location) {
+      const { lat, lng, searchQuery } = business.location;
+      setMapUrl(buildGoogleMapsEmbedUrl(`${lat},${lng}`));
+      setSearchLocation(searchQuery ?? `${lat}, ${lng}`);
+    } else {
+      const structuredAddress = [
+        business.address.streetNumber,
+        business.address.streetName,
+        business.address.area,
+        business.address.city,
+      ]
+        .filter(Boolean)
+        .join(", ");
+
+      if (structuredAddress) {
+        setSearchLocation(structuredAddress);
+        setMapUrl(buildGoogleMapsEmbedUrl(structuredAddress));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [business?.id]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const handleSaveChanges = () => {
-    if (mode !== "edit" || !businessId || updateBusinessMutation.isPending) {
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!travelSettings) {
+      return;
+    }
+
+    const byCity = new Map(travelSettings.cities.map((setting) => [setting.city, setting]));
+    setCityFees(
+      BUSINESS_CITIES.map((city) => {
+        const setting = byCity.get(city);
+        return {
+          name: city,
+          active: setting?.active ?? false,
+          fee: centsToFeeText(setting?.feeCents ?? 0),
+        };
+      }),
+    );
+  }, [travelSettings]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const handleSaveChanges = async () => {
+    if (
+      mode !== "edit" ||
+      !businessId ||
+      updateBusinessMutation.isPending ||
+      updateBusinessTravelSettingsMutation.isPending
+    ) {
       onBack();
       return;
     }
@@ -344,12 +434,95 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     }
     if (searchLocation) input.searchQuery = searchLocation;
 
-    updateBusinessMutation.mutate(
-      { businessId, input },
+    const travelSettingsInput = [];
+
+    for (const row of cityFees) {
+      const feeCents = feeTextToCents(row.fee);
+
+      if (feeCents === null) {
+        toast.error("Enter a valid travel fee.");
+        return;
+      }
+
+      travelSettingsInput.push({
+        city: row.name as BusinessCity,
+        active: row.active,
+        feeCents,
+      });
+    }
+
+    try {
+      await updateBusinessMutation.mutateAsync({ businessId, input });
+    } catch (error) {
+      toast.error(toUserMessage(error));
+      return;
+    }
+
+    try {
+      await updateBusinessTravelSettingsMutation.mutateAsync({
+        businessId,
+        cities: travelSettingsInput,
+      });
+      toast.success("Business updated");
+      onBack();
+    } catch (error) {
+      toast.error(`Business details saved, but travel fees could not be saved. ${toUserMessage(error)}`);
+    }
+  };
+
+  const handleUploadImages = async (files: FileList) => {
+    if (!businessId || !canMutateMedia || uploadBusinessMediaMutation.isPending) {
+      return;
+    }
+
+    const selectedFiles = Array.from(files).filter((file) => file.type.startsWith("image/"));
+
+    if (selectedFiles.length !== files.length) {
+      toast.error("Only image files can be uploaded.");
+    }
+
+    if (selectedFiles.length === 0) {
+      return;
+    }
+
+    try {
+      for (const file of selectedFiles) {
+        await uploadBusinessMediaMutation.mutateAsync({ businessId, file });
+      }
+      toast.success(selectedFiles.length === 1 ? "Image uploaded" : "Images uploaded");
+    } catch (error) {
+      toast.error(toUserMessage(error));
+    }
+  };
+
+  const handleDeleteImage = (media: BusinessMedia) => {
+    if (!businessId || !canMutateMedia || deleteBusinessMediaMutation.isPending) {
+      return;
+    }
+
+    deleteBusinessMediaMutation.mutate(
+      { businessId, mediaId: media.id, role: media.role },
       {
         onSuccess: () => {
-          toast.success("Business updated");
-          onBack();
+          toast.success("Image deleted");
+        },
+        onError: (error) => {
+          toast.error(toUserMessage(error));
+        },
+      },
+    );
+  };
+
+  const handleMakeProfilePic = (media: BusinessMedia) => {
+    if (!businessId || !canMutateMedia || setBusinessProfileMediaMutation.isPending) {
+      return;
+    }
+
+    setBusinessProfileMediaMutation.mutate(
+      { businessId, mediaId: media.id },
+      {
+        onSuccess: () => {
+          toast.success("Profile image updated");
         },
         onError: (error) => {
           toast.error(toUserMessage(error));
@@ -409,10 +582,9 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
 
         {/* Photos Grid (Frame 2147239298 & Frame 2147240056) */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-[20px] max-w-[1095px] w-full relative">
-          {/* Duplicate to simulate a filled grid matching the 2nd screenshot if we have 3 photos */}
-          {[...photos, ...photos].map((src, idx) => (
-            <div key={idx} className="relative w-full aspect-square rounded-[12px] bg-[#D9D9D9] border border-neutral-200">
-              <Image src={src} className="w-full h-full object-cover rounded-[12px]" alt={`Business photo ${idx + 1}`} fill />
+          {displayMedia.map((media, idx) => (
+            <div key={media.id} className="relative w-full aspect-square rounded-[12px] bg-[#D9D9D9] border border-neutral-200">
+              <Image src={media.url} className="w-full h-full object-cover rounded-[12px]" alt={`Business photo ${idx + 1}`} fill />
 
               {/* White circular 3-dot overlay button */}
               <button
@@ -432,24 +604,22 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
                   onClick={(e) => e.stopPropagation()}
                   className="absolute right-3 top-10 bg-white border border-neutral-100 rounded-lg shadow-xl py-1 w-[140px] z-20"
                 >
+                  {canMutateMedia && media.role !== "PROFILE" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleMakeProfilePic(media);
+                        setActiveMenuIdx(null);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs font-medium text-neutral-800 hover:bg-neutral-50 border-b border-neutral-100/50 cursor-pointer block"
+                    >
+                      Make profile pic
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
-                      const origIdx = idx % photos.length;
-                      const updated = [...photos];
-                      const item = updated.splice(origIdx, 1)[0];
-                      updated.unshift(item);
-                      setPhotos(updated);
-                      setActiveMenuIdx(null);
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs font-medium text-neutral-800 hover:bg-neutral-50 border-b border-neutral-100/50 cursor-pointer block"
-                  >
-                    Make profile pic
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPreviewImage(src);
+                      setPreviewImage(media.url);
                       setActiveMenuIdx(null);
                     }}
                     className="w-full text-left px-3 py-2 text-xs font-medium text-neutral-800 hover:bg-neutral-50 border-b border-neutral-100/50 flex items-center gap-2 cursor-pointer"
@@ -457,18 +627,19 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
                     <HugeiconsIcon icon={ViewIcon} className="w-3.5 h-3.5 text-neutral-600" />
                     <span>View</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const origIdx = idx % photos.length;
-                      setPhotos(photos.filter((_, i) => i !== origIdx));
-                      setActiveMenuIdx(null);
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer"
-                  >
-                    <HugeiconsIcon icon={Delete02Icon} className="w-3.5 h-3.5 text-red-600" />
-                    <span>Delete</span>
-                  </button>
+                  {canMutateMedia && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleDeleteImage(media);
+                        setActiveMenuIdx(null);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer"
+                    >
+                      <HugeiconsIcon icon={Delete02Icon} className="w-3.5 h-3.5 text-red-600" />
+                      <span>Delete</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -599,12 +770,20 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
           removeCustomCategory={removeCustomCategory}
         />
 
-        {/* 8. Photos Section */}
-        <PhotosSection
-          photos={photos}
-          setPhotos={setPhotos}
-          onSeeAll={() => setViewingAllImages(true)}
-        />
+      </fieldset>
+
+      {/* 8. Photos Section */}
+      <PhotosSection
+        photos={displayMedia}
+        onSeeAll={() => setViewingAllImages(true)}
+        onUploadImages={handleUploadImages}
+        onDeleteImage={handleDeleteImage}
+        onMakeProfilePic={handleMakeProfilePic}
+        canMutate={canMutateMedia}
+        isUploading={uploadBusinessMediaMutation.isPending}
+      />
+
+      <fieldset disabled={isReadOnly} className="contents">
 
         {/* 9. Opening Hours Section */}
         <OpeningHoursSection
@@ -700,7 +879,11 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
 
           <button
             onClick={handleSaveChanges}
-            disabled={isReadOnly || updateBusinessMutation.isPending}
+            disabled={
+              isReadOnly ||
+              updateBusinessMutation.isPending ||
+              updateBusinessTravelSettingsMutation.isPending
+            }
             className="h-9 px-6 bg-[#1C1B1C] hover:bg-black text-white font-poppins font-medium text-xs rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Save changes

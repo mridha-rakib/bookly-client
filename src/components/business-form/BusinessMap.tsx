@@ -1,7 +1,19 @@
 "use client";
 
+// Leaflet's own stylesheet must be loaded or the map container renders without its
+// sizing/positioning rules — tiles then stack into a small, non-interactive-looking
+// thumbnail instead of a real pannable/zoomable map. Importing the CSS shipped by the
+// already-installed `leaflet` package (rather than a CDN link) keeps this self-contained
+// and version-locked to package.json, and is Next.js's documented exception allowing
+// global CSS imports from node_modules inside any component.
+import "leaflet/dist/leaflet.css";
+
 import React, { useEffect, useRef, useState } from "react";
 import L from "leaflet";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { FullScreenIcon, MinimizeScreenIcon } from "@hugeicons/core-free-icons";
+
+import { toast } from "@/components/ui/sonner";
 
 interface BusinessMapProps {
   lat: number;
@@ -21,7 +33,9 @@ export default function BusinessMap({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
+  const hasZoomedToResolvedRef = useRef(false);
   const [searching, setSearching] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Initialize Map
   useEffect(() => {
@@ -79,32 +93,69 @@ export default function BusinessMap({
     mapRef.current = map;
     markerRef.current = marker;
 
+    // The map is created inside a next/dynamic(ssr:false) client component, so its
+    // container size can be off by a frame on first paint; recalculate once mounted
+    // (same fix already used by ExploreMap.tsx elsewhere in this app).
+    const invalidateTimeout = setTimeout(() => map.invalidateSize(), 100);
+
     return () => {
+      clearTimeout(invalidateTimeout);
       map.remove();
       mapRef.current = null;
       markerRef.current = null;
     };
   }, []);
 
-  // Update marker position if lat/lng props change from outside
+  // Update marker position if lat/lng props change from outside (geocode result,
+  // location search, or a resolved address). The very first real position update zooms
+  // in from the broad default view; later updates (including manual drag/click, which
+  // also flow through this prop) preserve whatever zoom the user is currently at.
   useEffect(() => {
     if (mapRef.current && markerRef.current) {
       const currentPos = markerRef.current.getLatLng();
       if (currentPos.lat !== lat || currentPos.lng !== lng) {
         const newPos = L.latLng(lat, lng);
         markerRef.current.setLatLng(newPos);
-        mapRef.current.setView(newPos, mapRef.current.getZoom());
+        const targetZoom = hasZoomedToResolvedRef.current ? mapRef.current.getZoom() : 16;
+        hasZoomedToResolvedRef.current = true;
+        mapRef.current.setView(newPos, targetZoom);
       }
     }
   }, [lat, lng]);
 
+  // Fullscreen toggles the *same* map container's CSS size (never a second Leaflet
+  // instance), so all state — center, zoom, marker — carries over automatically. Leaflet
+  // only needs to be told the container size changed after the layout settles.
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const invalidateTimeout = setTimeout(() => mapRef.current?.invalidateSize(), 250);
+    return () => clearTimeout(invalidateTimeout);
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsFullscreen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isFullscreen]);
+
   const handleSearchSubmit = async () => {
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim() || searching) return;
 
     setSearching(true);
     try {
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+        `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=cy&q=${encodeURIComponent(
           searchQuery
         )}`
       );
@@ -115,10 +166,11 @@ export default function BusinessMap({
         const newLng = parseFloat(firstResult.lon);
         onChange(newLat, newLng);
       } else {
-        alert("Location not found. Please try a different search.");
+        toast.error("Location not found. Please try a different search.");
       }
     } catch (error) {
       console.error("Search error:", error);
+      toast.error("Could not search for that location. Please try again.");
     } finally {
       setSearching(false);
     }
@@ -126,7 +178,7 @@ export default function BusinessMap({
 
   const handleGeolocation = () => {
     if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser.");
+      toast.error("Geolocation is not supported by your browser.");
       return;
     }
 
@@ -138,13 +190,31 @@ export default function BusinessMap({
       },
       (error) => {
         console.error("Geolocation error:", error);
-        alert("Unable to retrieve your location. Make sure location permissions are enabled.");
+        toast.error("Unable to retrieve your location. Make sure location permissions are enabled.");
       }
     );
   };
 
   return (
-    <div className="relative w-full h-[320px] sm:h-[400px] md:h-[485px] rounded-2xl overflow-hidden shadow-inner border border-[#E8E8E4]">
+    <>
+      {/* Backdrop: only rendered in fullscreen mode. Sits behind the map container but
+          above the rest of the form, so clicks outside the map never reach the form
+          underneath while fullscreen is open. */}
+      {isFullscreen && (
+        <div
+          className="fixed inset-0 z-[90] bg-black/60"
+          onClick={() => setIsFullscreen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <div
+        className={
+          isFullscreen
+            ? "fixed inset-4 sm:inset-8 md:inset-12 z-[100] rounded-2xl overflow-hidden shadow-2xl border border-[#E8E8E4]"
+            : "relative w-full h-[320px] sm:h-[400px] md:h-[485px] rounded-2xl overflow-hidden shadow-inner border border-[#E8E8E4]"
+        }
+      >
       {/* Map Element */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
@@ -206,6 +276,18 @@ export default function BusinessMap({
           />
         </svg>
       </button>
-    </div>
+
+      {/* Fullscreen Toggle Button */}
+      <button
+        type="button"
+        onClick={() => setIsFullscreen((prev) => !prev)}
+        aria-label={isFullscreen ? "Exit fullscreen map" : "View map fullscreen"}
+        title={isFullscreen ? "Exit fullscreen map" : "View map fullscreen"}
+        className="absolute top-4 right-4 z-10 w-9 h-9 rounded-lg bg-white flex items-center justify-center shadow-md hover:scale-105 transition-all duration-150 cursor-pointer text-[#111111] border border-[#D3D1C7] active:scale-95"
+      >
+        <HugeiconsIcon icon={isFullscreen ? MinimizeScreenIcon : FullScreenIcon} className="w-5 h-5" />
+      </button>
+      </div>
+    </>
   );
 }
