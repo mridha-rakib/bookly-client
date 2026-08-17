@@ -96,3 +96,12 @@ export const useProfessionalRegistrationProgressQuery = (sessionId: string) =>
     enabled: Boolean(sessionId),
     retry: 1,
   });
+
+// GET /auth/me — the only source for a SUPERVISOR's (or STAFF's) businessId today; Business
+// Owners should keep using useMyBusinessProfileQuery (lib/business/hooks.ts), which is already
+// the established idiom for the Owner dashboard.
+export const useCurrentUserQuery = () =>
+  useQuery({
+    queryKey: ["auth", "me"],
+    queryFn: authApi.me,
+  });

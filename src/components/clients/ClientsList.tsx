@@ -7,20 +7,34 @@ import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import NotificationBell from "@/components/notifications/NotificationBell";
 
 interface Client {
+  /** Real Client id — absent only for legacy mock rows that predate the backend integration. */
+  id?: string;
   name: string;
   joined: string;
   phone: string;
-  visitText: string;
-  visitSub: string;
+  /** undefined => "—" (booking-derived, not available until the Booking domain exists). */
+  visitText?: string;
+  visitSub?: string;
   isNext?: boolean;
-  visits: number;
-  spent: string;
+  visits?: number;
+  spent?: string;
   tag: string | null;
   tagBg: string;
   tagColor: string;
   avatarBg: string;
   avatarText: string;
   avatar?: string;
+  /** "LINKED" clients are backed by a real Bookly Customer account (read-only identity). */
+  linkState?: "UNLINKED" | "LINKED" | "IDENTITY_CONFLICT";
+}
+
+export interface ClientsListMetrics {
+  totalClients: number;
+  newThisMonth: number;
+  /** undefined => rendered as "—": depends on the Booking/Payment domains, not built yet. */
+  activeThisMonth?: number;
+  atRisk?: number;
+  avgLifetimeValue?: string;
 }
 
 interface ClientsListProps {
@@ -31,15 +45,26 @@ interface ClientsListProps {
   setEditingClientIndex: (idx: number | null) => void;
   openActionIdx: number | null;
   setOpenActionIdx: (idx: number | null) => void;
-  
-  setClientFirstName: (val: string) => void;
-  setClientLastName: (val: string) => void;
-  setClientPhone: (val: string) => void;
-  setClientTagState: (val: string) => void;
+
+  setClientFirstName?: (val: string) => void;
+  setClientLastName?: (val: string) => void;
+  setClientPhone?: (val: string) => void;
+  setClientTagState?: (val: string) => void;
   setClientPhoneCode?: (val: string) => void;
   setClientPhoneFlag?: (val: string) => void;
   setClientAvatar?: (val: string) => void;
   isStaffDashboard?: boolean;
+  /** When provided, real metrics replace the header cards' hardcoded numbers. */
+  metrics?: ClientsListMetrics;
+  /** Real Staff names for the filter dropdown; falls back to the demo list when absent. */
+  staffOptions?: string[];
+  /** No Client<->Staff relationship exists yet — selecting a Staff filter has no effect. */
+  disableStaffFilter?: boolean;
+  /** Real navigation — bypasses the legacy name/phone-string-parsing fallback below. */
+  onViewClient?: (client: Client) => void;
+  onEditClient?: (client: Client) => void;
+  onDeleteClient?: (client: Client) => void;
+  onArchivedClientsClick?: () => void;
 }
 
 export default function ClientsList({
@@ -57,7 +82,14 @@ export default function ClientsList({
   setClientPhoneCode,
   setClientPhoneFlag,
   setClientAvatar,
-  isStaffDashboard = false
+  isStaffDashboard = false,
+  metrics,
+  staffOptions,
+  disableStaffFilter = false,
+  onViewClient,
+  onEditClient,
+  onDeleteClient,
+  onArchivedClientsClick
 }: ClientsListProps) {
   const [dropdownCoords, setDropdownCoords] = React.useState<{ top: number; left: number } | null>(null);
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -67,8 +99,10 @@ export default function ClientsList({
   const [isStaffDropdownOpen, setIsStaffDropdownOpen] = React.useState(false);
 
   const tagsList = ["All Tags", "VIP", "Regular", "New", "No-show"];
-  const staffList = ["All Staff", "Elena G.", "Valeriia M.", "Rafael A.", "Nicolas K."];
+  const staffList = ["All Staff", ...(staffOptions ?? ["Elena G.", "Valeriia M.", "Rafael A.", "Nicolas K."])];
 
+  // Demo-only fake Client<->Staff assignment — never used once disableStaffFilter is set (real
+  // data has no such relationship yet; it depends on the Booking domain, see project report).
   const getClientStaff = (clientName: string) => {
     const staffListNames = ["Elena G.", "Valeriia M.", "Rafael A.", "Nicolas K."];
     const charCodeSum = clientName.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -83,8 +117,10 @@ export default function ClientsList({
 
     const matchesTag = selectedTag === "All Tags" || client.tag === selectedTag;
 
-    const clientStaff = getClientStaff(client.name);
-    const matchesStaff = selectedStaff === "All Staff" || clientStaff === selectedStaff;
+    const matchesStaff =
+      disableStaffFilter ||
+      selectedStaff === "All Staff" ||
+      getClientStaff(client.name) === selectedStaff;
 
     return matchesSearch && matchesTag && matchesStaff;
   });
@@ -95,9 +131,9 @@ export default function ClientsList({
       c.name,
       c.phone,
       c.joined,
-      c.visitText,
-      c.visits.toString(),
-      c.spent,
+      c.visitText ?? "",
+      (c.visits ?? "").toString(),
+      c.spent ?? "",
       c.tag || ""
     ]);
     const csvContent = "data:text/csv;charset=utf-8," 
@@ -128,23 +164,27 @@ export default function ClientsList({
         {/* Metrics cards container */}
         <div className="grid grid-cols-2 md:grid-cols-5 bg-white border border-[#E8E8E6] rounded-xl shrink-0 overflow-hidden">
           <div className="p-4 flex flex-col justify-center border-b border-r border-[#E8E8E6] md:border-0">
-            <span className="text-lg font-semibold text-[#1A1A1A]">18</span>
+            <span className="text-lg font-semibold text-[#1A1A1A]">{metrics ? metrics.totalClients : 18}</span>
             <span className="text-xs text-[#888780] font-light mt-0.5">Total clients</span>
           </div>
           <div className="p-4 flex flex-col justify-center border-b border-[#E8E8E6] md:border-l md:border-0">
-            <span className="text-lg font-semibold text-[#1A1A1A]">12</span>
+            <span className="text-lg font-semibold text-[#1A1A1A]">
+              {metrics ? (metrics.activeThisMonth ?? "—") : 12}
+            </span>
             <span className="text-xs text-[#888780] font-light mt-0.5">Active this month</span>
           </div>
           <div className="p-4 flex flex-col justify-center border-b border-r border-[#E8E8E6] md:border-l md:border-0">
-            <span className="text-lg font-semibold text-[#1D9E75]">3</span>
+            <span className="text-lg font-semibold text-[#1D9E75]">{metrics ? metrics.newThisMonth : 3}</span>
             <span className="text-xs text-[#888780] font-light mt-0.5">New this month</span>
           </div>
           <div className="p-4 flex flex-col justify-center border-b border-[#E8E8E6] md:border-l md:border-0">
-            <span className="text-lg font-semibold text-[#E24B4A]">2</span>
+            <span className="text-lg font-semibold text-[#E24B4A]">{metrics ? (metrics.atRisk ?? "—") : 2}</span>
             <span className="text-xs text-[#888780] font-light mt-0.5">At-risk</span>
           </div>
           <div className="p-4 flex flex-col justify-center col-span-2 md:col-span-1 md:border-l border-[#E8E8E6]">
-            <span className="text-lg font-semibold text-[#1A1A1A]">€504</span>
+            <span className="text-lg font-semibold text-[#1A1A1A]">
+              {metrics ? (metrics.avgLifetimeValue ?? "—") : "€504"}
+            </span>
             <span className="text-xs text-[#888780] font-light mt-0.5">Avg. lifetime value</span>
           </div>
         </div>
@@ -248,13 +288,23 @@ export default function ClientsList({
             )}
           </div>
 
-          {/* Add Client Button */}
-          <button onClick={() => setIsAddingClient(true)} className="h-9 px-4 bg-[#111111] text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-neutral-800 transition-colors w-full lg:w-auto">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            <span>Add client</span>
-          </button>
+          <div className="flex items-center gap-2 w-full lg:w-auto">
+            {onArchivedClientsClick && (
+              <button
+                onClick={onArchivedClientsClick}
+                className="h-9 px-3 border border-[#111111] rounded-lg bg-white text-xs font-semibold text-[#111111] hover:bg-neutral-50 transition-colors whitespace-nowrap"
+              >
+                Archived clients
+              </button>
+            )}
+            {/* Add Client Button */}
+            <button onClick={() => setIsAddingClient(true)} className="h-9 px-4 bg-[#111111] text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-neutral-800 transition-colors w-full lg:w-auto">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              <span>Add client</span>
+            </button>
+          </div>
         </div>
 
         {/* Clients Table Container */}
@@ -297,18 +347,20 @@ export default function ClientsList({
                     <td className="px-5 py-3.5">
                       <div className="flex flex-col">
                         <span className={`font-medium ${client.isNext ? "text-[#1D9E75]" : "text-[#1A1A1A]"}`}>
-                          {client.isNext ? `↑ ${client.visitText}` : client.visitText}
+                          {client.visitText ? (client.isNext ? `↑ ${client.visitText}` : client.visitText) : "—"}
                         </span>
-                        <span className="text-[10px] text-[#B4B2A9] mt-0.5">{client.visitSub}</span>
+                        {client.visitSub && (
+                          <span className="text-[10px] text-[#B4B2A9] mt-0.5">{client.visitSub}</span>
+                        )}
                       </div>
                     </td>
                     {/* Visits */}
                     <td className="px-5 py-3.5 text-[#1A1A1A] font-semibold">
-                      {client.visits}
+                      {client.visits ?? "—"}
                     </td>
                     {/* Spent */}
                     <td className="px-5 py-3.5 text-[#1A1A1A] font-semibold">
-                      {client.spent}
+                      {client.spent ?? "—"}
                     </td>
                     {/* Tags */}
                     <td className="px-5 py-3.5">
@@ -359,10 +411,16 @@ export default function ClientsList({
                                 e.stopPropagation();
                                 setOpenActionIdx(null);
                                 const c = clientsData[idx];
+
+                                if (onViewClient) {
+                                  onViewClient(c);
+                                  return;
+                                }
+
                                 const parts = c.name.split(" ");
-                                setClientFirstName(parts[0] || "");
-                                setClientLastName(parts.slice(1).join(" ") || "");
-                                
+                                setClientFirstName?.(parts[0] || "");
+                                setClientLastName?.(parts.slice(1).join(" ") || "");
+
                                 let phoneSuffix = c.phone || "";
                                 if (c.phone && c.phone.startsWith("+")) {
                                   const pParts = c.phone.split(" ");
@@ -384,8 +442,8 @@ export default function ClientsList({
                                   if (setClientPhoneCode) setClientPhoneCode("+357");
                                   if (setClientPhoneFlag) setClientPhoneFlag("cy");
                                 }
-                                setClientPhone(phoneSuffix);
-                                setClientTagState(c.tag || "VIP");
+                                setClientPhone?.(phoneSuffix);
+                                setClientTagState?.(c.tag || "VIP");
                                 if (setClientAvatar) setClientAvatar(c.avatar || "");
                                 setIsViewingClient(true);
                                 setEditingClientIndex(idx);
@@ -399,10 +457,16 @@ export default function ClientsList({
                                 e.stopPropagation();
                                 setOpenActionIdx(null);
                                 const c = clientsData[idx];
+
+                                if (onEditClient) {
+                                  onEditClient(c);
+                                  return;
+                                }
+
                                 const parts = c.name.split(" ");
-                                setClientFirstName(parts[0] || "");
-                                setClientLastName(parts.slice(1).join(" ") || "");
-                                
+                                setClientFirstName?.(parts[0] || "");
+                                setClientLastName?.(parts.slice(1).join(" ") || "");
+
                                 let phoneSuffix = c.phone || "";
                                 if (c.phone && c.phone.startsWith("+")) {
                                   const pParts = c.phone.split(" ");
@@ -424,8 +488,8 @@ export default function ClientsList({
                                   if (setClientPhoneCode) setClientPhoneCode("+357");
                                   if (setClientPhoneFlag) setClientPhoneFlag("cy");
                                 }
-                                setClientPhone(phoneSuffix);
-                                setClientTagState(c.tag || "VIP");
+                                setClientPhone?.(phoneSuffix);
+                                setClientTagState?.(c.tag || "VIP");
                                 if (setClientAvatar) setClientAvatar(c.avatar || "");
                                 setIsViewingClient(false);
                                 setEditingClientIndex(idx);
@@ -438,10 +502,17 @@ export default function ClientsList({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setOpenActionIdx(null);
+                                const c = clientsData[idx];
+
+                                if (onDeleteClient) {
+                                  onDeleteClient(c);
+                                  return;
+                                }
+
                                 setClientsData(clientsData.filter((_, i) => i !== idx));
                               }}
                             >
-                              Delete client
+                              {onDeleteClient ? "Archive client" : "Delete client"}
                             </button>
                           </div>
                         </>

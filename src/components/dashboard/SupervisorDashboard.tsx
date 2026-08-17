@@ -16,10 +16,11 @@ import {
 } from "@hugeicons/core-free-icons";
 
 // Reused components
-import { initialBookingsData, initialClientsData } from "@/utils/dashboardMockData";
+import { initialBookingsData } from "@/utils/dashboardMockData";
 import { CompleteModal, NoShowModal } from "@/components/dashboard/CalendarActionModals";
 import WaiveChargeModal from "@/components/dashboard/WaiveChargeModal";
 import ClientBookingHistoryCard from "@/components/clients/ClientBookingHistoryCard";
+import { useCurrentUserQuery } from "@/lib/auth/hooks";
 
 // Supervisor Customized Sub-components
 import SupervisorSidebar from "./SupervisorSidebar";
@@ -31,9 +32,7 @@ import SupervisorStaffList from "./SupervisorStaffList";
 import DashboardCalendar from "@/components/dashboard/DashboardCalendar";
 import DashboardBookingsList from "@/components/dashboard/DashboardBookingsList";
 import DashboardBookingForm from "@/components/dashboard/DashboardBookingForm";
-import ClientsList from "@/components/clients/ClientsList";
-import ClientDetails from "@/components/clients/ClientDetails";
-import ClientForm from "@/components/clients/ClientForm";
+import ClientsPage from "@/components/clients/ClientsPage";
 import ContactSupport from "@/components/support/ContactSupport";
 import DashboardReviewsList from "@/components/dashboard/DashboardReviewsList";
 
@@ -50,23 +49,6 @@ interface Booking {
   status: string;
   amount: string;
   paymentType: string;
-}
-
-interface Client {
-  name: string;
-  joined: string;
-  phone: string;
-  visitText: string;
-  visitSub: string;
-  isNext?: boolean;
-  visits: number;
-  spent: string;
-  tag: string | null;
-  tagBg: string;
-  tagColor: string;
-  avatarBg: string;
-  avatarText: string;
-  avatar?: string;
 }
 
 export default function SupervisorDashboard() {
@@ -121,27 +103,10 @@ export default function SupervisorDashboard() {
   const [showWaiveFeeModal, setShowWaiveFeeModal] = useState(false);
   const [showNoShowModal, setShowNoShowModal] = useState(false);
 
-  // Clients Data states
-  const [clientsData, setClientsData] = useState<Client[]>(initialClientsData as Client[]);
-  const [isAddingClient, setIsAddingClient] = useState(false);
-  const [isViewingClient, setIsViewingClient] = useState(false);
-  const [editingClientIndex, setEditingClientIndex] = useState<number | null>(null);
-  const [openActionIdx, setOpenActionIdx] = useState<number | null>(null);
-
-  // Add Client Form states
-  const [clientFirstName, setClientFirstName] = useState("");
-  const [clientLastName, setClientLastName] = useState("");
-  const [clientPhone, setClientPhone] = useState("");
-  const [clientEmail, setClientEmail] = useState("");
-  const [clientDob, setClientDob] = useState("1/6/2026");
-  const [clientGender, setClientGender] = useState("Male");
-  const [clientCity, setClientCity] = useState("Limasol");
-  const [clientPropertyType, setClientPropertyType] = useState("");
-  const [clientArea, setClientArea] = useState("");
-  const [clientStreetName, setClientStreetName] = useState("");
-  const [clientStreetNumber, setClientStreetNumber] = useState("");
-  const [clientFloor, setClientFloor] = useState("");
-  const [clientAptNo, setClientAptNo] = useState("");
+  // Clients — real Client Management data/hooks live in ClientsPage; this page only resolves
+  // the Supervisor's businessId via their active Staff membership (see /auth/me).
+  const currentUserQuery = useCurrentUserQuery();
+  const clientsBusinessId = currentUserQuery.data?.business?.id;
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -199,55 +164,6 @@ export default function SupervisorDashboard() {
     };
     setBookingsData([newB, ...bookingsData]);
     setIsCreatingBooking(false);
-  };
-
-  const handleAddClient = () => {
-    if (!clientFirstName) return;
-    const newC: Client = {
-      name: `${clientFirstName} ${clientLastName}`,
-      joined: new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }),
-      phone: clientPhone,
-      visits: 0,
-      spent: "€0",
-      visitText: "No visits yet",
-      visitSub: "add booking to get visit data",
-      tag: "Active",
-      tagBg: "bg-emerald-50",
-      tagColor: "text-emerald-700",
-      avatarBg: "bg-[#10745B]/10",
-      avatarText: `${clientFirstName[0]}${clientLastName[0] || ""}`.toUpperCase()
-    };
-    setClientsData([newC, ...clientsData]);
-    setIsAddingClient(false);
-  };
-
-  const handleEditClient = (idx: number) => {
-    const c = clientsData[idx];
-    const names = c.name.split(" ");
-    setClientFirstName(names[0] || "");
-    setClientLastName(names.slice(1).join(" ") || "");
-    setClientPhone(c.phone);
-    setEditingClientIndex(idx);
-    setIsAddingClient(true);
-  };
-
-  const handleSaveClientChanges = () => {
-    if (editingClientIndex !== null) {
-      const updated = [...clientsData];
-      updated[editingClientIndex] = {
-        ...updated[editingClientIndex],
-        name: `${clientFirstName} ${clientLastName}`,
-        phone: clientPhone
-      };
-      setClientsData(updated);
-      setIsAddingClient(false);
-      setEditingClientIndex(null);
-    }
-  };
-
-  const handleDeleteClient = (idx: number) => {
-    setClientsData(clientsData.filter((_, i) => i !== idx));
-    setOpenActionIdx(null);
   };
 
   // Render components mapped to Tab selections
@@ -407,99 +323,7 @@ export default function SupervisorDashboard() {
     }
 
     if (activeTab === "Clients") {
-      if (isAddingClient) {
-        return (
-          <ClientForm
-            editingClientIndex={editingClientIndex}
-            isViewingClient={isViewingClient}
-            setIsAddingClient={setIsAddingClient}
-            setEditingClientIndex={setEditingClientIndex}
-            setIsViewingClient={setIsViewingClient}
-            clientFirstName={clientFirstName}
-            setClientFirstName={setClientFirstName}
-            clientLastName={clientLastName}
-            setClientLastName={setClientLastName}
-            clientPhone={clientPhone}
-            setClientPhone={setClientPhone}
-            clientEmail={clientEmail}
-            setClientEmail={setClientEmail}
-            clientDob={clientDob}
-            setClientDob={setClientDob}
-            clientGender={clientGender}
-            setClientGender={setClientGender}
-            clientCity={clientCity}
-            setClientCity={setClientCity}
-            clientPropertyType={clientPropertyType}
-            setClientPropertyType={setClientPropertyType}
-            clientArea={clientArea}
-            setClientArea={setClientArea}
-            clientStreetName={clientStreetName}
-            setClientStreetName={setClientStreetName}
-            clientStreetNumber={clientStreetNumber}
-            setClientStreetNumber={setClientStreetNumber}
-            clientFloor={clientFloor}
-            setClientFloor={setClientFloor}
-            clientAptNo={clientAptNo}
-            setClientAptNo={setClientAptNo}
-            clientDirections=""
-            setClientDirections={() => {}}
-            clientNotes=""
-            setClientNotes={() => {}}
-            clientTag=""
-            setClientTagState={() => {}}
-            clientAvatar=""
-            clientAvatarInputRef={{ current: null }}
-            handleClientAvatarChange={() => {}}
-            clientPhoneCode="+357"
-            setClientPhoneCode={() => {}}
-            clientPhoneFlag="cy"
-            setClientPhoneFlag={() => {}}
-            isClientPhoneDropdownOpen={false}
-            setIsClientPhoneDropdownOpen={() => {}}
-            phoneCountries={[]}
-            handleSaveClient={handleSaveClientChanges}
-            handleAddClient={handleAddClient}
-          />
-        );
-      }
-
-      if (isViewingClient && viewingBookingIndex !== null) {
-        return (
-          <ClientDetails
-            clientFirstName={clientFirstName}
-            clientLastName={clientLastName}
-            clientEmail={clientEmail}
-            clientGender={clientGender}
-            clientDob={clientDob}
-            clientPhone={clientPhone}
-            clientCity={clientCity}
-            clientPropertyType={clientPropertyType}
-            clientArea={clientArea}
-            clientStreetName={clientStreetName}
-            clientStreetNumber={clientStreetNumber}
-            clientFloor={clientFloor}
-            clientAptNo={clientAptNo}
-            setIsViewingClient={setIsViewingClient}
-            setEditingClientIndex={setEditingClientIndex}
-          />
-        );
-      }
-
-      return (
-        <ClientsList
-          clientsData={clientsData}
-          setClientsData={setClientsData}
-          setIsAddingClient={setIsAddingClient}
-          setIsViewingClient={setIsViewingClient}
-          setEditingClientIndex={setEditingClientIndex}
-          openActionIdx={openActionIdx}
-          setOpenActionIdx={setOpenActionIdx}
-          setClientFirstName={setClientFirstName}
-          setClientLastName={setClientLastName}
-          setClientPhone={setClientPhone}
-          setClientTagState={() => {}}
-        />
-      );
+      return <ClientsPage businessId={clientsBusinessId} />;
     }
 
     if (activeTab === "All Bookings" || activeTab === "Upcoming" || activeTab === "Canceled") {

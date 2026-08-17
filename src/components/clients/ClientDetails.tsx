@@ -8,15 +8,15 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowLeft02Icon,
   PencilEdit02Icon,
-  Camera01Icon,
   UserIcon,
   Mail01Icon,
   IdentityCardIcon,
   Home03Icon,
   ArrowDown01Icon,
-  Search01Icon
+  Search01Icon,
+  UserCheck02Icon,
+  Calendar03Icon
 } from "@hugeicons/core-free-icons";
-import ClientBookingHistoryCard from "./ClientBookingHistoryCard";
 
 interface ClientDetailsProps {
   clientFirstName: string;
@@ -35,6 +35,8 @@ interface ClientDetailsProps {
   clientAvatar?: string;
   setIsViewingClient: (val: boolean) => void;
   setEditingClientIndex: (idx: number | null) => void;
+  /** True only for a Client backed by a real, linked Bookly Customer account. */
+  isLinked?: boolean;
 }
 
 export default function ClientDetails({
@@ -53,7 +55,8 @@ export default function ClientDetails({
   clientAptNo,
   clientAvatar,
   setIsViewingClient,
-  setEditingClientIndex
+  setEditingClientIndex,
+  isLinked = false
 }: ClientDetailsProps) {
   const [viewClientTab, setViewClientTab] = useState("PROFILE");
   const [historySearch, setHistorySearch] = useState("");
@@ -104,7 +107,13 @@ export default function ClientDetails({
         {viewClientTab === "PROFILE" ? (
           <div className="flex flex-col w-full bg-[#FFFFFF] border border-[#ECEBEF] rounded-2xl p-6 md:p-8 gap-6 shadow-sm">
             {/* Edit button */}
-            <div className="flex justify-end w-full">
+            <div className="flex justify-between items-center w-full flex-wrap gap-2">
+              {isLinked ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-[#E6F1FB] text-[#0C447C]">
+                  <HugeiconsIcon icon={UserCheck02Icon} className="w-3.5 h-3.5" />
+                  Linked Bookly account
+                </span>
+              ) : <span />}
               <button
                 onClick={() => setIsViewingClient(false)}
                 className="bg-[#0D0D0D] hover:bg-neutral-800 text-white rounded-lg px-4 py-2 text-xs font-semibold font-poppins flex items-center justify-center gap-1.5 transition-all shadow-sm"
@@ -129,7 +138,7 @@ export default function ClientDetails({
                 <div className="flex items-center gap-3 border border-[#ECEBEF] rounded-xl px-4 bg-[#FFFFFF] h-[60px] w-full select-none">
                   <HugeiconsIcon icon={UserIcon} className="w-5 h-5 text-[#111111]" />
                   <span className="font-poppins text-sm font-semibold text-[#111111]">
-                    {`${clientFirstName} ${clientLastName}`.trim() || "John Doe"}
+                    {`${clientFirstName} ${clientLastName}`.trim() || "—"}
                   </span>
                 </div>
               </div>
@@ -140,7 +149,7 @@ export default function ClientDetails({
                 <div className="flex items-center gap-3 border border-[#ECEBEF] rounded-xl px-4 bg-[#FFFFFF] h-[60px] w-full select-none">
                   <HugeiconsIcon icon={Mail01Icon} className="w-5 h-5 text-[#111111]" />
                   <span className="font-poppins text-sm font-semibold text-[#111111]">
-                    {clientEmail || "example@gmail.com"}
+                    {clientEmail || "—"}
                   </span>
                 </div>
               </div>
@@ -150,7 +159,7 @@ export default function ClientDetails({
                 <label className="font-poppins text-xs font-semibold text-[#111111] uppercase tracking-[0.09em]">Gender</label>
                 <div className="flex items-center border border-[#ECEBEF] rounded-xl px-4 bg-[#FFFFFF] h-[60px] w-full select-none">
                   <span className="font-poppins text-sm font-semibold text-[#111111]">
-                    {clientGender || "Male"}
+                    {clientGender || "—"}
                   </span>
                 </div>
               </div>
@@ -161,7 +170,7 @@ export default function ClientDetails({
                 <div className="flex items-center gap-3 border border-[#ECEBEF] rounded-xl px-4 bg-[#FFFFFF] h-[60px] w-full select-none">
                   <HugeiconsIcon icon={IdentityCardIcon} className="w-5 h-5 text-[#111111]" />
                   <span className="font-poppins text-sm font-semibold text-[#111111]">
-                    {clientDob || "1/1/2026"}
+                    {clientDob || "—"}
                   </span>
                 </div>
               </div>
@@ -172,7 +181,7 @@ export default function ClientDetails({
                 <div className="flex items-center gap-3 border border-[#ECEBEF] rounded-xl px-4 bg-[#FFFFFF] h-[60px] w-full select-none">
                   <Image src="/Icons/phone.svg" alt="Phone" className="w-5 h-5 object-contain" width={20} height={20} />
                   <span className="font-poppins text-sm font-semibold text-[#111111]">
-                    {clientPhone || "+1 265 665 2266"}
+                    {clientPhone || "—"}
                   </span>
                 </div>
               </div>
@@ -183,7 +192,7 @@ export default function ClientDetails({
                 <div className="flex items-center gap-3 border border-[#ECEBEF] rounded-xl px-4 bg-[#FFFFFF] h-[60px] w-full select-none">
                   <HugeiconsIcon icon={Home03Icon} className="w-5 h-5 text-[#111111]" />
                   <span className="font-poppins text-sm font-semibold text-[#111111]">
-                    {clientCity || "Nicosia"}
+                    {clientCity || "—"}
                   </span>
                 </div>
               </div>
@@ -193,7 +202,7 @@ export default function ClientDetails({
                 <label className="font-poppins text-xs font-semibold text-[#111111] uppercase tracking-[0.09em]">Property Type</label>
                 <div className="flex items-center border border-[#ECEBEF] rounded-xl px-4 bg-[#FFFFFF] h-[60px] w-full select-none">
                   <span className="font-poppins text-sm font-semibold text-[#111111]">
-                    {clientPropertyType || "Villa"}
+                    {clientPropertyType || "—"}
                   </span>
                 </div>
               </div>
@@ -203,7 +212,7 @@ export default function ClientDetails({
                 <label className="font-poppins text-xs font-semibold text-[#111111] uppercase tracking-[0.09em]">Area/Neighbourhood</label>
                 <div className="flex items-center border border-[#ECEBEF] rounded-xl px-4 bg-[#FFFFFF] h-[60px] w-full select-none">
                   <span className="font-poppins text-sm font-semibold text-[#111111]">
-                    {clientArea || "Mackenji"}
+                    {clientArea || "—"}
                   </span>
                 </div>
               </div>
@@ -213,7 +222,7 @@ export default function ClientDetails({
                 <label className="font-poppins text-xs font-semibold text-[#111111] uppercase tracking-[0.09em]">Street Name</label>
                 <div className="flex items-center border border-[#ECEBEF] rounded-xl px-4 bg-[#FFFFFF] h-[60px] w-full select-none">
                   <span className="font-poppins text-sm font-semibold text-[#111111]">
-                    {clientStreetName || "Emrou"}
+                    {clientStreetName || "—"}
                   </span>
                 </div>
               </div>
@@ -223,7 +232,7 @@ export default function ClientDetails({
                 <label className="font-poppins text-xs font-semibold text-[#111111] uppercase tracking-[0.09em]">Street Number</label>
                 <div className="flex items-center border border-[#ECEBEF] rounded-xl px-4 bg-[#FFFFFF] h-[60px] w-full select-none">
                   <span className="font-poppins text-sm font-semibold text-[#111111]">
-                    {clientStreetNumber || "14"}
+                    {clientStreetNumber || "—"}
                   </span>
                 </div>
               </div>
@@ -277,73 +286,16 @@ export default function ClientDetails({
               </div>
             </div>
 
-            {/* Main History Cards Stream */}
-            <div className="flex flex-col gap-4 w-full">
-              
-              {/* CARD 1: Upcoming Booking #BK-0035 */}
-              <ClientBookingHistoryCard
-                bookingId="#BK-0035"
-                status="Upcoming"
-                statusType="upcoming"
-                clientName={`${clientFirstName} ${clientLastName}`.trim() || "John Doe"}
-                clientGender={clientGender || "Male"}
-                clientEmail={clientEmail || "sdf@gmail.com"}
-                clientPhone={clientPhone || "+123 566 889"}
-                isNewClient={true}
-                dateText="Saturday, May 9"
-                timeText="10:00 - 11:20 AM"
-                durationText="1 hr 20 min"
-                staffName="George"
-                staffRole="Barber"
-                rescheduleText="Reschedule 1 of 2"
-                serviceName="YARD Beard Package"
-                serviceDetailText="Express Facial · Shave · Wax · 1 hr, 20 min"
-                servicePrice="€20"
-                addonsName="Add-ons"
-                addonsDetailText="Hair wash (flat fee) · Scalp treatment (flat fee)"
-                addonsPrice="€20"
-                depositedAmount="€8"
-                remainingBalance="€32"
-                clientNotesText="Please use organic products only, allergic to strong fragrances"
-                showClientDetails={true}
-                showDateTimeDetails={true}
-                showSummaryDetails={true}
-                showNotesDetails={true}
-              />
-
-              {/* CARD 2: No-show Booking #BK-0034 */}
-              <ClientBookingHistoryCard
-                bookingId="#BK-0034"
-                status="No-show · Charged"
-                statusType="noshow"
-                clientName={`${clientFirstName} ${clientLastName}`.trim() || "John Doe"}
-                clientGender={clientGender || "Male"}
-                clientEmail={clientEmail || "sdf@gmail.com"}
-                clientPhone={clientPhone || "+123 566 889"}
-                isNewClient={true}
-                dateText="Saturday, May 9"
-                timeText="10:00 - 11:20 AM"
-                durationText="1 hr 20 min"
-                staffName="George"
-                staffRole="Barber"
-                rescheduleText="Reschedule 1 of 2"
-                serviceName="YARD Beard Package"
-                serviceDetailText="Express Facial · Shave · Wax · 1 hr, 20 min"
-                servicePrice="€20"
-                addonsName="Add-ons"
-                addonsDetailText="Hair wash (flat fee) · Scalp treatment (flat fee)"
-                addonsPrice="€20"
-                depositedAmount="-"
-                remainingBalance="€40"
-                clientNotesText="Please use organic products only, allergic to strong fragrances"
-                businessNotesText="Customer did not attend"
-                addressText="Please use organic products only, allergic to strong fragrances"
-                showClientDetails={true}
-                showDateTimeDetails={true}
-                showSummaryDetails={true}
-                showNotesDetails={true}
-              />
-
+            {/* Booking history is not available yet — the Booking domain has not been built,
+                so this deliberately shows an empty state rather than fabricated bookings. */}
+            <div className="flex flex-col items-center justify-center gap-3 w-full py-16 text-center">
+              <HugeiconsIcon icon={Calendar03Icon} className="w-8 h-8 text-[#D3D1C7]" />
+              <div className="flex flex-col gap-1">
+                <span className="font-poppins text-sm font-semibold text-[#5F5E5A]">No booking history yet</span>
+                <span className="font-poppins text-xs text-[#ABAAA6]">
+                  This client&apos;s bookings will appear here once the Booking feature is available.
+                </span>
+              </div>
             </div>
           </div>
         )}

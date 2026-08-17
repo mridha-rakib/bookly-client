@@ -16,8 +16,9 @@ import {
 } from "@hugeicons/core-free-icons";
 
 // Reused component
-import { initialBookingsData, initialClientsData } from "@/utils/dashboardMockData";
+import { initialBookingsData } from "@/utils/dashboardMockData";
 import RequireBusinessOwner from "@/components/auth/RequireBusinessOwner";
+import { useMyBusinessProfileQuery } from "@/lib/business/hooks";
 
 // Modular Dashboard sub-components
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
@@ -25,14 +26,14 @@ import DashboardOverview from "@/components/dashboard/DashboardOverview";
 import DashboardCalendar from "@/components/dashboard/DashboardCalendar";
 import DashboardBookingsList from "@/components/dashboard/DashboardBookingsList";
 import DashboardBookingForm from "@/components/dashboard/DashboardBookingForm";
-import ClientsList from "@/components/clients/ClientsList";
-import ClientDetails from "@/components/clients/ClientDetails";
-import ClientForm from "@/components/clients/ClientForm";
+import ClientsPage from "@/components/clients/ClientsPage";
 import ClientBookingHistoryCard from "@/components/clients/ClientBookingHistoryCard";
 import DashboardBusinessProfile from "@/components/dashboard/DashboardBusinessProfile";
 import DashboardCreateBusiness from "@/components/dashboard/DashboardCreateBusiness";
-import DashboardServicesList from "@/components/dashboard/DashboardServicesList";
-import DashboardAddonsList from "@/components/dashboard/DashboardAddonsList";
+import ServicesListPage from "@/components/dashboard/services/ServicesListPage";
+import ArchivedServicesList from "@/components/dashboard/services/ArchivedServicesList";
+import AddonsListPage from "@/components/dashboard/addons/AddonsListPage";
+import ArchivedAddonsList from "@/components/dashboard/addons/ArchivedAddonsList";
 import DashboardStaffList from "@/components/dashboard/DashboardStaffList";
 import DashboardReviewsList from "@/components/dashboard/DashboardReviewsList";
 import DashboardPayoutsList from "@/components/dashboard/DashboardPayoutsList";
@@ -55,23 +56,6 @@ interface Booking {
   status: string;
   amount: string;
   paymentType: string;
-}
-
-interface Client {
-  name: string;
-  joined: string;
-  phone: string;
-  visitText: string;
-  visitSub: string;
-  isNext?: boolean;
-  visits: number;
-  spent: string;
-  tag: string | null;
-  tagBg: string;
-  tagColor: string;
-  avatarBg: string;
-  avatarText: string;
-  avatar?: string;
 }
 
 function BusinessDashboardContent() {
@@ -129,135 +113,10 @@ function BusinessDashboardContent() {
   const [businessProfileMode, setBusinessProfileMode] = useState<"create" | "edit" | "view">("create");
   const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(null);
 
-  // Clients Data states
-  const [clientsData, setClientsData] = useState<Client[]>(initialClientsData as Client[]);
-  const [isAddingClient, setIsAddingClient] = useState(false);
-  const [isViewingClient, setIsViewingClient] = useState(false);
-  const [editingClientIndex, setEditingClientIndex] = useState<number | null>(null);
-  const [openActionIdx, setOpenActionIdx] = useState<number | null>(null);
-
-  // Add Client Form states
-  const [clientFirstName, setClientFirstName] = useState("");
-  const [clientLastName, setClientLastName] = useState("");
-  const [clientPhone, setClientPhone] = useState("");
-  const [clientEmail, setClientEmail] = useState("");
-  const [clientDob, setClientDob] = useState("1/6/2026");
-  const [clientGender, setClientGender] = useState("Male");
-  const [clientCity, setClientCity] = useState("Limasol");
-  const [clientPropertyType, setClientPropertyType] = useState("");
-  const [clientArea, setClientArea] = useState("");
-  const [clientStreetName, setClientStreetName] = useState("");
-  const [clientStreetNumber, setClientStreetNumber] = useState("");
-  const [clientFloor, setClientFloor] = useState("");
-  const [clientAptNo, setClientAptNo] = useState("");
-  const [clientDirections, setClientDirections] = useState("");
-  const [clientNotes, setClientNotes] = useState("");
-  const [clientTag, setClientTagState] = useState("VIP");
-
-  // Avatar and Phone Country Code states
-  const [clientAvatar, setClientAvatar] = useState("");
-  const clientAvatarInputRef = useRef<HTMLInputElement>(null);
-  const [clientPhoneCode, setClientPhoneCode] = useState("+357");
-  const [clientPhoneFlag, setClientPhoneFlag] = useState("cy");
-  const [isClientPhoneDropdownOpen, setIsClientPhoneDropdownOpen] = useState(false);
-
-  const phoneCountries = [
-    { name: "Cyprus", code: "+357", flag: "cy" },
-    { name: "Bangladesh", code: "+880", flag: "bd" },
-    { name: "Greece", code: "+30", flag: "gr" },
-    { name: "United Kingdom", code: "+44", flag: "gb" },
-    { name: "United States", code: "+1", flag: "us" }
-  ];
-
-  const handleClientAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setClientAvatar(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleAddClient = () => {
-    if (!clientFirstName || !clientPhone) return;
-    const newClient: Client = {
-      name: `${clientFirstName} ${clientLastName}`.trim(),
-      joined: `Since ${new Date().toLocaleString("en-US", { month: "short", year: "numeric" })}`,
-      phone: `${clientPhoneCode} ${clientPhone}`.trim(),
-      visitText: "—",
-      visitSub: "No visits yet",
-      isNext: false,
-      visits: 0,
-      spent: "€0",
-      tag: clientTag || null,
-      tagBg: clientTag === "VIP" ? "bg-[#FAEEDA]" : clientTag === "No-show" ? "bg-[#FCE4E4]" : clientTag === "New" ? "bg-[#E6F1FB]" : "bg-neutral-100",
-      tagColor: clientTag === "VIP" ? "text-[#633806]" : clientTag === "No-show" ? "text-[#E42424]" : clientTag === "New" ? "text-[#0C447C]" : "text-neutral-600",
-      avatarBg: "bg-[#E1F5EE]",
-      avatarText: `${clientFirstName.charAt(0)}${clientLastName ? clientLastName.charAt(0) : ""}`.toUpperCase(),
-      avatar: clientAvatar || undefined
-    };
-    setClientsData([newClient, ...clientsData]);
-    // Reset Form
-    setClientFirstName("");
-    setClientLastName("");
-    setClientPhone("");
-    setClientEmail("");
-    setClientDob("1/6/2026");
-    setClientGender("Male");
-    setClientCity("Limasol");
-    setClientPropertyType("");
-    setClientArea("");
-    setClientStreetName("");
-    setClientStreetNumber("");
-    setClientFloor("");
-    setClientAptNo("");
-    setClientDirections("");
-    setClientNotes("");
-    setClientTagState("VIP");
-    setClientAvatar("");
-    setClientPhoneCode("+357");
-    setClientPhoneFlag("cy");
-    setIsAddingClient(false);
-  };
-
-  const handleSaveClient = () => {
-    if (editingClientIndex === null || !clientFirstName || !clientPhone) return;
-    const updated = [...clientsData];
-    updated[editingClientIndex] = {
-      ...updated[editingClientIndex],
-      name: `${clientFirstName} ${clientLastName}`.trim(),
-      phone: `${clientPhoneCode} ${clientPhone}`.trim(),
-      tag: clientTag || null,
-      tagBg: clientTag === "VIP" ? "bg-[#FAEEDA]" : clientTag === "No-show" ? "bg-[#FCE4E4]" : clientTag === "New" ? "bg-[#E6F1FB]" : "bg-neutral-100",
-      tagColor: clientTag === "VIP" ? "text-[#633806]" : clientTag === "No-show" ? "text-[#E42424]" : clientTag === "New" ? "text-[#0C447C]" : "text-neutral-600",
-      avatarText: `${clientFirstName.charAt(0)}${clientLastName ? clientLastName.charAt(0) : ""}`.toUpperCase(),
-      avatar: clientAvatar || undefined
-    };
-    setClientsData(updated);
-    // Reset Form
-    setClientFirstName("");
-    setClientLastName("");
-    setClientPhone("");
-    setClientEmail("");
-    setClientDob("1/6/2026");
-    setClientGender("Male");
-    setClientCity("Limasol");
-    setClientPropertyType("");
-    setClientArea("");
-    setClientStreetName("");
-    setClientStreetNumber("");
-    setClientFloor("");
-    setClientAptNo("");
-    setClientDirections("");
-    setClientNotes("");
-    setClientTagState("VIP");
-    setClientAvatar("");
-    setClientPhoneCode("+357");
-    setClientPhoneFlag("cy");
-    setEditingClientIndex(null);
-  };
+  // Clients — real Client Management data/hooks live in ClientsPage; this page only resolves
+  // the Owner's businessId (same idiom DashboardStaffList already uses).
+  const businessProfileQuery = useMyBusinessProfileQuery();
+  const clientsBusinessId = businessProfileQuery.data?.primary?.id;
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.innerWidth < 768) {
@@ -321,103 +180,7 @@ function BusinessDashboardContent() {
     }
 
     if (activeTab === "Clients") {
-      if (isViewingClient) {
-        return (
-          <ClientDetails
-            clientFirstName={clientFirstName}
-            clientLastName={clientLastName}
-            clientEmail={clientEmail}
-            clientGender={clientGender}
-            clientDob={clientDob}
-            clientPhone={clientPhone}
-            clientCity={clientCity}
-            clientPropertyType={clientPropertyType}
-            clientArea={clientArea}
-            clientStreetName={clientStreetName}
-            clientStreetNumber={clientStreetNumber}
-            clientFloor={clientFloor}
-            clientAptNo={clientAptNo}
-            clientAvatar={clientAvatar}
-            setIsViewingClient={setIsViewingClient}
-            setEditingClientIndex={setEditingClientIndex}
-          />
-        );
-      }
-
-      if (isAddingClient || editingClientIndex !== null) {
-        return (
-          <ClientForm
-            editingClientIndex={editingClientIndex}
-            isViewingClient={isViewingClient}
-            setIsAddingClient={setIsAddingClient}
-            setEditingClientIndex={setEditingClientIndex}
-            setIsViewingClient={setIsViewingClient}
-            clientFirstName={clientFirstName}
-            setClientFirstName={setClientFirstName}
-            clientLastName={clientLastName}
-            setClientLastName={setClientLastName}
-            clientPhone={clientPhone}
-            setClientPhone={setClientPhone}
-            clientEmail={clientEmail}
-            setClientEmail={setClientEmail}
-            clientDob={clientDob}
-            setClientDob={setClientDob}
-            clientGender={clientGender}
-            setClientGender={setClientGender}
-            clientCity={clientCity}
-            setClientCity={setClientCity}
-            clientPropertyType={clientPropertyType}
-            setClientPropertyType={setClientPropertyType}
-            clientArea={clientArea}
-            setClientArea={setClientArea}
-            clientStreetName={clientStreetName}
-            setClientStreetName={setClientStreetName}
-            clientStreetNumber={clientStreetNumber}
-            setClientStreetNumber={setClientStreetNumber}
-            clientFloor={clientFloor}
-            setClientFloor={setClientFloor}
-            clientAptNo={clientAptNo}
-            setClientAptNo={setClientAptNo}
-            clientDirections={clientDirections}
-            setClientDirections={setClientDirections}
-            clientNotes={clientNotes}
-            setClientNotes={setClientNotes}
-            clientTag={clientTag}
-            setClientTagState={setClientTagState}
-            clientAvatar={clientAvatar}
-            clientAvatarInputRef={clientAvatarInputRef}
-            handleClientAvatarChange={handleClientAvatarChange}
-            clientPhoneCode={clientPhoneCode}
-            setClientPhoneCode={setClientPhoneCode}
-            clientPhoneFlag={clientPhoneFlag}
-            setClientPhoneFlag={setClientPhoneFlag}
-            isClientPhoneDropdownOpen={isClientPhoneDropdownOpen}
-            setIsClientPhoneDropdownOpen={setIsClientPhoneDropdownOpen}
-            phoneCountries={phoneCountries}
-            handleSaveClient={handleSaveClient}
-            handleAddClient={handleAddClient}
-          />
-        );
-      }
-
-      return (
-        <ClientsList
-          clientsData={clientsData}
-          setClientsData={setClientsData}
-          setIsAddingClient={setIsAddingClient}
-          setIsViewingClient={setIsViewingClient}
-          setEditingClientIndex={setEditingClientIndex}
-          openActionIdx={openActionIdx}
-          setOpenActionIdx={setOpenActionIdx}
-          setClientFirstName={setClientFirstName}
-          setClientLastName={setClientLastName}
-          setClientPhone={setClientPhone}
-          setClientTagState={setClientTagState}
-          setClientPhoneCode={setClientPhoneCode}
-          setClientPhoneFlag={setClientPhoneFlag}
-          setClientAvatar={setClientAvatar}
-        />
-      );
+      return <ClientsPage businessId={clientsBusinessId} />;
     }
 
     if (["All Bookings", "Upcoming", "Canceled"].includes(activeTab)) {
@@ -624,11 +387,19 @@ function BusinessDashboardContent() {
     }
 
     if (activeTab === "Services") {
-      return <DashboardServicesList />;
+      return <ServicesListPage />;
+    }
+
+    if (activeTab === "Archived Services") {
+      return <ArchivedServicesList />;
     }
 
     if (activeTab === "Add-ons") {
-      return <DashboardAddonsList />;
+      return <AddonsListPage />;
+    }
+
+    if (activeTab === "Archived Add-ons") {
+      return <ArchivedAddonsList />;
     }
 
     if (activeTab === "Staff") {

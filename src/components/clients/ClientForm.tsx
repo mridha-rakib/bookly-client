@@ -14,6 +14,7 @@ import {
   ScissorIcon,
   Calendar02Icon
 } from "@hugeicons/core-free-icons";
+import { BUSINESS_CITIES } from "@/lib/constants/cities";
 
 interface ClientFormProps {
   editingClientIndex: number | null;
@@ -69,6 +70,12 @@ interface ClientFormProps {
 
   handleSaveClient: () => void;
   handleAddClient: () => void;
+
+  /** True only for a LINKED Client — name/phone/email/gender are managed by the Customer's own Bookly account. */
+  identityFieldsDisabled?: boolean;
+  /** Field-path -> message, e.g. { "address.city": "Required" }, surfaced under each input. */
+  serverErrors?: Record<string, string>;
+  isSubmitting?: boolean;
 }
 
 export default function ClientForm({
@@ -124,8 +131,12 @@ export default function ClientForm({
   phoneCountries,
 
   handleSaveClient,
-  handleAddClient
+  handleAddClient,
+  identityFieldsDisabled = false,
+  serverErrors,
+  isSubmitting = false
 }: ClientFormProps) {
+  const errorFor = (field: string) => serverErrors?.[field];
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] relative">
       {/* Client Add/Edit Header */}
@@ -157,6 +168,12 @@ export default function ClientForm({
             <div>
               <h3 className="font-poppins text-[11px] font-medium tracking-[0.66px] uppercase text-[#888780]">Personal information</h3>
             </div>
+
+            {identityFieldsDisabled && (
+              <div className="bg-[#FAFAF8] border border-[#E8E8E4] rounded-lg p-3 text-[11px] text-[#5F5E5A] font-poppins leading-[16px]">
+                This client is linked to a Bookly customer account — name, phone, email, and gender are managed by the customer and shown here read-only. Address, notes, and tags remain editable.
+              </div>
+            )}
 
             {/* Avatar Picker */}
             <div 
@@ -192,8 +209,12 @@ export default function ClientForm({
                   value={clientFirstName}
                   onChange={(e) => setClientFirstName(e.target.value)}
                   placeholder="e.g. Maria"
-                  className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-lg px-3 text-xs placeholder-neutral-400 focus:outline-none focus:border-neutral-800"
+                  disabled={identityFieldsDisabled}
+                  className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-lg px-3 text-xs placeholder-neutral-400 focus:outline-none focus:border-neutral-800 disabled:bg-[#FAFAF8] disabled:text-[#5F5E5A]"
                 />
+                {errorFor("firstName") && (
+                  <span className="text-[11px] text-[#E24B4A] font-poppins">{errorFor("firstName")}</span>
+                )}
               </div>
               <div className="flex flex-col gap-2">
                 <label className="font-poppins text-xs font-medium text-[#5F5E5A]">Last name</label>
@@ -202,7 +223,8 @@ export default function ClientForm({
                   value={clientLastName}
                   onChange={(e) => setClientLastName(e.target.value)}
                   placeholder="e.g. Papadopoulou"
-                  className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-lg px-3 text-xs placeholder-neutral-400 focus:outline-none focus:border-neutral-800"
+                  disabled={identityFieldsDisabled}
+                  className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-lg px-3 text-xs placeholder-neutral-400 focus:outline-none focus:border-neutral-800 disabled:bg-[#FAFAF8] disabled:text-[#5F5E5A]"
                 />
               </div>
             </div>
@@ -214,9 +236,9 @@ export default function ClientForm({
                 <span className="text-[#E24B4A]">*</span>
               </label>
               <div className="flex w-full h-[38px] relative">
-                <div 
-                  onClick={() => setIsClientPhoneDropdownOpen(!isClientPhoneDropdownOpen)}
-                  className="bg-white border border-[#E8E8E4] border-r-0 rounded-l-lg px-3 flex items-center gap-1.5 text-xs text-neutral-500 shrink-0 cursor-pointer select-none hover:bg-neutral-50/50"
+                <div
+                  onClick={() => !identityFieldsDisabled && setIsClientPhoneDropdownOpen(!isClientPhoneDropdownOpen)}
+                  className={`bg-white border border-[#E8E8E4] border-r-0 rounded-l-lg px-3 flex items-center gap-1.5 text-xs text-neutral-500 shrink-0 select-none ${identityFieldsDisabled ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-neutral-50/50"}`}
                 >
                   <Image src={`https://flagcdn.com/w20/${clientPhoneFlag}.png`} alt="flag" className="w-[18px] h-[12px] object-cover rounded-sm border border-neutral-100 shrink-0" width={24} height={24} />
                   <span>{clientPhoneCode}</span>
@@ -258,10 +280,14 @@ export default function ClientForm({
                   value={clientPhone}
                   onChange={(e) => setClientPhone(e.target.value)}
                   placeholder="1111111111"
-                  className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-r-lg px-3 text-xs placeholder-neutral-400 focus:outline-none focus:border-neutral-800"
+                  disabled={identityFieldsDisabled}
+                  className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-r-lg px-3 text-xs placeholder-neutral-400 focus:outline-none focus:border-neutral-800 disabled:bg-[#FAFAF8] disabled:text-[#5F5E5A]"
                 />
               </div>
               <span className="text-[11px] text-[#ABAAA6] font-poppins">Used for SMS reminders and booking confirmations</span>
+              {errorFor("phone.nationalNumber") && (
+                <span className="text-[11px] text-[#E24B4A] font-poppins">{errorFor("phone.nationalNumber")}</span>
+              )}
             </div>
 
             {/* Email */}
@@ -277,9 +303,13 @@ export default function ClientForm({
                   value={clientEmail}
                   onChange={(e) => setClientEmail(e.target.value)}
                   placeholder="client@email.com"
-                  className="w-full h-full text-xs placeholder-neutral-400 focus:outline-none"
+                  disabled={identityFieldsDisabled}
+                  className="w-full h-full text-xs placeholder-neutral-400 focus:outline-none disabled:text-[#5F5E5A]"
                 />
               </div>
+              {errorFor("email") && (
+                <span className="text-[11px] text-[#E24B4A] font-poppins">{errorFor("email")}</span>
+              )}
             </div>
 
             {/* Date of Birth & Gender */}
@@ -303,7 +333,8 @@ export default function ClientForm({
                   <select
                     value={clientGender}
                     onChange={(e) => setClientGender(e.target.value)}
-                    className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-lg px-3 text-xs text-neutral-700 appearance-none focus:outline-none focus:border-neutral-800"
+                    disabled={identityFieldsDisabled}
+                    className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-lg px-3 text-xs text-neutral-700 appearance-none focus:outline-none focus:border-neutral-800 disabled:bg-[#FAFAF8] disabled:text-[#5F5E5A]"
                   >
                     <option value="Male">Male</option>
                     <option value="Female">Female</option>
@@ -333,9 +364,10 @@ export default function ClientForm({
                     onChange={(e) => setClientCity(e.target.value)}
                     className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-lg px-3 text-xs text-neutral-700 appearance-none focus:outline-none focus:border-neutral-800"
                   >
-                    <option value="Limasol">Limasol</option>
-                    <option value="Nicosia">Nicosia</option>
-                    <option value="Larnaca">Larnaca</option>
+                    <option value="">Select city</option>
+                    {BUSINESS_CITIES.map((city) => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
                   </select>
                   <div className="absolute right-3 top-3.5 pointer-events-none">
                     <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -343,6 +375,9 @@ export default function ClientForm({
                     </svg>
                   </div>
                 </div>
+                {errorFor("address.city") && (
+                  <span className="text-[11px] text-[#E24B4A] font-poppins">{errorFor("address.city")}</span>
+                )}
               </div>
 
               <div className="flex flex-col gap-2">
@@ -370,6 +405,9 @@ export default function ClientForm({
                     </svg>
                   </div>
                 </div>
+                {errorFor("address.propertyType") && (
+                  <span className="text-[11px] text-[#E24B4A] font-poppins">{errorFor("address.propertyType")}</span>
+                )}
               </div>
 
               <div className="flex flex-col gap-2">
@@ -384,6 +422,9 @@ export default function ClientForm({
                   placeholder="e.g. Mackenzie, finikoudes"
                   className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-lg px-3 text-xs placeholder-neutral-400 focus:outline-none focus:border-neutral-800"
                 />
+                {errorFor("address.area") && (
+                  <span className="text-[11px] text-[#E24B4A] font-poppins">{errorFor("address.area")}</span>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -399,6 +440,9 @@ export default function ClientForm({
                     placeholder="e.g. Emrou"
                     className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-lg px-3 text-xs placeholder-neutral-400 focus:outline-none focus:border-neutral-800"
                   />
+                  {errorFor("address.streetName") && (
+                    <span className="text-[11px] text-[#E24B4A] font-poppins">{errorFor("address.streetName")}</span>
+                  )}
                 </div>
                 <div className="flex flex-col gap-2">
                   <label className="font-poppins text-xs font-medium text-[#5F5E5A] flex items-center gap-0.5">
@@ -412,6 +456,9 @@ export default function ClientForm({
                     placeholder="e.g. 14"
                     className="w-full h-[38px] bg-white border border-[#E8E8E4] rounded-lg px-3 text-xs placeholder-neutral-400 focus:outline-none focus:border-neutral-800"
                   />
+                  {errorFor("address.streetNumber") && (
+                    <span className="text-[11px] text-[#E24B4A] font-poppins">{errorFor("address.streetNumber")}</span>
+                  )}
                 </div>
               </div>
 
@@ -569,17 +616,23 @@ export default function ClientForm({
             </div>
           )}
 
+          {errorFor("root") && (
+            <div className="bg-[#FCE4E4] border border-[#F3B3B3] rounded-lg p-3 text-[11px] text-[#BA1A1A] leading-[16px] font-poppins">
+              {errorFor("root")}
+            </div>
+          )}
+
           {/* Form Action buttons block */}
           <div className="flex flex-col gap-2 mt-4">
             <button
               onClick={editingClientIndex !== null ? handleSaveClient : handleAddClient}
-              disabled={!clientFirstName || !clientPhone}
-              className={`w-full h-10 rounded-lg text-xs font-semibold text-white font-poppins transition-all select-none ${clientFirstName && clientPhone
+              disabled={!clientFirstName || !clientPhone || isSubmitting}
+              className={`w-full h-10 rounded-lg text-xs font-semibold text-white font-poppins transition-all select-none ${clientFirstName && clientPhone && !isSubmitting
                   ? "bg-[#0F1E35] hover:bg-[#1C3252] cursor-pointer"
                   : "bg-[#D3D1C7] cursor-not-allowed"
                 }`}
             >
-              {editingClientIndex !== null ? "Save changes" : "Add client"}
+              {isSubmitting ? "Saving..." : editingClientIndex !== null ? "Save changes" : "Add client"}
             </button>
             <button
               onClick={() => {

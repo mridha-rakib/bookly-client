@@ -12,6 +12,7 @@ import {
   CancelSquareIcon,
   Briefcase01Icon,
   PowerServiceIcon,
+  Archive01Icon,
   AddSquareIcon,
   TieIcon,
   StarSquareIcon,
@@ -179,7 +180,9 @@ export default function DashboardSidebar({
           )}
           {renderMenuItem("Business Profile", Briefcase01Icon, "Business Profile")}
           {renderMenuItem("Services", PowerServiceIcon, "Services")}
+          {renderMenuItem("Archived Services", Archive01Icon, "Archived Services")}
           {renderMenuItem("Add-ons", AddSquareIcon, "Add-ons")}
+          {renderMenuItem("Archived Add-ons", Archive01Icon, "Archived Add-ons")}
           {renderMenuItem("Staff", TieIcon, "Staff")}
           {renderMenuItem("Reviews", StarSquareIcon, "Reviews")}
         </div>

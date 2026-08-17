@@ -45,6 +45,11 @@ import {
 } from "@/lib/business/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
 import { BUSINESS_CITIES } from "@/lib/constants/cities";
+import {
+  useCreateServiceCategoryMutation,
+  useServiceCategoriesQuery,
+  useUpdateServiceCategoryMutation
+} from "@/lib/services/hooks";
 
 interface DashboardCreateBusinessProps {
   onBack: () => void;
@@ -129,25 +134,43 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     }
   };
 
-  // Custom Service Categories
-  const [customCategories, setCustomCategories] = useState<string[]>([
-    "Hair Treatment",
-    "Nail Treatment",
-    "Facial Care",
-    "Massage",
-    "Waxing"
-  ]);
+  // Custom Service Categories — real, Business-scoped persistence (Services feature). Only
+  // available once the Business exists (edit/view), same rule as the other real sections
+  // below — "create" mode has no businessId yet, so there is nowhere to persist a category.
+  const customCategoriesQuery = useServiceCategoriesQuery(mode !== "create" ? businessId : undefined);
+  const customCategories = (customCategoriesQuery.data ?? []).map((category) => category.name);
+  const createServiceCategoryMutation = useCreateServiceCategoryMutation();
+  const updateServiceCategoryMutation = useUpdateServiceCategoryMutation();
   const [newCatInput, setNewCatInput] = useState("");
 
   const addCustomCategory = () => {
-    if (newCatInput.trim() && !customCategories.includes(newCatInput.trim())) {
-      setCustomCategories([...customCategories, newCatInput.trim()]);
-      setNewCatInput("");
+    const name = newCatInput.trim();
+    if (!businessId || !name) {
+      return;
     }
+    createServiceCategoryMutation.mutate(
+      { businessId, name },
+      {
+        onSuccess: () => setNewCatInput(""),
+        onError: (error) => toast.error(toUserMessage(error))
+      }
+    );
   };
 
-  const removeCustomCategory = (cat: string) => {
-    setCustomCategories(customCategories.filter((c) => c !== cat));
+  // "Remove" archives (active: false) rather than deleting — existing Services referencing
+  // this category keep a valid reference (confirmed product rule, see service.service.ts).
+  const removeCustomCategory = (name: string) => {
+    if (!businessId) {
+      return;
+    }
+    const category = customCategoriesQuery.data?.find((candidate) => candidate.name === name);
+    if (!category) {
+      return;
+    }
+    updateServiceCategoryMutation.mutate(
+      { businessId, categoryId: category.id, input: { active: false } },
+      { onError: (error) => toast.error(toUserMessage(error)) }
+    );
   };
 
   // See-All Images View states

@@ -52,14 +52,15 @@ interface Booking {
 }
 
 interface Client {
+  id?: string;
   name: string;
   joined: string;
   phone: string;
-  visitText: string;
-  visitSub: string;
+  visitText?: string;
+  visitSub?: string;
   isNext?: boolean;
-  visits: number;
-  spent: string;
+  visits?: number;
+  spent?: string;
   tag: string | null;
   tagBg: string;
   tagColor: string;
