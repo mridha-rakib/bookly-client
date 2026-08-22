@@ -9,6 +9,7 @@ import {
   type BusinessMediaRole,
   type UpdateBusinessInput,
 } from "@/lib/api/business";
+import { useCurrentUserQuery } from "@/lib/auth/hooks";
 
 export const businessKeys = {
   all: ["businesses"] as const,
@@ -147,6 +148,50 @@ export const useVerifyBusinessLinkMutation = () => {
       void queryClient.invalidateQueries({ queryKey: businessKeys.profile() });
     },
   });
+};
+
+export type ManagedBusinessRole = "BUSINESS_OWNER" | "SUPERVISOR";
+
+export interface ManagedBusinessContext {
+  businessId: string | undefined;
+  role: ManagedBusinessRole | undefined;
+  isLoading: boolean;
+}
+
+/**
+ * The one place every Booking-management screen (List/Calendar/Detail/actions) should resolve
+ * "which business am I managing right now, and as what role" — unifies the two existing,
+ * already-established idioms rather than inventing a third: a BUSINESS_OWNER's businessId comes
+ * from `useMyBusinessProfileQuery().data.primary.id` (their own owned business — never a
+ * `secondary[]` linked business, which the backend's own `requireBookingManagementAccess` never
+ * grants management rights on either — see api/.../booking.service.ts), a SUPERVISOR's from
+ * `useCurrentUserQuery().data.business.id` (their active Staff membership's business, via
+ * `/auth/me`). STAFF (and any other role) deliberately resolves to `businessId: undefined` —
+ * no product rule grants Staff booking-management rights (confirmed rule W), so no Booking
+ * screen should ever treat a STAFF actor as having a manageable business here.
+ */
+export const useManagedBusinessContext = (): ManagedBusinessContext => {
+  const currentUserQuery = useCurrentUserQuery();
+  const role = currentUserQuery.data?.user.role;
+  const businessProfileQuery = useMyBusinessProfileQuery();
+
+  if (role === "BUSINESS_OWNER") {
+    return {
+      businessId: businessProfileQuery.data?.primary?.id,
+      role: "BUSINESS_OWNER",
+      isLoading: currentUserQuery.isLoading || businessProfileQuery.isLoading,
+    };
+  }
+
+  if (role === "SUPERVISOR") {
+    return {
+      businessId: currentUserQuery.data?.business?.id,
+      role: "SUPERVISOR",
+      isLoading: currentUserQuery.isLoading,
+    };
+  }
+
+  return { businessId: undefined, role: undefined, isLoading: currentUserQuery.isLoading };
 };
 
 export const useUnlinkBusinessMutation = () => {

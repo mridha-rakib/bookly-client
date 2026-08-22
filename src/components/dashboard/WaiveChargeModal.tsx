@@ -7,7 +7,9 @@ import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 interface WaiveChargeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  /** `reason` is required by the backend (bookingsApi.waiveFee) — one of the dropdown options
+   * below. `internalNote` is optional and is NEVER exposed to any customer-facing read. */
+  onConfirm: (reason: string, internalNote?: string) => void;
 }
 
 export default function WaiveChargeModal({ isOpen, onClose, onConfirm }: WaiveChargeModalProps) {
@@ -46,7 +48,7 @@ export default function WaiveChargeModal({ isOpen, onClose, onConfirm }: WaiveCh
 
           {/* Subtext */}
           <p className="w-[329px] font-poppins font-normal text-[14px] leading-[20px] tracking-[0.0025em] text-[#525252] text-center">
-            This action is irreversible. Once you waive the fee, it cannot be reinstated. No charge will be made to the customer's card.
+            This action is irreversible. Once you waive the fee, it cannot be reinstated. No charge will be made to the customer&apos;s card.
           </p>
         </div>
 
@@ -116,7 +118,7 @@ export default function WaiveChargeModal({ isOpen, onClose, onConfirm }: WaiveCh
           
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={() => onConfirm(reason, internalNote.trim() || undefined)}
             className="flex flex-row justify-center items-center px-6 py-3.5 gap-2 w-[74px] h-11 bg-[#D44343] hover:bg-red-700 rounded-xl font-poppins font-medium text-sm text-white tracking-[0.03em] cursor-pointer transition-all duration-200"
           >
             Yes

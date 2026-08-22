@@ -257,6 +257,8 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
     }
     return (
       <ClientDetails
+        businessId={businessId}
+        clientId={selectedClientId ?? undefined}
         clientFirstName={dto.firstName}
         clientLastName={dto.lastName ?? ""}
         clientEmail={dto.email}

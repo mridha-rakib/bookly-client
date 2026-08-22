@@ -1,32 +1,71 @@
 "use client";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 
-
-import React, { useState } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { BellIcon } from "@hugeicons/core-free-icons";
+import React, { useMemo, useState } from "react";
 
 // Modular Subcomponents
 import PayoutsBanner from "../payouts/PayoutsBanner";
 import PayoutsBreakdown from "../payouts/PayoutsBreakdown";
 import PayoutsHistory from "../payouts/PayoutsHistory";
 
-export default function DashboardPayoutsList() {
-  const [selectedYear, setSelectedYear] = useState("2026");
-  const [selectedMonth, setSelectedMonth] = useState("May");
+import { useFinanceSummaryQuery } from "@/lib/finance/hooks";
+import { formatBookingMoney } from "@/lib/bookings/format";
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+interface DashboardPayoutsListProps {
+  /** Undefined for any actor other than the Business Owner (Finance is Owner-only — see
+   * api/src/modules/finance/finance.route.ts's own comment); this screen is only ever reached
+   * from business-dashboard/page.tsx, which RequireBusinessOwner already gates, so in practice
+   * this is only ever undefined for a brief instant while the Owner's business id resolves. */
+  businessId?: string;
+}
+
+export default function DashboardPayoutsList({ businessId }: DashboardPayoutsListProps) {
+  const now = new Date();
+  const [selectedYear, setSelectedYear] = useState(String(now.getUTCFullYear()));
+  const [selectedMonth, setSelectedMonth] = useState(MONTHS[now.getUTCMonth()]);
+
+  const period = useMemo(() => {
+    const year = Number(selectedYear);
+    const monthIndex = MONTHS.indexOf(selectedMonth);
+    if (monthIndex < 0) return undefined;
+    return {
+      from: new Date(Date.UTC(year, monthIndex, 1)).toISOString(),
+      to: new Date(Date.UTC(year, monthIndex + 1, 1)).toISOString(),
+    };
+  }, [selectedYear, selectedMonth]);
+
+  const summaryQuery = useFinanceSummaryQuery(businessId, period);
+  const summary = summaryQuery.data;
+
+  if (!businessId) {
+    return (
+      <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] md: select-none font-poppins relative">
+        <DashboardHeader title="Payouts & Finance" subtitle="Your earnings, fee breakdown, and payout history" />
+        <div className="flex-1 flex items-center justify-center py-16 px-6 text-center">
+          <span className="font-poppins text-sm font-semibold text-[#5F5E5A]">Finance isn&apos;t available for your account</span>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] md: select-none font-poppins relative">
-      
+
       {/* Header Row */}
       <DashboardHeader title="Payouts & Finance" subtitle="Your earnings, fee breakdown, and payout history" />
       <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col gap-6">
 
       {/* Main Content Alignment Wrapper */}
       <div className="pt-[20px] flex flex-col gap-[20px] w-full">
-        
+
         {/* Protected by Bookly Banner */}
-        <PayoutsBanner protectedEarnings="€513.50" />
+        <PayoutsBanner
+          protectedEarnings={
+            summary ? formatBookingMoney(summary.protectedEarningsAllTimeCents) : "—"
+          }
+        />
 
         {/* Filters Row */}
         <div className="pt-[32px] flex flex-row items-start gap-[12px] w-full h-[48px]">
@@ -42,8 +81,8 @@ export default function DashboardPayoutsList() {
                 backgroundSize: '16px'
               }}
             >
-              <option value="2026">2026</option>
-              <option value="2025">2025</option>
+              <option value={String(now.getUTCFullYear())}>{now.getUTCFullYear()}</option>
+              <option value={String(now.getUTCFullYear() - 1)}>{now.getUTCFullYear() - 1}</option>
             </select>
           </div>
 
@@ -59,16 +98,11 @@ export default function DashboardPayoutsList() {
                 backgroundSize: '16px'
               }}
             >
-              <option value="May">May</option>
-              <option value="April">April</option>
-              <option value="March">March</option>
-              <option value="February">February</option>
+              {MONTHS.map((month) => (
+                <option key={month} value={month}>{month}</option>
+              ))}
             </select>
           </div>
-
-          <button className="flex flex-row justify-center items-center px-[14px] py-[8px] bg-[#111111] hover:bg-black text-[#FFFFFF] font-poppins font-semibold text-[14px] leading-[16px] w-[82px] h-[48px] rounded-[12px] transition-colors cursor-pointer shrink-0">
-            All time
-          </button>
         </div>
 
         {/* 4 Cards Summary Grid */}
@@ -80,10 +114,10 @@ export default function DashboardPayoutsList() {
             </span>
             <div className="flex flex-col mt-2">
               <span className="font-poppins font-semibold text-[24px] leading-[24px] tracking-[-0.96px] text-[#43A27E]">
-                €135.00
+                {summary ? formatBookingMoney(summary.noShowFees.amountCents) : "—"}
               </span>
               <span className="font-poppins font-semibold text-[11px] leading-[16px] text-[#73756E] mt-1">
-                3 no-shows charged
+                {summary ? `${summary.noShowFees.count} no-show${summary.noShowFees.count === 1 ? "" : "s"} charged` : summaryQuery.isLoading ? "Loading…" : "—"}
               </span>
             </div>
           </div>
@@ -95,10 +129,10 @@ export default function DashboardPayoutsList() {
             </span>
             <div className="flex flex-col mt-2">
               <span className="font-poppins font-semibold text-[24px] leading-[24px] tracking-[-0.96px] text-[#43A27E]">
-                €76.00
+                {summary ? formatBookingMoney(summary.lateCancellationFees.amountCents) : "—"}
               </span>
               <span className="font-poppins font-semibold text-[11px] leading-[16px] text-[#73756E] mt-1">
-                4 cancellations
+                {summary ? `${summary.lateCancellationFees.count} cancellation${summary.lateCancellationFees.count === 1 ? "" : "s"}` : summaryQuery.isLoading ? "Loading…" : "—"}
               </span>
             </div>
           </div>
@@ -110,10 +144,14 @@ export default function DashboardPayoutsList() {
             </span>
             <div className="flex flex-col mt-2">
               <span className="font-poppins font-semibold text-[24px] leading-[24px] tracking-[-0.96px] text-[#C75A50]">
-                −€3.50
+                {summary && summary.processingFees.amountCents > 0
+                  ? `−${formatBookingMoney(summary.processingFees.amountCents)}`
+                  : summary
+                    ? "€0.00"
+                    : "—"}
               </span>
               <span className="font-poppins font-semibold text-[11px] leading-[16px] text-[#73756E] mt-1">
-                Stripe + SEPA
+                Passed through at cost
               </span>
             </div>
           </div>
@@ -121,31 +159,37 @@ export default function DashboardPayoutsList() {
           {/* Card 4 */}
           <div className="flex flex-col items-start p-4 bg-[#F1F0EA] rounded-[12px] flex-grow w-full md:w-auto h-[100px]">
             <span className="font-poppins font-semibold text-[10px] leading-[15px] tracking-[0.8px] uppercase text-[#83847E]">
-              YOUR PAYOUT — END OF MAY
+              YOUR PAYOUT — END OF {selectedMonth.slice(0, 3).toUpperCase()}
             </span>
             <div className="flex flex-col mt-2">
               <span className="font-poppins font-semibold text-[24px] leading-[24px] tracking-[-0.96px] text-[#43A27E]">
-                €167.50
+                {summary ? formatBookingMoney(summary.netPayoutCents) : "—"}
               </span>
               <span className="font-poppins font-semibold text-[11px] leading-[16px] text-[#73756E] mt-1">
-                SEPA · 100% yours
+                100% yours, net of processing
               </span>
             </div>
           </div>
         </div>
 
+        {summaryQuery.isError ? (
+          <div className="w-full py-3 text-center text-xs font-poppins font-semibold text-[#BA1A1A]">
+            Couldn&apos;t load this period&apos;s finance summary. Please try again.
+          </div>
+        ) : null}
+
         {/* Section 1: Transaction Breakdown */}
         <div className="pt-[20px] w-full">
-          <PayoutsBreakdown />
+          <PayoutsBreakdown businessId={businessId} period={period} periodLabel={`${selectedMonth} ${selectedYear}`} />
         </div>
 
         {/* Section 2: Payout History */}
         <div className="pt-[20px] w-full">
-          <PayoutsHistory />
+          <PayoutsHistory businessId={businessId} />
         </div>
 
       </div>
-    
+
       </div></main>
   );
 }

@@ -17,10 +17,19 @@ import {
 
 // Reused components
 import { initialBookingsData } from "@/utils/dashboardMockData";
-import { CompleteModal, NoShowModal } from "@/components/dashboard/CalendarActionModals";
+import { CancelBookingModal, CompleteModal, NoShowModal } from "@/components/dashboard/CalendarActionModals";
 import WaiveChargeModal from "@/components/dashboard/WaiveChargeModal";
 import ClientBookingHistoryCard from "@/components/clients/ClientBookingHistoryCard";
 import { useCurrentUserQuery } from "@/lib/auth/hooks";
+import { useManagedBusinessContext } from "@/lib/business/hooks";
+import {
+  useBookingDetailQuery,
+  useCancelByBusinessMutation,
+  useCancelNoShowMutation,
+  useCompleteBookingMutation,
+  useRescheduleByOwnerMutation,
+  useWaiveFeeMutation,
+} from "@/lib/bookings/hooks";
 
 // Supervisor Customized Sub-components
 import SupervisorSidebar from "./SupervisorSidebar";
@@ -57,12 +66,10 @@ export default function SupervisorDashboard() {
   const [showFooterMenu, setShowFooterMenu] = useState(true);
   const footerMenuRef = useRef<HTMLDivElement>(null);
 
-  // Bookings Data & Filters
+  // Legacy mock scratch state — kept ONLY because DashboardBookingForm (Manual Booking
+  // creation, out of this batch's scope — see the final report) still requires this exact
+  // shape as props. No longer the source of truth for List/Calendar/Detail (Batch 6).
   const [bookingsData, setBookingsData] = useState<Booking[]>(initialBookingsData as Booking[]);
-  const [bookingSearch, setBookingSearch] = useState("");
-  const [bookingStatusFilter, setBookingStatusFilter] = useState("All");
-  const [bookingStaffFilter, setBookingStaffFilter] = useState("All Staff");
-  const [openBookingActionIdx, setOpenBookingActionIdx] = useState<number | null>(null);
 
   // Manual Booking states
   const [isCreatingBooking, setIsCreatingBooking] = useState(false);
@@ -96,17 +103,27 @@ export default function SupervisorDashboard() {
   const [newBookingTags, setNewBookingTags] = useState<string[]>(["VIP"]);
   const [newBookingNotes, setNewBookingNotes] = useState("");
 
-  // Viewing booking details states
-  const [viewingBookingIndex, setViewingBookingIndex] = useState<number | null>(null);
+  // Viewing booking details states — real Booking id, never a mock array index (Batch 6).
+  const [viewingBookingId, setViewingBookingId] = useState<string | null>(null);
   const [isViewingBookingDetails, setIsViewingBookingDetails] = useState(false);
   const [showCompleteModalForBooking, setShowCompleteModalForBooking] = useState(false);
   const [showWaiveFeeModal, setShowWaiveFeeModal] = useState(false);
   const [showNoShowModal, setShowNoShowModal] = useState(false);
+  const [showCancelBookingModal, setShowCancelBookingModal] = useState(false);
 
   // Clients — real Client Management data/hooks live in ClientsPage; this page only resolves
   // the Supervisor's businessId via their active Staff membership (see /auth/me).
   const currentUserQuery = useCurrentUserQuery();
   const clientsBusinessId = currentUserQuery.data?.business?.id;
+
+  // Bookings — the SAME resolved businessId every Booking screen on this page uses (Batch 6).
+  const { businessId: bookingsBusinessId } = useManagedBusinessContext();
+  const bookingDetailQuery = useBookingDetailQuery(bookingsBusinessId, viewingBookingId ?? undefined);
+  const completeBookingMutation = useCompleteBookingMutation();
+  const cancelByBusinessMutation = useCancelByBusinessMutation();
+  const rescheduleByOwnerMutation = useRescheduleByOwnerMutation();
+  const waiveFeeMutation = useWaiveFeeMutation();
+  const cancelNoShowMutation = useCancelNoShowMutation();
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -291,30 +308,13 @@ export default function SupervisorDashboard() {
     if (activeTab === "Calendar") {
       return (
         <DashboardCalendar
+          businessId={bookingsBusinessId}
           onNewBookingClick={() => {
             setIsCreatingBooking(true);
             setActiveTab("All Bookings");
           }}
-          onViewBookingClick={(clientName) => {
-            let index = bookingsData.findIndex(b => b.clientName.toLowerCase().includes(clientName.toLowerCase()));
-            if (index === -1) {
-              const newBookingObj: Booking = {
-                clientName: clientName,
-                clientPhone: "+357 99 999 999",
-                clientInitials: clientName.split(' ').map(n => n[0]).join(''),
-                isNew: true,
-                bookingId: `#BK-${Math.floor(1000 + Math.random() * 9000)}`,
-                date: "Wed, 21 Jun",
-                time: "10:00",
-                staff: "John",
-                status: "Upcoming",
-                amount: "€54",
-                paymentType: "Pay at venue"
-              };
-              setBookingsData(prev => [newBookingObj, ...prev]);
-              index = 0;
-            }
-            setViewingBookingIndex(index);
+          onViewBookingClick={(bookingId) => {
+            setViewingBookingId(bookingId);
             setIsViewingBookingDetails(true);
             setActiveTab("All Bookings");
           }}
@@ -327,29 +327,14 @@ export default function SupervisorDashboard() {
     }
 
     if (activeTab === "All Bookings" || activeTab === "Upcoming" || activeTab === "Canceled") {
-      if (isViewingBookingDetails && viewingBookingIndex !== null) {
-        const b = bookingsData[viewingBookingIndex];
-
-        let statusType: "upcoming" | "noshow" | "completed" | "cancelled" | "late" | "pending" = "upcoming";
-        if (b.status === "Pending") {
-          statusType = "pending";
-        } else if (b.status === "No-show · Charged" || b.status.toLowerCase().includes("no-show") || b.status.toLowerCase().includes("noshow")) {
-          statusType = "noshow";
-        } else if (b.status === "Completed") {
-          statusType = "completed";
-        } else if (b.status === "Canceled" || b.status === "Cancelled") {
-          statusType = "cancelled";
-        } else if (b.status.toLowerCase().includes("late cancellation")) {
-          statusType = "late";
-        }
-
+      if (isViewingBookingDetails && viewingBookingId !== null) {
         return (
           <main className="flex-1 min-w-0 flex flex-col h-full overflow-y-auto bg-[#FCF8F8] p-6 md:p-8 select-none">
             {/* Breadcrumbs */}
             <div
               onClick={() => {
                 setIsViewingBookingDetails(false);
-                setViewingBookingIndex(null);
+                setViewingBookingId(null);
               }}
               className="flex items-center gap-2 text-xs font-medium text-neutral-500 uppercase tracking-wider mb-6 cursor-pointer hover:text-neutral-900 font-poppins select-none"
             >
@@ -367,19 +352,30 @@ export default function SupervisorDashboard() {
 
             {/* Details Card */}
             <div className="w-full flex justify-start">
-              <ClientBookingHistoryCard
-                bookingId={b.bookingId}
-                status={b.status}
-                statusType={statusType}
-                clientName={b.clientName}
-                clientPhone={b.clientPhone}
-                dateText={b.date}
-                timeText={b.time}
-                staffName={b.staff}
-                servicePrice={b.amount}
-                onCompleteBooking={() => setShowCompleteModalForBooking(true)}
-                onCancelNoShowClick={() => setShowNoShowModal(true)}
-              />
+              {bookingDetailQuery.isLoading ? (
+                <span className="font-poppins text-sm text-neutral-400">Loading booking…</span>
+              ) : bookingDetailQuery.isError || !bookingDetailQuery.data ? (
+                <span className="font-poppins text-sm text-[#BA1A1A]">Couldn&apos;t load this booking.</span>
+              ) : (
+                <ClientBookingHistoryCard
+                  booking={bookingDetailQuery.data}
+                  businessId={bookingsBusinessId ?? ""}
+                  showFooterActions={true}
+                  onCompleteBooking={() => setShowCompleteModalForBooking(true)}
+                  onWaiveFeeClick={() => setShowWaiveFeeModal(true)}
+                  onCancelNoShowClick={() => setShowNoShowModal(true)}
+                  onCancelBooking={() => setShowCancelBookingModal(true)}
+                  isReschedulePending={rescheduleByOwnerMutation.isPending}
+                  onReschedule={(startAtIso) => {
+                    if (!bookingsBusinessId || !viewingBookingId) return;
+                    rescheduleByOwnerMutation.mutate({
+                      businessId: bookingsBusinessId,
+                      bookingId: viewingBookingId,
+                      startAt: startAtIso,
+                    });
+                  }}
+                />
+              )}
             </div>
           </main>
         );
@@ -388,27 +384,10 @@ export default function SupervisorDashboard() {
       return (
         <DashboardBookingsList
           activeTab={activeTab}
-          bookingsData={bookingsData}
-          setBookingsData={setBookingsData}
-          bookingSearch={bookingSearch}
-          setBookingSearch={setBookingSearch}
-          bookingStatusFilter={bookingStatusFilter}
-          setBookingStatusFilter={setBookingStatusFilter}
-          bookingStaffFilter={bookingStaffFilter}
-          setBookingStaffFilter={setBookingStaffFilter}
-          openBookingActionIdx={openBookingActionIdx}
-          setOpenBookingActionIdx={setOpenBookingActionIdx}
-          setIsCreatingBooking={setIsCreatingBooking}
-          setIsEditingBooking={setIsEditingBooking}
-          setEditingBookingIndex={setEditingBookingIndex}
-          setNewBookingName={setNewBookingName}
-          setNewBookingPhone={setNewBookingPhone}
-          setNewBookingPhoneCode={setNewBookingPhoneCode}
-          setNewBookingDate={setNewBookingDate}
-          setNewBookingTime={setNewBookingTime}
-          setNewBookingStaff={setNewBookingStaff}
-          onViewBookingDetails={(idx) => {
-            setViewingBookingIndex(idx);
+          businessId={bookingsBusinessId}
+          onCreateManualBooking={() => setIsCreatingBooking(true)}
+          onViewBookingDetails={(bookingId) => {
+            setViewingBookingId(bookingId);
             setIsViewingBookingDetails(true);
           }}
         />
@@ -454,24 +433,22 @@ export default function SupervisorDashboard() {
       <CompleteModal
         isOpen={showCompleteModalForBooking}
         onClose={() => setShowCompleteModalForBooking(false)}
-        onConfirm={() => {
-          if (viewingBookingIndex !== null) {
-            const updated = [...bookingsData];
-            updated[viewingBookingIndex].status = "Completed";
-            setBookingsData(updated);
+        defaultBalanceDueCents={bookingDetailQuery.data?.financials.balanceDueCents}
+        onConfirm={(venuePayment) => {
+          if (bookingsBusinessId && viewingBookingId) {
+            completeBookingMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, venuePayment });
           }
           setShowCompleteModalForBooking(false);
         }}
       />
 
+      {/* Cancel No-show */}
       <NoShowModal
         isOpen={showNoShowModal}
         onClose={() => setShowNoShowModal(false)}
         onConfirm={() => {
-          if (viewingBookingIndex !== null) {
-            const updated = [...bookingsData];
-            updated[viewingBookingIndex].status = "No-show · Charged";
-            setBookingsData(updated);
+          if (bookingsBusinessId && viewingBookingId) {
+            cancelNoShowMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId });
           }
           setShowNoShowModal(false);
         }}
@@ -480,13 +457,22 @@ export default function SupervisorDashboard() {
       <WaiveChargeModal
         isOpen={showWaiveFeeModal}
         onClose={() => setShowWaiveFeeModal(false)}
-        onConfirm={() => {
-          if (viewingBookingIndex !== null) {
-            const updated = [...bookingsData];
-            updated[viewingBookingIndex].status = "No-show · Waived";
-            setBookingsData(updated);
+        onConfirm={(reason, internalNote) => {
+          if (bookingsBusinessId && viewingBookingId) {
+            waiveFeeMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, reason, internalNote });
           }
           setShowWaiveFeeModal(false);
+        }}
+      />
+
+      <CancelBookingModal
+        isOpen={showCancelBookingModal}
+        onClose={() => setShowCancelBookingModal(false)}
+        onConfirm={(reason) => {
+          if (bookingsBusinessId && viewingBookingId) {
+            cancelByBusinessMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, reason });
+          }
+          setShowCancelBookingModal(false);
         }}
       />
     </div>

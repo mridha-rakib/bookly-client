@@ -16,10 +16,7 @@ import {
 } from "@hugeicons/core-free-icons";
 
 // Reused components
-import { initialBookingsData, initialClientsData } from "@/utils/dashboardMockData";
-import { CompleteModal, NoShowModal } from "@/components/dashboard/CalendarActionModals";
-import WaiveChargeModal from "@/components/dashboard/WaiveChargeModal";
-import ClientBookingHistoryCard from "@/components/clients/ClientBookingHistoryCard";
+import { initialClientsData } from "@/utils/dashboardMockData";
 
 // Staff Customized Sub-components
 import StaffSidebar from "./StaffSidebar";
@@ -35,21 +32,7 @@ import ClientDetails from "@/components/clients/ClientDetails";
 import ClientForm from "@/components/clients/ClientForm";
 import ContactSupport from "@/components/support/ContactSupport";
 import DashboardReviewsList from "@/components/dashboard/DashboardReviewsList";
-
-interface Booking {
-  clientInitials: string;
-  clientName: string;
-  clientPhone: string;
-  isManual?: boolean;
-  isNew?: boolean;
-  bookingId: string;
-  date: string;
-  time: string;
-  staff: string;
-  status: string;
-  amount: string;
-  paymentType: string;
-}
+import { useManagedBusinessContext } from "@/lib/business/hooks";
 
 interface Client {
   id?: string;
@@ -75,29 +58,15 @@ export default function StaffDashboard() {
   const [showFooterMenu, setShowFooterMenu] = useState(true);
   const footerMenuRef = useRef<HTMLDivElement>(null);
 
-  // Logged-in staff name for filtering
+  // Logged-in staff name — display only now (Batch 6): real Booking data/filtering is not
+  // wired for Staff at all, see the comment below.
   const loggedInStaffName = "Basel";
 
-  // Filter bookings to display only those assigned to the logged-in staff member
-  const filterStaffBookings = (list: Booking[]) => {
-    return list.filter(b => b.staff === loggedInStaffName);
-  };
-
-  // Bookings Data & Filters
-  const [bookingsData, setBookingsData] = useState<Booking[]>(() =>
-    filterStaffBookings(initialBookingsData as Booking[])
-  );
-  const [bookingSearch, setBookingSearch] = useState("");
-  const [bookingStatusFilter, setBookingStatusFilter] = useState("All");
-  const [bookingStaffFilter, setBookingStaffFilter] = useState(loggedInStaffName);
-  const [openBookingActionIdx, setOpenBookingActionIdx] = useState<number | null>(null);
-
-  // Viewing booking details states
-  const [viewingBookingIndex, setViewingBookingIndex] = useState<number | null>(null);
-  const [isViewingBookingDetails, setIsViewingBookingDetails] = useState(false);
-  const [showCompleteModalForBooking, setShowCompleteModalForBooking] = useState(false);
-  const [showWaiveFeeModal, setShowWaiveFeeModal] = useState(false);
-  const [showNoShowModal, setShowNoShowModal] = useState(false);
+  // Batch 6: no product rule grants STAFF booking-management rights (confirmed rule W — see
+  // api/.../booking.service.ts requireBookingManagementAccess, which only ever authorizes
+  // BUSINESS_OWNER/SUPERVISOR). `businessId` is therefore always undefined here — real Booking
+  // data/actions are intentionally NOT wired for this dashboard; see the Batch 6 final report.
+  const { businessId: bookingsBusinessId } = useManagedBusinessContext();
 
   // Clients Data states
   const [clientsData, setClientsData] = useState<Client[]>(initialClientsData as Client[]);
@@ -192,6 +161,7 @@ export default function StaffDashboard() {
     if (activeTab === "Calendar") {
       return (
         <DashboardCalendar
+          businessId={bookingsBusinessId}
           onNewBookingClick={() => {}}
           isStaffDashboard={true}
           staffName={loggedInStaffName}
@@ -256,7 +226,7 @@ export default function StaffDashboard() {
         );
       }
 
-      if (isViewingClient && viewingBookingIndex !== null) {
+      if (isViewingClient) {
         return (
           <ClientDetails
             clientFirstName={clientFirstName}
@@ -297,87 +267,15 @@ export default function StaffDashboard() {
     }
 
     if (activeTab === "Upcoming" || activeTab === "Canceled") {
-      if (isViewingBookingDetails && viewingBookingIndex !== null) {
-        const b = bookingsData[viewingBookingIndex];
-
-        let statusType: "upcoming" | "noshow" | "completed" | "cancelled" | "late" | "pending" = "upcoming";
-        if (b.status === "Pending") {
-          statusType = "pending";
-        } else if (b.status === "No-show · Charged" || b.status.toLowerCase().includes("no-show") || b.status.toLowerCase().includes("noshow")) {
-          statusType = "noshow";
-        } else if (b.status === "Completed") {
-          statusType = "completed";
-        } else if (b.status === "Canceled" || b.status === "Cancelled") {
-          statusType = "cancelled";
-        } else if (b.status.toLowerCase().includes("late cancellation")) {
-          statusType = "late";
-        }
-
-        return (
-          <main className="flex-1 min-w-0 flex flex-col h-full overflow-y-auto bg-[#FCF8F8] p-6 md:p-8 select-none">
-            <div
-              onClick={() => {
-                setIsViewingBookingDetails(false);
-                setViewingBookingIndex(null);
-              }}
-              className="flex items-center gap-2 text-xs font-medium text-neutral-500 uppercase tracking-wider mb-6 cursor-pointer hover:text-neutral-900 font-poppins select-none"
-            >
-              <HugeiconsIcon icon={ArrowLeft02Icon} className="w-4 h-4 text-neutral-600" />
-              <span>Bookings</span>
-              <span className="text-neutral-300 font-normal">&gt;</span>
-              <span className="text-[#0F1E35] font-semibold">View Booking</span>
-            </div>
-
-            <div className="mb-6 select-none">
-              <h1 className="text-2xl font-semibold text-[#0F1E35] font-poppins">View booking</h1>
-              <p className="text-xs text-neutral-500 font-poppins mt-0.5">See full details of the booking</p>
-            </div>
-
-            <div className="w-full flex justify-start">
-              <ClientBookingHistoryCard
-                bookingId={b.bookingId}
-                status={b.status}
-                statusType={statusType}
-                clientName={b.clientName}
-                clientPhone={b.clientPhone}
-                dateText={b.date}
-                timeText={b.time}
-                staffName={b.staff}
-                servicePrice={b.amount}
-                onCompleteBooking={() => setShowCompleteModalForBooking(true)}
-                onCancelNoShowClick={() => setShowNoShowModal(true)}
-              />
-            </div>
-          </main>
-        );
-      }
-
+      // No product rule grants STAFF booking-management rights (confirmed rule W) — the real
+      // Booking list/detail/actions are Owner/Supervisor-only (see
+      // requireBookingManagementAccess). DashboardBookingsList itself renders the correct
+      // "not available for your account" state when businessId is undefined, exactly as it is
+      // here, rather than this dashboard faking a working detail view.
       return (
         <DashboardBookingsList
           activeTab={activeTab}
-          bookingsData={bookingsData}
-          setBookingsData={setBookingsData}
-          bookingSearch={bookingSearch}
-          setBookingSearch={setBookingSearch}
-          bookingStatusFilter={bookingStatusFilter}
-          setBookingStatusFilter={setBookingStatusFilter}
-          bookingStaffFilter={bookingStaffFilter}
-          setBookingStaffFilter={setBookingStaffFilter}
-          openBookingActionIdx={openBookingActionIdx}
-          setOpenBookingActionIdx={setOpenBookingActionIdx}
-          setIsCreatingBooking={() => {}}
-          setIsEditingBooking={() => {}}
-          setEditingBookingIndex={() => {}}
-          setNewBookingName={() => {}}
-          setNewBookingPhone={() => {}}
-          setNewBookingPhoneCode={() => {}}
-          setNewBookingDate={() => {}}
-          setNewBookingTime={() => {}}
-          setNewBookingStaff={() => {}}
-          onViewBookingDetails={(idx) => {
-            setViewingBookingIndex(idx);
-            setIsViewingBookingDetails(true);
-          }}
+          businessId={bookingsBusinessId}
           isStaffDashboard={true} // custom prop to hide headers filters and +New booking buttons
         />
       );
@@ -416,46 +314,6 @@ export default function StaffDashboard() {
 
       {/* Main Layout Area */}
       {renderMainContent()}
-
-      {/* Floating Action Modals */}
-      <CompleteModal
-        isOpen={showCompleteModalForBooking}
-        onClose={() => setShowCompleteModalForBooking(false)}
-        onConfirm={() => {
-          if (viewingBookingIndex !== null) {
-            const updated = [...bookingsData];
-            updated[viewingBookingIndex].status = "Completed";
-            setBookingsData(updated);
-          }
-          setShowCompleteModalForBooking(false);
-        }}
-      />
-
-      <NoShowModal
-        isOpen={showNoShowModal}
-        onClose={() => setShowNoShowModal(false)}
-        onConfirm={() => {
-          if (viewingBookingIndex !== null) {
-            const updated = [...bookingsData];
-            updated[viewingBookingIndex].status = "No-show · Charged";
-            setBookingsData(updated);
-          }
-          setShowNoShowModal(false);
-        }}
-      />
-
-      <WaiveChargeModal
-        isOpen={showWaiveFeeModal}
-        onClose={() => setShowWaiveFeeModal(false)}
-        onConfirm={() => {
-          if (viewingBookingIndex !== null) {
-            const updated = [...bookingsData];
-            updated[viewingBookingIndex].status = "No-show · Waived";
-            setBookingsData(updated);
-          }
-          setShowWaiveFeeModal(false);
-        }}
-      />
     </div>
   );
 }

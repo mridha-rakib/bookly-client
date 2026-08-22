@@ -47,7 +47,7 @@ export function NoShowModal({ isOpen, onClose, onConfirm }: NoShowModalProps) {
 
           {/* Subtext */}
           <p className="w-[483px] h-10 font-poppins font-normal text-[14px] leading-[20px] tracking-[0.0025em] text-[#525252] text-left">
-            A 90 min timer will start after you confirm. The customer's card will be charged after the timer expires — giving you time to reverse
+            A 90 min timer will start after you confirm. The customer&apos;s card will be charged after the timer expires — giving you time to reverse
           </p>
         </div>
 
@@ -131,24 +131,64 @@ export function NoShowModal({ isOpen, onClose, onConfirm }: NoShowModalProps) {
 // ----------------------------------------------------
 // 2. Complete Modal Component
 // ----------------------------------------------------
+/** The confirmed outcome of the "did the customer pay the remaining balance at venue" question
+ * — server-authoritative fields only (never a display string) so the caller can call the real
+ * completeBooking API directly. `amountCents` is present only when the Business is attesting a
+ * SPECIFIC amount was collected; when omitted with `paid: true`, the backend defaults to the
+ * booking's own snapshotted `balanceDueCents` (see api/.../booking-lifecycle.service.ts
+ * completeBooking's own doc comment). */
+export type CompleteModalVenuePayment = { paid: boolean; amountCents?: number; note?: string };
+
 interface CompleteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (venuePayment: CompleteModalVenuePayment) => void;
+  /** The snapshotted remaining balance (integer cents) this booking has due at the venue —
+   * server-authoritative, drives the default "Yes - customer paid €X at venue" option text.
+   * When omitted, that option is hidden and only the manual-amount/no-payment options show. */
+  defaultBalanceDueCents?: number;
+  currencySymbol?: string;
 }
 
-export function CompleteModal({ isOpen, onClose, onConfirm }: CompleteModalProps) {
-  const [payValue, setPayValue] = useState("Yes - customer paid 96.00 at venue");
+export function CompleteModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  defaultBalanceDueCents,
+  currencySymbol = "€",
+}: CompleteModalProps) {
+  const formattedDefault =
+    defaultBalanceDueCents !== undefined ? (defaultBalanceDueCents / 100).toFixed(2) : undefined;
+  const payOptions = [
+    ...(formattedDefault !== undefined
+      ? [`Yes - customer paid ${currencySymbol}${formattedDefault} at venue`]
+      : []),
+    "Yes - customer paid other amount",
+    "No - customer has not paid remaining balance",
+  ];
+  const [payValue, setPayValue] = useState(payOptions[0] ?? "No - customer has not paid remaining balance");
   const [showPayDropdown, setShowPayDropdown] = useState(false);
   const [internalNote, setInternalNote] = useState("");
+  const [otherAmount, setOtherAmount] = useState("");
 
   if (!isOpen) return null;
 
-  const payOptions = [
-    "Yes - customer paid 96.00 at venue",
-    "Yes - customer paid other amount",
-    "No - customer has not paid remaining balance"
-  ];
+  const isOtherAmount = payValue === "Yes - customer paid other amount";
+
+  const handleConfirm = () => {
+    const note = internalNote.trim() || undefined;
+    if (payValue === "No - customer has not paid remaining balance") {
+      onConfirm({ paid: false, note });
+      return;
+    }
+    if (isOtherAmount) {
+      const parsed = Math.round(Number.parseFloat(otherAmount) * 100);
+      onConfirm({ paid: true, amountCents: Number.isFinite(parsed) && parsed > 0 ? parsed : 0, note });
+      return;
+    }
+    // The default-balance option — let the backend apply the server-snapshotted amount.
+    onConfirm({ paid: true, note });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 select-none font-poppins">
@@ -210,6 +250,27 @@ export function CompleteModal({ isOpen, onClose, onConfirm }: CompleteModalProps
             )}
           </div>
 
+          {/* Manual amount — only shown for the "other amount" option, a genuinely necessary
+              addition to make that already-designed option functional (see CompleteModalVenuePayment
+              doc comment: the server never trusts this beyond it being the Business's own
+              off-platform attestation). */}
+          {isOtherAmount && (
+            <div className="flex flex-col items-start p-0 gap-2 w-[329px]">
+              <label className="w-[329px] font-poppins font-normal text-[12px] leading-[22px] text-[#111111]">
+                Amount paid at venue ({currencySymbol})
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={otherAmount}
+                onChange={(e) => setOtherAmount(e.target.value)}
+                placeholder="0.00"
+                className="box-border w-[329px] h-[46px] border border-[#111111]/60 rounded-xl p-3 gap-2.5 font-poppins font-normal text-sm text-[#111111] placeholder-[#111111]/40 focus:outline-none focus:border-green-500"
+              />
+            </div>
+          )}
+
           {/* Internal note */}
           <div className="flex flex-col items-start p-0 gap-2 w-[329px]">
             <label className="w-[329px] font-poppins font-normal text-[12px] leading-[22px] text-[#111111]">
@@ -233,10 +294,10 @@ export function CompleteModal({ isOpen, onClose, onConfirm }: CompleteModalProps
           >
             Cancel
           </button>
-          
+
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={handleConfirm}
             className="flex flex-row justify-center items-center px-6 py-3.5 gap-2 w-[74px] h-11 bg-[#1D9E75] hover:bg-[#157A5A] rounded-xl font-poppins font-medium text-sm text-white tracking-[0.03em] cursor-pointer transition-all duration-200"
           >
             Yes
@@ -253,7 +314,10 @@ export function CompleteModal({ isOpen, onClose, onConfirm }: CompleteModalProps
 interface CancelBookingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  /** `reason` is one of the fixed dropdown options above (server does not further validate its
+   * content beyond required-non-empty); `internalNote` is optional free text. Matches
+   * bookingsApi.cancelByBusiness's own `reason` parameter. */
+  onConfirm: (reason: string, internalNote?: string) => void;
 }
 
 export function CancelBookingModal({ isOpen, onClose, onConfirm }: CancelBookingModalProps) {
@@ -357,7 +421,7 @@ export function CancelBookingModal({ isOpen, onClose, onConfirm }: CancelBooking
           
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={() => onConfirm(cancelReason, internalNote.trim() || undefined)}
             className="flex flex-row justify-center items-center px-6 py-3.5 gap-2 w-[74px] h-11 bg-[#D44343] hover:bg-red-700 rounded-xl font-poppins font-medium text-sm text-white tracking-[0.03em] cursor-pointer transition-all duration-200"
           >
             Yes

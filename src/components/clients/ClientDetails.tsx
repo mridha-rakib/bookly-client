@@ -18,7 +18,16 @@ import {
   Calendar03Icon
 } from "@hugeicons/core-free-icons";
 
+import { useBusinessBookingsQuery } from "@/lib/bookings/hooks";
+import type { BookingStatus } from "@/lib/api/bookings";
+import { BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingDate, formatBookingMoney, formatBookingTime } from "@/lib/bookings/format";
+
 interface ClientDetailsProps {
+  /** Real backend ids (Batch 6) — power the History tab's real booking list via
+   * bookingsApi.listForBusiness(businessId, { businessClientId: clientId }). Undefined only
+   * while the parent is still resolving them, in which case History renders its loading state. */
+  businessId?: string;
+  clientId?: string;
   clientFirstName: string;
   clientLastName: string;
   clientEmail: string;
@@ -40,6 +49,8 @@ interface ClientDetailsProps {
 }
 
 export default function ClientDetails({
+  businessId,
+  clientId,
   clientFirstName,
   clientLastName,
   clientEmail,
@@ -60,6 +71,17 @@ export default function ClientDetails({
 }: ClientDetailsProps) {
   const [viewClientTab, setViewClientTab] = useState("PROFILE");
   const [historySearch, setHistorySearch] = useState("");
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<BookingStatus | "All">("All");
+
+  const historyQuery = useBusinessBookingsQuery(businessId, {
+    ...(clientId ? { businessClientId: clientId } : {}),
+    ...(historyStatusFilter !== "All" ? { status: [historyStatusFilter] } : {}),
+    limit: 50,
+  });
+  const historyBookings = (historyQuery.data?.bookings ?? []).filter((b) => {
+    if (!historySearch) return true;
+    return b.reference.toLowerCase().includes(historySearch.toLowerCase());
+  });
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] relative">
@@ -263,13 +285,15 @@ export default function ClientDetails({
             {/* History Control bar */}
             <div className="flex flex-row justify-between items-center w-full select-none shrink-0 flex-wrap gap-4">
               <div className="relative w-[214px]">
-                <select className="w-full h-10 border border-[#ECEBEF] rounded-xl px-4 text-xs font-semibold text-[#111111] appearance-none focus:outline-none focus:border-neutral-800 font-poppins">
-                  <option>All bookings</option>
-                  <option>Completed</option>
-                  <option>Cancelled by client</option>
-                  <option>Cancelled by business</option>
-                  <option>Late cancellation</option>
-                  <option>Pending</option>
+                <select
+                  value={historyStatusFilter}
+                  onChange={(e) => setHistoryStatusFilter(e.target.value as BookingStatus | "All")}
+                  className="w-full h-10 border border-[#ECEBEF] rounded-xl px-4 text-xs font-semibold text-[#111111] appearance-none focus:outline-none focus:border-neutral-800 font-poppins"
+                >
+                  <option value="All">All bookings</option>
+                  {(Object.keys(BOOKING_STATUS_LABELS) as BookingStatus[]).map((status) => (
+                    <option key={status} value={status}>{BOOKING_STATUS_LABELS[status]}</option>
+                  ))}
                 </select>
                 <HugeiconsIcon icon={ArrowDown01Icon} className="w-3.5 h-3.5 absolute right-3 top-3.5 text-neutral-500 pointer-events-none" />
               </div>
@@ -280,23 +304,58 @@ export default function ClientDetails({
                   type="text"
                   value={historySearch}
                   onChange={(e) => setHistorySearch(e.target.value)}
-                  placeholder="Search booking ID..."
+                  placeholder="Search by reference..."
                   className="bg-transparent text-xs placeholder-[#666666] text-[#111111] focus:outline-none w-full font-poppins"
                 />
               </div>
             </div>
 
-            {/* Booking history is not available yet — the Booking domain has not been built,
-                so this deliberately shows an empty state rather than fabricated bookings. */}
-            <div className="flex flex-col items-center justify-center gap-3 w-full py-16 text-center">
-              <HugeiconsIcon icon={Calendar03Icon} className="w-8 h-8 text-[#D3D1C7]" />
-              <div className="flex flex-col gap-1">
-                <span className="font-poppins text-sm font-semibold text-[#5F5E5A]">No booking history yet</span>
-                <span className="font-poppins text-xs text-[#ABAAA6]">
-                  This client&apos;s bookings will appear here once the Booking feature is available.
-                </span>
+            {!businessId || !clientId || historyQuery.isLoading ? (
+              <div className="flex flex-col items-center justify-center gap-3 w-full py-16 text-center">
+                <span className="font-poppins text-sm text-neutral-400">Loading booking history…</span>
               </div>
-            </div>
+            ) : historyQuery.isError ? (
+              <div className="flex flex-col items-center justify-center gap-3 w-full py-16 text-center">
+                <span className="font-poppins text-sm font-semibold text-[#BA1A1A]">Couldn&apos;t load booking history</span>
+              </div>
+            ) : historyBookings.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 w-full py-16 text-center">
+                <HugeiconsIcon icon={Calendar03Icon} className="w-8 h-8 text-[#D3D1C7]" />
+                <div className="flex flex-col gap-1">
+                  <span className="font-poppins text-sm font-semibold text-[#5F5E5A]">No booking history yet</span>
+                  <span className="font-poppins text-xs text-[#ABAAA6]">
+                    This client&apos;s bookings will appear here once they have one.
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3 w-full">
+                {historyBookings.map((booking) => {
+                  const tone = BOOKING_STATUS_TONE[booking.status];
+                  const toneClass = tone === "danger" ? "bg-[#FFF0F0] text-[#E42424]"
+                    : tone === "success" ? "bg-[#E1F5EE] text-[#2F8068]"
+                    : tone === "warning" ? "bg-[#FCF4E0] text-[#D97706]"
+                    : tone === "info" ? "bg-[#E6F1FB] text-[#3760B7]"
+                    : "bg-[#F0F0EE] text-[#5F5E5A]";
+                  return (
+                    <div key={booking.id} className="flex items-center justify-between border border-[#ECEBEF] rounded-xl px-4 py-3 gap-4">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-poppins text-xs font-semibold text-[#111111]">{booking.reference}</span>
+                        <span className="font-poppins text-[11px] text-[#666666]">
+                          {formatBookingDate(booking.schedule.startAt, booking.schedule.timezone)} · {formatBookingTime(booking.schedule.startAt, booking.schedule.timezone)} · {booking.primaryServiceName}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="font-poppins text-xs font-semibold text-[#111111]">{formatBookingMoney(booking.totalCents)}</span>
+                        <span className={`inline-block px-2.5 py-1 text-[10px] font-semibold rounded-full uppercase tracking-wider ${toneClass}`}>
+                          {BOOKING_STATUS_LABELS[booking.status]}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
