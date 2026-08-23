@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import SuperAdminFinanceBanner from "./SuperAdminFinanceBanner";
 import SuperAdminFinanceStats from "./SuperAdminFinanceStats";
 import SuperAdminFinancePending from "./SuperAdminFinancePending";
 import SuperAdminFinanceLog from "./SuperAdminFinanceLog";
+import { useSuperAdminPlatformSummaryQuery } from "@/lib/superAdminFinance/hooks";
 
 interface SuperAdminFinanceProps {
   setActiveTab?: (tab: string) => void;
@@ -58,6 +59,21 @@ export default function SuperAdminFinance({
     setAppliedFromDate("");
     setAppliedToDate("");
   };
+
+  // Period-bound cards (Bookly revenue, Collected for businesses) require a bounded [from, to)
+  // range (backend rule: max 92 days) — defaults to the last 90 days when no explicit range is
+  // applied. The genuinely all-time figures (protected earnings, sent to businesses, pending
+  // payouts) are unaffected by this and come back all-time from the backend regardless.
+  const period = useMemo(() => {
+    const now = new Date();
+    const from = appliedFromDate
+      ? new Date(appliedFromDate)
+      : new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const to = appliedToDate ? new Date(new Date(appliedToDate).getTime() + 24 * 60 * 60 * 1000) : now;
+    return { from: from.toISOString(), to: to.toISOString() };
+  }, [appliedFromDate, appliedToDate]);
+
+  const summaryQuery = useSuperAdminPlatformSummaryQuery(period);
 
   return (
     <div className="flex flex-col gap-6 w-full pb-12 font-sans">
@@ -134,14 +150,12 @@ export default function SuperAdminFinance({
       </div>
 
       {/* Bookly Protection Banner */}
-      <SuperAdminFinanceBanner />
+      <SuperAdminFinanceBanner protectedEarningsAllTimeCents={summaryQuery.data?.protectedEarningsAllTimeCents} />
 
       {/* Cards stats grid */}
-      <SuperAdminFinanceStats />
+      <SuperAdminFinanceStats summary={summaryQuery.data} isLoading={summaryQuery.isLoading} />
 
       <SuperAdminFinancePending
-        fromDate={appliedFromDate}
-        toDate={appliedToDate}
         setActiveTab={setActiveTab}
         setSharedViewingBusinessId={setSharedViewingBusinessId}
         setSharedViewingBusinessTab={setSharedViewingBusinessTab}

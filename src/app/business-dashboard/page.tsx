@@ -16,7 +16,6 @@ import {
 } from "@hugeicons/core-free-icons";
 
 // Reused component
-import { initialBookingsData } from "@/utils/dashboardMockData";
 import RequireBusinessOwner from "@/components/auth/RequireBusinessOwner";
 import { useManagedBusinessContext, useMyBusinessProfileQuery } from "@/lib/business/hooks";
 import {
@@ -51,64 +50,14 @@ import ContactSupport from "@/components/support/ContactSupport";
 import { CancelBookingModal, CompleteModal, NoShowModal } from "@/components/dashboard/CalendarActionModals";
 import WaiveChargeModal from "@/components/dashboard/WaiveChargeModal";
 
-interface Booking {
-  clientInitials: string;
-  clientName: string;
-  clientPhone: string;
-  isManual?: boolean;
-  isNew?: boolean;
-  bookingId: string;
-  date: string;
-  time: string;
-  staff: string;
-  status: string;
-  amount: string;
-  paymentType: string;
-}
-
 function BusinessDashboardContent() {
   const [activeTab, setActiveTab] = useState("Calendar");
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showFooterMenu, setShowFooterMenu] = useState(false);
   const footerMenuRef = useRef<HTMLDivElement>(null);
 
-  // Legacy mock scratch state — kept ONLY because DashboardBookingForm (Manual Booking
-  // creation, out of this batch's scope — see the final report) still requires this exact
-  // shape as props. No longer the source of truth for List/Calendar/Detail, which now read
-  // real data via useManagedBusinessContext()/lib/bookings/hooks.ts (Batch 6).
-  const [bookingsData, setBookingsData] = useState<Booking[]>(initialBookingsData as Booking[]);
-
-  // Manual Booking states
+  // Manual Booking creation state (Batch 10) — real, backend-driven, no mock scratch state.
   const [isCreatingBooking, setIsCreatingBooking] = useState(false);
-  const [isEditingBooking, setIsEditingBooking] = useState(false);
-  const [editingBookingIndex, setEditingBookingIndex] = useState<number | null>(null);
-
-  const [newBookingName, setNewBookingName] = useState("John Doe");
-  const [newBookingDob, setNewBookingDob] = useState("1/6/2026");
-  const [newBookingGender, setNewBookingGender] = useState("Male");
-  const [newBookingEmail, setNewBookingEmail] = useState("example@email.com");
-  const [newBookingPhoneCode, setNewBookingPhoneCode] = useState("+357");
-  const [newBookingPhone, setNewBookingPhone] = useState("1111111111");
-  const [newBookingCity, setNewBookingCity] = useState("Limasol");
-  const [newBookingPropertyType, setNewBookingPropertyType] = useState("");
-  const [newBookingArea, setNewBookingArea] = useState("");
-  const [newBookingStreetName, setNewBookingStreetName] = useState("");
-  const [newBookingStreetNumber, setNewBookingStreetNumber] = useState("");
-  const [newBookingFloor, setNewBookingFloor] = useState("");
-  const [newBookingApt, setNewBookingApt] = useState("");
-  const [newBookingDirections, setNewBookingDirections] = useState("");
-  const [newBookingServices, setNewBookingServices] = useState<Array<{ name: string, duration: string, price: number }>>([
-    { name: "Haircut", duration: "30 min", price: 90 }
-  ]);
-  const [newBookingAddons, setNewBookingAddons] = useState<Array<{ name: string, duration: string, price: number }>>([
-    { name: "Haircut", duration: "30 min", price: 90 }
-  ]);
-  const [newBookingStaff, setNewBookingStaff] = useState("Basel");
-  const [newBookingDate, setNewBookingDate] = useState("Apr 3, 2026");
-  const [newBookingTime, setNewBookingTime] = useState("10:00 AM");
-  const [newBookingServiceCity, setNewBookingServiceCity] = useState("Larnaca");
-  const [newBookingTags, setNewBookingTags] = useState<string[]>(["VIP"]);
-  const [newBookingNotes, setNewBookingNotes] = useState("");
 
   // Viewing booking details states — real Booking id, never a mock array index (Batch 6).
   const [viewingBookingId, setViewingBookingId] = useState<string | null>(null);
@@ -187,57 +136,14 @@ function BusinessDashboardContent() {
       if (isCreatingBooking) {
         return (
           <DashboardBookingForm
-            isEditingBooking={isEditingBooking}
-            editingBookingIndex={editingBookingIndex}
-            bookingsData={bookingsData}
-            setBookingsData={setBookingsData}
-            setIsCreatingBooking={setIsCreatingBooking}
-            setIsEditingBooking={setIsEditingBooking}
-            setEditingBookingIndex={setEditingBookingIndex}
-            newBookingName={newBookingName}
-            setNewBookingName={setNewBookingName}
-            newBookingDob={newBookingDob}
-            setNewBookingDob={setNewBookingDob}
-            newBookingGender={newBookingGender}
-            setNewBookingGender={setNewBookingGender}
-            newBookingEmail={newBookingEmail}
-            setNewBookingEmail={setNewBookingEmail}
-            newBookingPhoneCode={newBookingPhoneCode}
-            setNewBookingPhoneCode={setNewBookingPhoneCode}
-            newBookingPhone={newBookingPhone}
-            setNewBookingPhone={setNewBookingPhone}
-            newBookingCity={newBookingCity}
-            setNewBookingCity={setNewBookingCity}
-            newBookingPropertyType={newBookingPropertyType}
-            setNewBookingPropertyType={setNewBookingPropertyType}
-            newBookingArea={newBookingArea}
-            setNewBookingArea={setNewBookingArea}
-            newBookingStreetName={newBookingStreetName}
-            setNewBookingStreetName={setNewBookingStreetName}
-            newBookingStreetNumber={newBookingStreetNumber}
-            setNewBookingStreetNumber={setNewBookingStreetNumber}
-            newBookingFloor={newBookingFloor}
-            setNewBookingFloor={setNewBookingFloor}
-            newBookingApt={newBookingApt}
-            setNewBookingApt={setNewBookingApt}
-            newBookingDirections={newBookingDirections}
-            setNewBookingDirections={setNewBookingDirections}
-            newBookingServices={newBookingServices}
-            setNewBookingServices={setNewBookingServices}
-            newBookingAddons={newBookingAddons}
-            setNewBookingAddons={setNewBookingAddons}
-            newBookingStaff={newBookingStaff}
-            setNewBookingStaff={setNewBookingStaff}
-            newBookingDate={newBookingDate}
-            setNewBookingDate={setNewBookingDate}
-            newBookingTime={newBookingTime}
-            setNewBookingTime={setNewBookingTime}
-            newBookingServiceCity={newBookingServiceCity}
-            setNewBookingServiceCity={setNewBookingServiceCity}
-            newBookingTags={newBookingTags}
-            setNewBookingTags={setNewBookingTags}
-            newBookingNotes={newBookingNotes}
-            setNewBookingNotes={setNewBookingNotes}
+            businessId={bookingsBusinessId ?? ""}
+            visitType={businessProfileQuery.data?.primary?.visitType}
+            onClose={() => setIsCreatingBooking(false)}
+            onCreated={(bookingId) => {
+              setIsCreatingBooking(false);
+              setViewingBookingId(bookingId);
+              setIsViewingBookingDetails(true);
+            }}
           />
         );
       }

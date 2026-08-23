@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Image from "next/image";
-import { mockVenueDetails, ServiceItem } from "./mockVenue";
+import { mockVenueDetails } from "./mockVenue";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon, ArrowLeft02Icon, ArrowRight01Icon, ArrowRight02Icon, Clock04Icon, Location05Icon, SquareLock01Icon, InformationCircleIcon, Location01Icon, Cancel01Icon, FavouriteIcon } from "@hugeicons/core-free-icons";
+import { ArrowLeft01Icon, ArrowRight01Icon, Clock04Icon, Location05Icon, SquareLock01Icon, InformationCircleIcon, Cancel01Icon, FavouriteIcon } from "@hugeicons/core-free-icons";
 import ServiceCard, { Recommendation } from "@/components/ServiceCard";
 import Carousel from "@/components/landing-page/Carousel";
 import AddonsStep from "./components/AddonsStep";
@@ -19,26 +19,188 @@ import CheckoutSummaryAside from "./components/CheckoutSummaryAside";
 
 import { Suspense } from "react";
 
+import { useAuthStore } from "@/lib/auth/store";
+import { useBusinessCatalogQuery, useServiceAddonsQuery, useServiceAvailabilityQuery } from "@/lib/catalog/hooks";
+import { ANY_STAFF, type AvailabilitySlot, type CatalogService } from "@/lib/api/catalog";
+import {
+  useFinalizeCustomerBookingMutation,
+  usePreviewCustomerBookingMutation,
+} from "@/lib/bookings/hooks";
+import type { BookingDetail, CreateBookingInput } from "@/lib/api/bookings";
+import { getStripe } from "@/lib/payments/stripe-client";
+import { formatBookingMoney } from "@/lib/bookings/format";
+import { toUserMessage } from "@/lib/auth/messages";
+
 function VenueDetailsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const venueId = searchParams.get("id") || "1";
 
+  // Real customer auth identity — no local demo toggle.
+  const authUser = useAuthStore((state) => state.user);
+  const authStatus = useAuthStore((state) => state.status);
+  const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
+
+  // Real Business + Service catalog (Batch 9) — replaces mockVenueDetails' hardcoded services.
+  const catalogQuery = useBusinessCatalogQuery(venueId);
+
   // Booking Wizard Steps States
   const [bookingStep, setBookingStep] = useState<"addons" | "professionals" | "time" | "payment" | "confirmed" | null>(null);
-  const [selectedAddons, setSelectedAddons] = useState<number[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState<string | undefined>(undefined);
+  const [pricingInputByService, setPricingInputByService] = useState<Record<string, { hours?: number; personCount?: number }>>({});
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [selectedProfessional, setSelectedProfessional] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState("Mon, Aug 18");
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState("14:30");
-  const [selectedDayNum, setSelectedDayNum] = useState(18);
-  const [hasSavedCard, setHasSavedCard] = useState(true);
+  const [visibleMonth, setVisibleMonth] = useState<Date>(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [selectedDateIso, setSelectedDateIso] = useState<string | undefined>(undefined);
+  const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | undefined>(undefined);
+  const [hasSavedCard, setHasSavedCard] = useState(false);
   const [isReplacingCard, setIsReplacingCard] = useState(false);
   const [showPolicy, setShowPolicy] = useState(false);
+  const [bookingNotes, setBookingNotes] = useState("");
+  const [idempotencyKey, setIdempotencyKey] = useState<string | undefined>(undefined);
+  const [confirmedBooking, setConfirmedBooking] = useState<BookingDetail | undefined>(undefined);
+  const [confirming3ds, setConfirming3ds] = useState(false);
+  const [walletError, setWalletError] = useState<string | undefined>(undefined);
 
-  // Promo code discount states
-  const [promoDiscountPercent, setPromoDiscountPercent] = useState<number>(0);
-  const [promoDeductedAmount, setPromoDeductedAmount] = useState<number>(0);
-  const [promoCode, setPromoCode] = useState<string>("");
+  const selectedService = catalogQuery.data?.services.find((s) => s.id === selectedServiceId);
+  const eligibleStaff = (catalogQuery.data?.staff ?? []).filter((member) =>
+    selectedService?.assignedStaffMembershipIds.includes(member.id),
+  );
+
+  const serviceAddonsQuery = useServiceAddonsQuery(venueId, selectedServiceId);
+
+  const availabilityFromDate = `${visibleMonth.getFullYear()}-${String(visibleMonth.getMonth() + 1).padStart(2, "0")}-01`;
+  const availabilityToDateObj = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0);
+  const availabilityToDate = `${availabilityToDateObj.getFullYear()}-${String(availabilityToDateObj.getMonth() + 1).padStart(2, "0")}-${String(availabilityToDateObj.getDate()).padStart(2, "0")}`;
+  const availabilityQuery = useServiceAvailabilityQuery(
+    venueId,
+    selectedServiceId,
+    bookingStep === "time" || bookingStep === "payment"
+      ? {
+          fromDate: availabilityFromDate,
+          toDate: availabilityToDate,
+          staffMembershipId: selectedProfessional ?? undefined,
+        }
+      : undefined,
+  );
+
+  const previewMutation = usePreviewCustomerBookingMutation();
+  const finalizeMutation = useFinalizeCustomerBookingMutation();
+  const preview = previewMutation.data && "financials" in previewMutation.data ? previewMutation.data : undefined;
+
+  const buildBookingInput = (): CreateBookingInput | undefined => {
+    if (!selectedService || !selectedProfessional || !selectedSlot || !idempotencyKey) return undefined;
+    const staffMembershipId =
+      selectedProfessional === ANY_STAFF ? selectedSlot.eligibleStaffMembershipIds[0] : selectedProfessional;
+    if (!staffMembershipId) return undefined;
+    return {
+      serviceLines: [
+        {
+          serviceId: selectedService.id,
+          staffMembershipId,
+          addonIds: selectedAddonIds,
+          pricingInput: pricingInputByService[selectedService.id] ?? {},
+        },
+      ],
+      startAt: selectedSlot.startAt,
+      notes: bookingNotes || undefined,
+      idempotencyKey,
+    };
+  };
+
+  // Recompute the real, server-trusted quote whenever the customer's selections change enough
+  // to affect price — never trust a client-computed total (rule #1/#14).
+  useEffect(() => {
+    if (bookingStep !== "time" && bookingStep !== "payment") return;
+    const input = buildBookingInput();
+    if (!input) return;
+    previewMutation.mutate({ businessId: venueId, input });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingStep, selectedServiceId, selectedAddonIds.join(","), selectedProfessional, selectedSlot?.startAt]);
+
+  const handleBookService = (serviceId: string) => {
+    setSelectedServiceId(serviceId);
+    setSelectedAddonIds([]);
+    setSelectedProfessional(null);
+    setSelectedDateIso(undefined);
+    setSelectedSlot(undefined);
+    setWalletError(undefined);
+    setIdempotencyKey(crypto.randomUUID());
+    setBookingStep("addons");
+  };
+
+  const canContinueWizard = (() => {
+    if (bookingStep === "addons") return true;
+    if (bookingStep === "professionals") return Boolean(selectedProfessional);
+    if (bookingStep === "time") return Boolean(selectedSlot);
+    if (bookingStep === "payment") return hasSavedCard && Boolean(preview);
+    return false;
+  })();
+
+  const handleWizardContinue = async () => {
+    if (bookingStep === "addons") {
+      setBookingStep("professionals");
+    } else if (bookingStep === "professionals") {
+      setBookingStep("time");
+    } else if (bookingStep === "time") {
+      setBookingStep("payment");
+    } else if (bookingStep === "payment") {
+      const input = buildBookingInput();
+      if (!input) return;
+      setWalletError(undefined);
+
+      // Batch 9 completion pass — a real gap found and fixed here: neither this call nor the
+      // 3DS-retry call below had a catch, so a genuine decline, a stale-slot conflict, or any
+      // network/API failure threw uncaught inside this handler — the Confirm button quietly
+      // re-enabled (React Query resets `isPending` regardless of whether the rejection is
+      // awaited) with NO error shown, leaving the customer staring at a dead button. Every
+      // finalize call in this flow must always resolve to either a confirmed booking or a
+      // visible, real error — never a silent no-op (see spec section 6's own requirement).
+      let result: Awaited<ReturnType<typeof finalizeMutation.mutateAsync>>;
+      try {
+        result = await finalizeMutation.mutateAsync({ businessId: venueId, input });
+      } catch (error) {
+        setWalletError(toUserMessage(error));
+        return;
+      }
+
+      if ("clientSecret" in result) {
+        // 3DS/SCA required — confirm using the already-attached payment method, then retry the
+        // SAME idempotencyKey (see BookingCreationService.finalizeCustomerBooking's own doc
+        // comment: this is the confirmed, correct saga, never a second charge).
+        setConfirming3ds(true);
+        try {
+          const stripe = await getStripe();
+          if (!stripe) {
+            setWalletError("Payment could not be initialized. Please try again.");
+            return;
+          }
+          const confirmResult = await stripe.confirmCardPayment(result.clientSecret);
+          if (confirmResult.error) {
+            setWalletError(confirmResult.error.message ?? "Payment authentication failed.");
+            return;
+          }
+          const retry = await finalizeMutation.mutateAsync({ businessId: venueId, input });
+          if (!("clientSecret" in retry)) {
+            setConfirmedBooking(retry);
+            setBookingStep("confirmed");
+          } else {
+            setWalletError("Payment could not be confirmed. Please try again.");
+          }
+        } catch (error) {
+          setWalletError(toUserMessage(error));
+        } finally {
+          setConfirming3ds(false);
+        }
+        return;
+      }
+      setConfirmedBooking(result);
+      setBookingStep("confirmed");
+    }
+  };
 
   // Lock screen body scroll when bookingStep is active
   React.useEffect(() => {
@@ -51,10 +213,6 @@ function VenueDetailsContent() {
       document.body.style.overflow = "unset";
     };
   }, [bookingStep]);
-
-  // Sticky Sidebar State Selector (Screenshot 1, 2, or 3)
-  const [sidebarVariant, setSidebarVariant] = useState<"1" | "2" | "3">("1");
-  const isReturningCustomer = sidebarVariant === "3";
 
   // Tab State
   const [activeTab, setActiveTab] = useState<"services" | "about" | "reviews" | "team" | "gallery">("services");
@@ -71,8 +229,8 @@ function VenueDetailsContent() {
   }, []);
 
   // Scroll to section helper
-  const scrollToSection = (sectionId: string) => {
-    setActiveTab(sectionId as any);
+  const scrollToSection = (sectionId: typeof activeTab) => {
+    setActiveTab(sectionId);
     setTimeout(() => {
       const element = document.getElementById(sectionId);
       if (element) {
@@ -118,7 +276,7 @@ function VenueDetailsContent() {
         }
       }
 
-      setActiveTab(closestSection as any);
+      setActiveTab(closestSection as typeof activeTab);
     };
 
     window.addEventListener("scroll", handleScroll, { passive: true });
@@ -129,8 +287,6 @@ function VenueDetailsContent() {
     };
   }, [isMobile]);
 
-  // Dynamic user logged in state toggle (checkbox/button for demo representation)
-  const [isLoggedIn, setIsLoggedIn] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
 
   const heroScrollRef = React.useRef<HTMLDivElement>(null);
@@ -140,10 +296,7 @@ function VenueDetailsContent() {
   const [showStickyFooter, setShowStickyFooter] = useState(false);
 
   React.useEffect(() => {
-    if (!isMobile) {
-      setShowStickyFooter(false);
-      return;
-    }
+    if (!isMobile) return;
 
     const handleScroll = () => {
       const asideEl = document.getElementById("booking-aside");
@@ -157,8 +310,11 @@ function VenueDetailsContent() {
     window.addEventListener("scroll", handleScroll, { passive: true });
     // Initial check
     handleScroll();
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [isMobile, /* selectedList.length implicitly handled by total price/state updates */]);
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      setShowStickyFooter(false);
+    };
+  }, [isMobile]);
 
   const [isFavorite, setIsFavorite] = useState(false);
   const [showCopiedToast, setShowCopiedToast] = useState(false);
@@ -249,81 +405,46 @@ function VenueDetailsContent() {
     "/img/authImg3.png"
   ];
 
-  // Service counters & book state
-  const [service1Selected, setService1Selected] = useState(false);
-  const [service2Selected, setService2Selected] = useState(false);
-  const [service3Selected, setService3Selected] = useState(false);
-  const [service4Selected, setService4Selected] = useState(false);
-  const [service2Count, setService2Count] = useState(1);
-  const [service3Count, setService3Count] = useState(2);
-  const [service4Count, setService4Count] = useState(1);
-
-  // Return dynamic price calculation
-  const getServicePrice = (service: ServiceItem, count: number) => {
-    if (service.type === "hours" && service.ratePerHour) {
-      return count * service.ratePerHour;
-    }
-    if (service.type === "person" && service.ratePerPerson) {
-      return count * service.ratePerPerson;
-    }
-    return service.price;
+  /** Batch 9 — a single selected Service (one at a time, matching the real booking wizard's own
+   * one-service-per-booking flow shown in the Figma reference — never an accumulating
+   * multi-service cart, which the backend's own `serviceLines` model supports structurally but
+   * this UI never exercised beyond one line). This client-side estimate is DISPLAY ONLY — the
+   * moment the wizard opens, the real, server-computed `preview` (via
+   * usePreviewCustomerBookingMutation) is the only amount ever shown as authoritative or
+   * charged (rule #1/#14: never trust a client-computed total). */
+  const estimateServicePriceCents = (service: CatalogService, input: { hours?: number; personCount?: number }): number => {
+    if (service.fixedPricing) return service.fixedPricing.priceCents;
+    if (service.hourlyPricing) return (input.hours ?? service.hourlyPricing.minHours) * service.hourlyPricing.ratePerHourCents;
+    if (service.perPersonPricing) return (input.personCount ?? service.perPersonPricing.minPersons) * service.perPersonPricing.ratePerPersonCents;
+    if (service.packagePricing) return service.packagePricing.bundlePriceCents;
+    return 0;
   };
-  // Selected list details calculation
-  const selectedList = [];
-  if (service1Selected) {
-    selectedList.push({
-      id: 1,
-      name: "Wedding Pic",
-      duration: "1 hr 30 min",
-      priceVal: 90,
-      priceText: "€90",
-      onRemove: () => setService1Selected(false)
-    });
-  }
-  if (service2Selected) {
-    selectedList.push({
-      id: 2,
-      name: "Wedding Pic (Hours)",
-      duration: `${service2Count} ${service2Count === 1 ? "hour" : "hours"}`,
-      priceVal: service2Count * 35,
-      priceText: `€${service2Count * 35}`,
-      onRemove: () => setService2Selected(false)
-    });
-  }
-  if (service3Selected) {
-    selectedList.push({
-      id: 3,
-      name: "Wedding Pic (Person)",
-      duration: `1 hr 30 min • ${service3Count} ${service3Count === 1 ? "person" : "persons"}`,
-      priceVal: service3Count * 30,
-      priceText: `€${service3Count * 30}`,
-      onRemove: () => setService3Selected(false)
-    });
-  }
-  if (service4Selected) {
-    selectedList.push({
-      id: 4,
-      name: "Wedding Pic (Hours 2)",
-      duration: `${service4Count} ${service4Count === 1 ? "hour" : "hours"}`,
-      priceVal: service4Count * 35,
-      priceText: `€${service4Count * 35}`,
-      onRemove: () => setService4Selected(false)
-    });
-  }
 
-  const totalMinutes = (service1Selected ? 90 : 0) + (service2Selected ? service2Count * 60 : 0) + (service3Selected ? 90 : 0) + (service4Selected ? service4Count * 60 : 0);
-  const totalHours = Math.floor(totalMinutes / 60);
-  const totalMinsRem = totalMinutes % 60;
-  const totalDurationText = totalHours > 0 ? `${totalHours} hr ${totalMinsRem > 0 ? `${totalMinsRem} min` : ""}` : `${totalMinsRem} min`;
-  const totalPrice = (service1Selected ? 90 : 0) + (service2Selected ? service2Count * 35 : 0) + (service3Selected ? service3Count * 30 : 0) + (service4Selected ? service4Count * 35 : 0);
-  const totalPriceText = `€${totalPrice}`;
+  const selectedList = selectedService
+    ? [
+        {
+          id: selectedService.id,
+          name: selectedService.name,
+          duration:
+            selectedService.fixedPricing?.durationMin ?? selectedService.perPersonPricing?.durationMin ?? selectedService.packagePricing?.durationMin
+              ? `${selectedService.fixedPricing?.durationMin ?? selectedService.perPersonPricing?.durationMin ?? selectedService.packagePricing?.durationMin} min`
+              : "",
+          priceVal: estimateServicePriceCents(selectedService, pricingInputByService[selectedService.id] ?? {}) / 100,
+          priceText: formatBookingMoney(estimateServicePriceCents(selectedService, pricingInputByService[selectedService.id] ?? {})),
+          onRemove: () => setSelectedServiceId(undefined),
+        },
+      ]
+    : [];
+
+  const totalDurationText = selectedList[0]?.duration ?? "";
+  const totalPriceText = selectedList[0]?.priceText ?? "€0.00";
 
   return (
     <div className="min-h-screen bg-[#FCFAF9] flex flex-col relative overflow-x-clip text-[#1C1B1C]">
       {/* Navbar */}
       <Navbar
         isLoggedIn={isLoggedIn}
-        setIsLoggedIn={setIsLoggedIn}
+        setIsLoggedIn={() => {}}
         selectedLanguage={selectedLanguage}
         setSelectedLanguage={setSelectedLanguage}
       />
@@ -516,197 +637,169 @@ function VenueDetailsContent() {
                     ))}
                   </div>
 
-                  {/* Services List Card Stack */}
+                  {/* Services List Card Stack — real Business services (Batch 9), replacing the
+                      previous 5 hardcoded "Wedding Pic" mock cards. */}
                   <div className="flex flex-col gap-4">
-
-                    {/* Service 1: Wedding Pic (Selected state) */}
-                    {(selectedCategory === "All" || selectedCategory === "Featured" || selectedCategory === "Hair") && (
-                      <div className={`w-full bg-white border rounded-xl p-5 flex justify-between items-center gap-4 shadow-sm transition-all ${service1Selected ? "border-[#2BB54F]" : "border-[#E5E5E5]"}`}>
-                        <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-                          <h4 className="font-inter font-medium text-lg text-[#0D0D0D]">Wedding Pic</h4>
-                          <span className="text-sm text-[#767676]">1 hr 30 min</span>
-                          <span className="font-semibold text-lg text-[#0D0D0D] mt-1">€90</span>
-                        </div>
-                        <button
-                          onClick={() => setService1Selected(!service1Selected)}
-                          className={`text-sm font-semibold rounded-full border transition-all cursor-pointer shadow-sm shrink-0 ${service1Selected
-                            ? "bg-[#2BB54F] border-[#2BB54F] text-white w-8 h-8 min-w-[32px] min-h-[32px] flex items-center justify-center p-0 rounded-full aspect-square"
-                            : "bg-[#FCFAF9] border-[#B3B3B3] text-[#0D0D0D] hover:bg-neutral-50 px-5 py-2"
-                            }`}
-                        >
-                          {service1Selected ? (
-                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : "Book"}
-                        </button>
-                      </div>
+                    {catalogQuery.isLoading && (
+                      <p className="text-sm text-neutral-500">Loading services…</p>
+                    )}
+                    {catalogQuery.isError && (
+                      <p className="text-sm text-red-600">Services could not be loaded right now.</p>
+                    )}
+                    {!catalogQuery.isLoading && (catalogQuery.data?.services.length ?? 0) === 0 && (
+                      <p className="text-sm text-neutral-500">This business has no bookable services yet.</p>
                     )}
 
-                    {/* Service 2: Wedding Pic (Counter variant) */}
-                    {(selectedCategory === "All" || selectedCategory === "Hair Treatment" || selectedCategory === "Hair") && (
-                      <div className={`w-full bg-white border rounded-xl p-5 flex justify-between items-center gap-4 shadow-sm transition-all ${service2Selected ? "border-[#2BB54F]" : "border-[#E5E5E5]"}`}>
-                        <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-                          <h4 className="font-inter font-medium text-lg text-[#0D0D0D]">Wedding Pic</h4>
-                          <span className="text-sm text-[#767676]">max 4 hours • €35 per hour</span>
+                    {(catalogQuery.data?.services ?? [])
+                      .filter(
+                        (service) =>
+                          selectedCategory === "All" ||
+                          service.category === selectedCategory ||
+                          service.subcategory === selectedCategory ||
+                          (selectedCategory === "Featured" && service.isFeatured) ||
+                          (selectedCategory === "Packages" && service.isPackageDeal),
+                      )
+                      .map((service) => {
+                        const isActive = selectedServiceId === service.id && bookingStep !== null;
+                        const input = pricingInputByService[service.id] ?? {};
+                        const priceCents = estimateServicePriceCents(service, input);
 
-                          {/* Hour Counter components */}
-                          {!service2Selected && (
-                            <div className="flex items-center gap-3 mt-2">
-                              <span className="text-sm font-semibold text-[#0d0d0d] font-poppins">Hours</span>
-                              <div className="flex items-center border border-neutral-300 rounded-lg overflow-hidden h-[36px] bg-[#FCFAF9]">
-                                <button
-                                  onClick={() => setService2Count(prev => Math.max(prev - 1, 1))}
-                                  className="px-3 hover:bg-neutral-100 font-bold border-r border-neutral-300 text-lg"
-                                >
-                                  -
-                                </button>
-                                <span className="px-4 font-semibold font-poppins text-sm text-[#111111]">{service2Count}</span>
-                                <button
-                                  onClick={() => setService2Count(prev => prev + 1)}
-                                  className="px-3 hover:bg-neutral-100 font-bold border-l border-neutral-300 text-lg"
-                                >
-                                  +
-                                </button>
+                        const durationMin =
+                          service.fixedPricing?.durationMin ??
+                          service.perPersonPricing?.durationMin ??
+                          service.packagePricing?.durationMin;
+                        const durationText = durationMin
+                          ? durationMin >= 60
+                            ? `${Math.floor(durationMin / 60)} hr${durationMin % 60 > 0 ? ` ${durationMin % 60} min` : ""}`
+                            : `${durationMin} min`
+                          : undefined;
+
+                        return (
+                          <div
+                            key={service.id}
+                            className={`w-full bg-white border rounded-xl p-5 flex justify-between items-center gap-4 shadow-sm transition-all ${isActive ? "border-[#2BB54F]" : "border-[#E5E5E5]"}`}
+                          >
+                            <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+                              <h4 className="font-inter font-medium text-lg text-[#0D0D0D]">{service.name}</h4>
+
+                              {service.pricingMode === "HOURLY" && service.hourlyPricing && (
+                                <span className="text-sm text-[#767676]">
+                                  max {service.hourlyPricing.maxHours} hours • {formatBookingMoney(service.hourlyPricing.ratePerHourCents)} per hour
+                                </span>
+                              )}
+                              {service.pricingMode === "PER_PERSON" && service.perPersonPricing && (
+                                <span className="text-sm text-[#767676]">
+                                  {durationText ? `${durationText} • ` : ""}
+                                  {formatBookingMoney(service.perPersonPricing.ratePerPersonCents)} per person • min {service.perPersonPricing.minPersons} person • max {service.perPersonPricing.maxPersons} person
+                                </span>
+                              )}
+                              {(service.pricingMode === "FIXED" || service.pricingMode === "PACKAGE") && durationText && (
+                                <span className="text-sm text-[#767676]">{durationText}</span>
+                              )}
+
+                              {service.pricingMode === "HOURLY" && service.hourlyPricing && (
+                                <div className="flex items-center gap-3 mt-2">
+                                  <span className="text-sm font-semibold text-[#0d0d0d] font-poppins">Hours</span>
+                                  <div className="flex items-center border border-neutral-300 rounded-lg overflow-hidden h-[36px] bg-[#FCFAF9]">
+                                    <button
+                                      onClick={() =>
+                                        setPricingInputByService((prev) => ({
+                                          ...prev,
+                                          [service.id]: {
+                                            hours: Math.max((prev[service.id]?.hours ?? service.hourlyPricing!.minHours) - 1, service.hourlyPricing!.minHours),
+                                          },
+                                        }))
+                                      }
+                                      className="px-3 hover:bg-neutral-100 font-bold border-r border-neutral-300 text-lg"
+                                    >
+                                      -
+                                    </button>
+                                    <span className="px-4 font-semibold font-poppins text-sm text-[#111111]">
+                                      {input.hours ?? service.hourlyPricing.minHours}
+                                    </span>
+                                    <button
+                                      onClick={() =>
+                                        setPricingInputByService((prev) => ({
+                                          ...prev,
+                                          [service.id]: {
+                                            hours: Math.min((prev[service.id]?.hours ?? service.hourlyPricing!.minHours) + 1, service.hourlyPricing!.maxHours),
+                                          },
+                                        }))
+                                      }
+                                      className="px-3 hover:bg-neutral-100 font-bold border-l border-neutral-300 text-lg"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                              {service.pricingMode === "PER_PERSON" && service.perPersonPricing && (
+                                <div className="flex items-center gap-3 mt-2">
+                                  <span className="text-sm font-semibold text-[#0d0d0d] font-poppins">Person</span>
+                                  <div className="flex items-center border border-neutral-300 rounded-lg overflow-hidden h-[36px] bg-[#FCFAF9]">
+                                    <button
+                                      onClick={() =>
+                                        setPricingInputByService((prev) => ({
+                                          ...prev,
+                                          [service.id]: {
+                                            personCount: Math.max((prev[service.id]?.personCount ?? service.perPersonPricing!.minPersons) - 1, service.perPersonPricing!.minPersons),
+                                          },
+                                        }))
+                                      }
+                                      className="px-3 hover:bg-neutral-100 font-bold border-r border-neutral-300 text-lg"
+                                    >
+                                      -
+                                    </button>
+                                    <span className="px-4 font-semibold font-poppins text-sm text-[#111111]">
+                                      {input.personCount ?? service.perPersonPricing.minPersons}
+                                    </span>
+                                    <button
+                                      onClick={() =>
+                                        setPricingInputByService((prev) => ({
+                                          ...prev,
+                                          [service.id]: {
+                                            personCount: Math.min((prev[service.id]?.personCount ?? service.perPersonPricing!.minPersons) + 1, service.perPersonPricing!.maxPersons),
+                                          },
+                                        }))
+                                      }
+                                      className="px-3 hover:bg-neutral-100 font-bold border-l border-neutral-300 text-lg"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="font-semibold text-lg text-[#0D0D0D]">{formatBookingMoney(priceCents)}</span>
+                                {(service.fixedPricing?.discountPercent || service.packagePricing?.discountPercent) && (
+                                  <span className="line-through text-sm text-gray-400">
+                                    {formatBookingMoney(
+                                      Math.round(priceCents / (1 - (service.fixedPricing?.discountPercent ?? service.packagePricing?.discountPercent ?? 0) / 100)),
+                                    )}
+                                  </span>
+                                )}
                               </div>
+                              {service.description && (
+                                <p className="text-xs text-gray-500 font-medium mt-1">{service.description}</p>
+                              )}
                             </div>
-                          )}
-                          {service2Selected && (
-                            <span className="font-semibold text-lg text-[#0D0D0D] mt-2">€{service2Count * 35}</span>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => setService2Selected(!service2Selected)}
-                          className={`text-sm font-semibold rounded-full border transition-all cursor-pointer shadow-sm shrink-0 ${service2Selected
-                            ? "bg-[#2BB54F] border-[#2BB54F] text-white w-8 h-8 min-w-[32px] min-h-[32px] flex items-center justify-center p-0 rounded-full aspect-square"
-                            : "bg-[#FCFAF9] border-[#B3B3B3] text-[#0D0D0D] hover:bg-neutral-50 px-5 py-2"
-                            }`}
-                        >
-                          {service2Selected ? (
-                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : "Book"}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Service 3: Wedding Pic (Person counter variant) */}
-                    {(selectedCategory === "All" || selectedCategory === "Color" || selectedCategory === "NAILS") && (
-                      <div className={`w-full bg-white border rounded-xl p-5 flex justify-between items-center gap-4 shadow-sm transition-all ${service3Selected ? "border-[#2BB54F]" : "border-[#E5E5E5]"}`}>
-                        <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-                          <h4 className="font-inter font-medium text-lg text-[#0D0D0D]">Wedding Pic</h4>
-                          <span className="text-sm text-[#767676]">1 hr 30 min • €30 per person • min 2 person • max 4 person</span>
-
-                          {/* Person Counter Component */}
-                          {!service3Selected && (
-                            <div className="flex items-center gap-3 mt-2">
-                              <span className="text-sm font-semibold text-[#0d0d0d] font-poppins">Person</span>
-                              <div className="flex items-center border border-neutral-300 rounded-lg overflow-hidden h-[36px] bg-[#FCFAF9]">
-                                <button
-                                  onClick={() => setService3Count(prev => Math.max(prev - 1, 2))}
-                                  className="px-3 hover:bg-neutral-100 font-bold border-r border-neutral-300 text-lg"
-                                >
-                                  -
-                                </button>
-                                <span className="px-4 font-semibold font-poppins text-sm text-[#111111]">{service3Count}</span>
-                                <button
-                                  onClick={() => setService3Count(prev => Math.min(prev + 1, 4))}
-                                  className="px-3 hover:bg-neutral-100 font-bold border-l border-neutral-300 text-lg"
-                                >
-                                  +
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                          {service3Selected && (
-                            <span className="font-semibold text-lg text-[#0D0D0D] mt-2">€{service3Count * 30}</span>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => setService3Selected(!service3Selected)}
-                          className={`text-sm font-semibold rounded-full border transition-all cursor-pointer shadow-sm shrink-0 ${service3Selected
-                            ? "bg-[#2BB54F] border-[#2BB54F] text-white w-8 h-8 min-w-[32px] min-h-[32px] flex items-center justify-center p-0 rounded-full aspect-square"
-                            : "bg-[#FCFAF9] border-[#B3B3B3] text-[#0D0D0D] hover:bg-neutral-50 px-5 py-2"
-                            }`}
-                        >
-                          {service3Selected ? (
-                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : "Book"}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Service 4: Wedding Pic */}
-                    {(selectedCategory === "All" || selectedCategory === "Facial" || selectedCategory === "Waxing & Trimming" || selectedCategory === "Beard") && (
-                      <div className={`w-full bg-white border rounded-xl p-5 flex justify-between items-center gap-4 shadow-sm transition-all ${service4Selected ? "border-[#2BB54F]" : "border-[#E5E5E5]"}`}>
-                        <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-                          <h4 className="font-inter font-medium text-lg text-[#0D0D0D]">Wedding Pic</h4>
-                          <span className="text-sm text-[#767676]">max 4 hours • €35 per hour</span>
-
-                          {!service4Selected && (
-                            <div className="flex items-center gap-3 mt-2">
-                              <span className="text-sm font-semibold text-[#0d0d0d] font-poppins">Hours</span>
-                              <div className="flex items-center border border-neutral-300 rounded-lg overflow-hidden h-[36px] bg-[#FCFAF9]">
-                                <button
-                                  onClick={() => setService4Count(prev => Math.max(prev - 1, 1))}
-                                  className="px-3 hover:bg-neutral-100 font-bold border-r border-neutral-300 text-lg"
-                                >
-                                  -
-                                </button>
-                                <span className="px-4 font-semibold font-poppins text-sm text-[#111111]">{service4Count}</span>
-                                <button
-                                  onClick={() => setService4Count(prev => prev + 1)}
-                                  className="px-3 hover:bg-neutral-100 font-bold border-l border-neutral-300 text-lg"
-                                >
-                                  +
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                          {service4Selected && (
-                            <span className="font-semibold text-lg text-[#0D0D0D] mt-2">€{service4Count * 35}</span>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => setService4Selected(!service4Selected)}
-                          className={`text-sm font-semibold rounded-full border transition-all cursor-pointer shadow-sm shrink-0 ${service4Selected
-                            ? "bg-[#2BB54F] border-[#2BB54F] text-white w-8 h-8 min-w-[32px] min-h-[32px] flex items-center justify-center p-0 rounded-full aspect-square"
-                            : "bg-[#FCFAF9] border-[#B3B3B3] text-[#0D0D0D] hover:bg-neutral-50 px-5 py-2"
-                            }`}
-                        >
-                          {service4Selected ? (
-                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : "Book"}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Service 5: Wedding Pic, Video graphy */}
-                    {(selectedCategory === "All" || selectedCategory === "Featured" || selectedCategory === "Packages") && (
-                      <div className="w-full bg-white border border-[#E5E5E5] rounded-xl p-5 flex justify-between items-center shadow-sm">
-                        <div className="flex flex-col gap-1.5">
-                          <h4 className="font-inter font-medium text-lg text-[#0D0D0D]">Wedding Pic, Video graphy</h4>
-                          <span className="text-sm text-[#767676]">2 hr 30 min</span>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="font-semibold text-lg text-[#0D0D0D]">€390</span>
-                            <span className="line-through text-sm text-gray-400">€490</span>
+                            <button
+                              onClick={() => handleBookService(service.id)}
+                              className={`text-sm font-semibold rounded-full border transition-all cursor-pointer shadow-sm shrink-0 ${isActive
+                                ? "bg-[#2BB54F] border-[#2BB54F] text-white w-8 h-8 min-w-[32px] min-h-[32px] flex items-center justify-center p-0 rounded-full aspect-square"
+                                : "bg-[#FCFAF9] border-[#B3B3B3] text-[#0D0D0D] hover:bg-neutral-50 px-5 py-2"
+                                }`}
+                            >
+                              {isActive ? (
+                                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                              ) : "Book"}
+                            </button>
                           </div>
-                          {mockVenueDetails.services[4].description && (
-                            <p className="text-xs text-gray-500 font-medium mt-1">
-                              {mockVenueDetails.services[4].description}
-                            </p>
-                          )}
-                        </div>
-                        <button className="bg-[#FCFAF9] border border-[#B3B3B3] rounded-full px-5 py-2 text-sm font-semibold text-[#0D0D0D] hover:bg-neutral-50 transition-colors shadow-sm cursor-pointer">
-                          Book
-                        </button>
-                      </div>
-                    )}
+                        );
+                      })}
 
                     {/* See all button */}
                     <button
@@ -793,13 +886,13 @@ function VenueDetailsContent() {
                             <span className="shrink-0 text-neutral-500 mt-0.5">
                               <HugeiconsIcon icon={InformationCircleIcon} size={18} />
                             </span>
-                            <span>First visit? A small deposit of 20% secures your booking — deducted from your total at the venue.</span>
+                            <span>First visit? A small deposit (20% of your total, between €5–€35) secures your booking, charged now as a platform booking fee.</span>
                           </li>
                           <li className="flex items-start gap-2.5">
                             <span className="shrink-0 text-neutral-500 mt-0.5">
                               <HugeiconsIcon icon={InformationCircleIcon} size={18} />
                             </span>
-                            <span>Returning customer? No deposit needed. Just show up and pay at the venue as normal.</span>
+                            <span>Returning customer? The same deposit is charged now and counted toward your total — the rest is paid at the venue.</span>
                           </li>
                         </ul>
                       </div>
@@ -1217,12 +1310,6 @@ function VenueDetailsContent() {
                         </span>
                       </div>
 
-                      {/* Returning Customer / No Deposit indicator */}
-                      <div className="flex items-center gap-2 text-sm font-semibold text-[#1C1B1C]">
-                        <span className="text-[#2BB54F] font-bold"></span>
-                        <span>Returning customer – No deposit required</span>
-                      </div>
-
                       {/* Social links */}
                       <div className="flex flex-col gap-5 pt-2">
                         <a href={mockVenueDetails.facebookUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-85 transition-opacity">
@@ -1499,21 +1586,38 @@ function VenueDetailsContent() {
             {/* Left Side: Step Content */}
             <div className="flex-grow w-full lg:max-w-[700px] flex flex-col gap-10 order-last lg:order-first">
               {bookingStep === "addons" && (
-                <AddonsStep selectedAddons={selectedAddons} setSelectedAddons={setSelectedAddons} />
+                <AddonsStep
+                  addons={serviceAddonsQuery.data?.addons ?? []}
+                  isLoading={serviceAddonsQuery.isLoading}
+                  selectedAddonIds={selectedAddonIds}
+                  setSelectedAddonIds={setSelectedAddonIds}
+                />
               )}
 
               {bookingStep === "professionals" && (
-                <ProfessionalsStep selectedProfessional={selectedProfessional} setSelectedProfessional={setSelectedProfessional} />
+                <ProfessionalsStep
+                  staff={eligibleStaff}
+                  isLoading={catalogQuery.isLoading}
+                  selectedProfessional={selectedProfessional}
+                  setSelectedProfessional={setSelectedProfessional}
+                />
               )}
 
-              {bookingStep === "time" && (
+              {bookingStep === "time" && selectedService && (
                 <TimeStep
-                  selectedDate={selectedDate}
-                  setSelectedDate={setSelectedDate}
-                  selectedTimeSlot={selectedTimeSlot}
-                  setSelectedTimeSlot={setSelectedTimeSlot}
-                  selectedDayNum={selectedDayNum}
-                  setSelectedDayNum={setSelectedDayNum}
+                  timezone={catalogQuery.data?.business.timezone ?? "UTC"}
+                  visibleMonth={visibleMonth}
+                  onPrevMonth={() => setVisibleMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
+                  onNextMonth={() => setVisibleMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
+                  availability={availabilityQuery.data}
+                  isLoading={availabilityQuery.isLoading}
+                  selectedDateIso={selectedDateIso}
+                  onSelectDate={(dateIso) => {
+                    setSelectedDateIso(dateIso);
+                    setSelectedSlot(undefined);
+                  }}
+                  selectedSlot={selectedSlot}
+                  onSelectSlot={setSelectedSlot}
                 />
               )}
 
@@ -1524,23 +1628,13 @@ function VenueDetailsContent() {
                   isReplacingCard={isReplacingCard}
                   setIsReplacingCard={setIsReplacingCard}
                   setBookingStep={setBookingStep}
-                  setPromoDiscountPercent={setPromoDiscountPercent}
-                  setPromoDeductedAmount={setPromoDeductedAmount}
-                  promoCode={promoCode}
-                  setPromoCode={setPromoCode}
+                  notes={bookingNotes}
+                  setNotes={setBookingNotes}
                 />
               )}
 
-              {bookingStep === "confirmed" && (
-                <ConfirmedStep
-                  selectedDayNum={selectedDayNum}
-                  selectedTimeSlot={selectedTimeSlot}
-                  totalPrice={totalPrice}
-                  selectedAddons={selectedAddons}
-                  isReturningCustomer={isReturningCustomer}
-                  selectedList={selectedList}
-                  setBookingStep={setBookingStep}
-                />
+              {bookingStep === "confirmed" && confirmedBooking && (
+                <ConfirmedStep booking={confirmedBooking} setBookingStep={setBookingStep} />
               )}
             </div>
 
@@ -1548,21 +1642,16 @@ function VenueDetailsContent() {
             {bookingStep !== "confirmed" && (
               <CheckoutSummaryAside
                 bookingStep={bookingStep}
-                selectedDayNum={selectedDayNum}
-                selectedTimeSlot={selectedTimeSlot}
-                selectedList={selectedList}
-                totalDurationText={totalDurationText}
-                totalPriceText={totalPriceText}
-                selectedAddons={selectedAddons}
-                selectedProfessional={selectedProfessional}
-                totalPrice={totalPrice}
-                isReturningCustomer={isReturningCustomer}
+                business={catalogQuery.data?.business}
+                preview={preview}
+                isPreviewLoading={previewMutation.isPending}
+                previewError={previewMutation.isError || finalizeMutation.isError}
                 showPolicy={showPolicy}
                 setShowPolicy={setShowPolicy}
-                setBookingStep={setBookingStep}
-                promoDiscountPercent={promoDiscountPercent}
-                promoDeductedAmount={promoDeductedAmount}
-                promoCode={promoCode}
+                onContinue={handleWizardContinue}
+                canContinue={canContinueWizard}
+                isSubmitting={finalizeMutation.isPending || confirming3ds}
+                submitError={walletError}
               />
             )}
 

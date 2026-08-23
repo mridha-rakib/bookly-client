@@ -69,3 +69,15 @@ export const bookingClientBadge = (
   if (source === "MANUAL") return "Manual";
   return platformFeeCents > 0 ? "New" : "Returning";
 };
+
+/** Batch 9 — the customer "My Bookings" tab groupings, one canonical mapping from the real
+ * BookingStatus enum instead of each screen inventing its own (see the old mock's
+ * "deposit_paid"/"passed_fee"/etc — a vocabulary with no backend equivalent). */
+export type CustomerBookingTab = "upcoming" | "completed" | "noshow" | "canceled";
+
+export const CUSTOMER_BOOKING_TAB_STATUSES: Record<CustomerBookingTab, BookingStatus[]> = {
+  upcoming: ["UPCOMING", "PENDING"],
+  completed: ["COMPLETED"],
+  noshow: ["NO_SHOW_CHARGED", "NO_SHOW_WAIVED", "NO_SHOW_CANCELLED"],
+  canceled: ["CANCELLED_BY_CUSTOMER", "CANCELLED_BY_BUSINESS", "LATE_CANCELLATION"],
+};

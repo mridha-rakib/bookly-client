@@ -5,6 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bookingsApi,
   type BookingDetail,
+  type CreateBookingInput,
+  type CreateManualBookingInput,
+  type FinalizeBookingResult,
   type ListBookingsParams,
 } from "@/lib/api/bookings";
 
@@ -19,6 +22,12 @@ export const bookingKeys = {
   calendars: (businessId: string) => [...bookingKeys.all, "calendar", businessId] as const,
   calendar: (businessId: string, fromDate: string, toDate: string) =>
     [...bookingKeys.calendars(businessId), fromDate, toDate] as const,
+  // --- Customer scope (Batch 9) — cross-business, mirrors "/me/bookings" ---
+  customerAll: ["customerBookings"] as const,
+  customerLists: () => [...bookingKeys.customerAll, "list"] as const,
+  customerList: (params: ListBookingsParams) => [...bookingKeys.customerLists(), params] as const,
+  customerDetails: () => [...bookingKeys.customerAll, "detail"] as const,
+  customerDetail: (bookingId: string) => [...bookingKeys.customerDetails(), bookingId] as const,
 };
 
 /** Every mutation below touches the SAME Booking's list/detail/calendar rows at once (e.g.
@@ -75,6 +84,27 @@ const onBookingMutated = (
 ) => {
   queryClient.setQueryData(bookingKeys.detail(businessId, booking.id), booking);
   invalidateBookingCaches(queryClient, businessId);
+};
+
+/** Batch 10 — Business Owner/Supervisor manual booking creation. Reuses the exact same
+ * `CreateManualBookingInput` shape and idempotency contract as `createManualBooking` on the
+ * backend (a real MongoDB unique-index-backed claim — see BookingCreationClaimRepository) —
+ * never a second, competing idempotency scheme. A MANUAL booking's `depositCents`/
+ * `platformFeeCents` are always zero (server-enforced, see BookingService.
+ * validateManualBookingHasNoBooklyFee) — there is no payment/Stripe step in this flow at all. */
+export const useCreateManualBookingMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      businessId,
+      input,
+    }: {
+      businessId: string;
+      input: CreateManualBookingInput;
+    }) => bookingsApi.createManual(businessId, input),
+    onSuccess: (booking, variables) => onBookingMutated(queryClient, variables.businessId, booking),
+  });
 };
 
 export const useCompleteBookingMutation = () => {
@@ -164,5 +194,83 @@ export const useCancelNoShowMutation = () => {
     mutationFn: ({ businessId, bookingId }: { businessId: string; bookingId: string }) =>
       bookingsApi.cancelNoShow(businessId, bookingId),
     onSuccess: (booking, variables) => onBookingMutated(queryClient, variables.businessId, booking),
+  });
+};
+
+// --- Customer-side (Batch 9) --------------------------------------------------------------
+
+export const useCustomerBookingsQuery = (params: ListBookingsParams = {}) =>
+  useQuery({
+    queryKey: bookingKeys.customerList(params),
+    queryFn: () => bookingsApi.listForCustomer(params),
+  });
+
+export const useCustomerBookingDetailQuery = (bookingId: string | undefined) =>
+  useQuery({
+    queryKey: bookingKeys.customerDetail(bookingId ?? ""),
+    queryFn: () => bookingsApi.getDetailForCustomer(bookingId as string),
+    enabled: Boolean(bookingId),
+  });
+
+const invalidateCustomerBookingCaches = (queryClient: ReturnType<typeof useQueryClient>) => {
+  void queryClient.invalidateQueries({ queryKey: bookingKeys.customerLists() });
+};
+
+/** A "get me the real price" quote — read-only server-side, but a mutation (not a query) since
+ * it's triggered on demand as the customer moves through the wizard (service lines/date change),
+ * never polled/cached across renders. Never trust a client-computed total — see
+ * BookingCreationPreview's own doc comment in lib/api/bookings.ts. */
+export const usePreviewCustomerBookingMutation = () =>
+  useMutation({
+    mutationFn: ({ businessId, input }: { businessId: string; input: CreateBookingInput }) =>
+      bookingsApi.previewCustomerBooking(businessId, input),
+  });
+
+/** The real booking-creation call — may return `{status: "requires_action", clientSecret}` for
+ * 3DS (see FinalizeBookingResult's own doc comment); the caller is responsible for completing
+ * 3DS via Stripe.js and calling this AGAIN with the SAME `idempotencyKey` inside `input`, which
+ * the backend's own idempotent-retry claim resolves safely (see
+ * BookingCreationService.finalizeCustomerBooking's own doc comment — never a second charge). */
+export const useFinalizeCustomerBookingMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ businessId, input }: { businessId: string; input: CreateBookingInput }) =>
+      bookingsApi.finalizeCustomerBooking(businessId, input),
+    onSuccess: (result: FinalizeBookingResult) => {
+      // Discriminate the SAME way lib/api/bookings.ts's own doc comment specifies: only the
+      // requires_action shape has `clientSecret` — a confirmed BookingDetail's own `status`
+      // field is a BookingStatus value like "UPCOMING", never the literal "confirmed".
+      if (!("clientSecret" in result)) {
+        queryClient.setQueryData(bookingKeys.customerDetail(result.id), result);
+        invalidateCustomerBookingCaches(queryClient);
+      }
+    },
+  });
+};
+
+export const useCancelByCustomerMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ bookingId, reason }: { bookingId: string; reason?: string }) =>
+      bookingsApi.cancelByCustomer(bookingId, reason),
+    onSuccess: (booking) => {
+      queryClient.setQueryData(bookingKeys.customerDetail(booking.id), booking);
+      invalidateCustomerBookingCaches(queryClient);
+    },
+  });
+};
+
+export const useRescheduleByCustomerMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ bookingId, startAt }: { bookingId: string; startAt: string }) =>
+      bookingsApi.rescheduleByCustomer(bookingId, startAt),
+    onSuccess: (booking) => {
+      queryClient.setQueryData(bookingKeys.customerDetail(booking.id), booking);
+      invalidateCustomerBookingCaches(queryClient);
+    },
   });
 };

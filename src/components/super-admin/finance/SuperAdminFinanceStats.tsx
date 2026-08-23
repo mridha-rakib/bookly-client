@@ -2,38 +2,55 @@
 
 import React from "react";
 
-export default function SuperAdminFinanceStats() {
+import { formatBookingMoney } from "@/lib/bookings/format";
+import type { PlatformFinanceSummary } from "@/lib/api/superAdminFinance";
+
+interface SuperAdminFinanceStatsProps {
+  summary?: PlatformFinanceSummary;
+  isLoading?: boolean;
+}
+
+export default function SuperAdminFinanceStats({ summary, isLoading }: SuperAdminFinanceStatsProps) {
+  const amount = (cents: number | undefined) =>
+    cents !== undefined ? formatBookingMoney(cents) : isLoading ? "…" : "—";
+
   const cards = [
     {
-      title: "Activation fees Bookly revenue",
-      value: "€18,420",
-      subtitle: "62 new customers",
-      valueColor: "text-[#6366F1]"
+      title: "Activation fees — Bookly revenue",
+      value: amount(summary?.bookly.netCents),
+      subtitle: "Net of Bookly's own Stripe fee",
+      valueColor: "text-[#6366F1]",
     },
     {
       title: "Collected for businesses",
-      value: "€18,420",
-      subtitle: "No-show €10 - Late cancel €34",
-      valueColor: "text-[#6366F1]"
+      value: amount(summary?.collectedForBusinesses.amountCents),
+      subtitle: summary
+        ? `No-show ${formatBookingMoney(summary.collectedForBusinesses.noShowAmountCents)} · Late cancel ${formatBookingMoney(summary.collectedForBusinesses.cancellationAmountCents)}`
+        : isLoading
+          ? "Loading…"
+          : "—",
+      valueColor: "text-[#6366F1]",
     },
     {
       title: "Sent to businesses via SEPA",
-      value: "€1,240",
-      subtitle: "11 SEPA payouts sent",
-      valueColor: "text-[#8D1212]"
+      value: amount(summary?.sentToBusinesses.amountCents),
+      subtitle: summary ? `${summary.sentToBusinesses.payoutCount} payouts sent (all time)` : "—",
+      valueColor: "text-[#8D1212]",
     },
     {
       title: "Pending payouts",
-      value: "€1,240",
-      subtitle: "7 businesses awaiting SEPA",
-      valueColor: "text-[#D97706]"
+      value: amount(summary?.pendingPayouts.amountCents),
+      subtitle: summary
+        ? `${summary.pendingPayouts.businessCount} business${summary.pendingPayouts.businessCount === 1 ? "" : "es"} awaiting SEPA`
+        : "—",
+      valueColor: "text-[#D97706]",
     },
     {
       title: "Discounted money",
-      value: "€4,120",
-      subtitle: "124 times promo code applied",
-      valueColor: "text-[#0CC0DF]"
-    }
+      value: "—",
+      subtitle: "Not yet available — no promo/discount system exists",
+      valueColor: "text-[#0CC0DF]",
+    },
   ];
 
   return (

@@ -126,6 +126,9 @@ export interface BookingDetail {
 
 export interface BookingListItem {
   id: string;
+  /** Batch 9 — lets the cross-business customer "My Bookings" list identify/link to each
+   * row's Business (via `/catalog/businesses/:businessId`). */
+  businessId: string;
   reference: string;
   status: BookingStatus;
   source: BookingSource;

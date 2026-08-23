@@ -2,142 +2,45 @@
 
 import React, { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Download01Icon, ArrowDown01Icon, ArrowUp01Icon, Car04Icon, Tick01Icon } from "@hugeicons/core-free-icons";
+import { Download01Icon, ArrowDown01Icon, ArrowUp01Icon } from "@hugeicons/core-free-icons";
 
-interface PendingPayout {
-  id: string;
-  businessName: string;
-  city: string;
-  category: string;
-  transactionsCount: number;
-  noShowAmount: number;
-  lateCancelAmount: number;
-  isMobile: boolean;
-  payoutMonth: string;
-  payoutDates: string;
-  netAmount: string;
-  iban: string;
-  status: "Pending" | "Sent";
-}
+import { formatBookingMoney } from "@/lib/bookings/format";
+import type { BusinessPayableSummary } from "@/lib/api/superAdminFinance";
+import { useExecutePayoutMutation, useSuperAdminPendingPayoutsQuery } from "@/lib/superAdminFinance/hooks";
 
 interface SuperAdminFinancePendingProps {
-  fromDate?: string;
-  toDate?: string;
   setActiveTab?: (tab: string) => void;
   setSharedViewingBusinessId?: (id: string | null) => void;
   setSharedViewingBusinessTab?: (tab: string) => void;
 }
 
+/** Batch 8 — wired to the real, always-full accumulated pending payable balance (never
+ * date-filtered — a period filter here would risk hiding real unpaid money; the parent's
+ * date-range picker no longer applies to this component, see the Batch 8 final report). */
 export default function SuperAdminFinancePending({
-  fromDate,
-  toDate,
   setActiveTab,
   setSharedViewingBusinessId,
-  setSharedViewingBusinessTab
+  setSharedViewingBusinessTab,
 }: SuperAdminFinancePendingProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [selectedPayout, setSelectedPayout] = useState<PendingPayout | null>(null);
-  const [payouts, setPayouts] = useState<PendingPayout[]>([
-    {
-      id: "1",
-      businessName: "Glam Studio",
-      city: "Nicosia",
-      category: "Hair Salons",
-      transactionsCount: 3,
-      noShowAmount: 20,
-      lateCancelAmount: 15,
-      isMobile: true,
-      payoutMonth: "Jul 2026",
-      payoutDates: "26-25 Jul",
-      netAmount: "€34.06",
-      iban: "CY48 0002 0003 4829 3712",
-      status: "Pending"
-    },
-    {
-      id: "2",
-      businessName: "Zen Spa Larnaca",
-      city: "Larnaca",
-      category: "Spas",
-      transactionsCount: 2,
-      noShowAmount: 10,
-      lateCancelAmount: 25,
-      isMobile: false,
-      payoutMonth: "Jul 2026",
-      payoutDates: "26-25 Jul",
-      netAmount: "€31.20",
-      iban: "CY48 0002 0003 1111 8892",
-      status: "Pending"
-    },
-    {
-      id: "3",
-      businessName: "Nails By Maria",
-      city: "Limassol",
-      category: "Nail Salons",
-      transactionsCount: 4,
-      noShowAmount: 40,
-      lateCancelAmount: 0,
-      isMobile: true,
-      payoutMonth: "Jul 2026",
-      payoutDates: "26-25 Jul",
-      netAmount: "€36.50",
-      iban: "CY48 0002 0003 2222 9993",
-      status: "Pending"
-    },
-    {
-      id: "4",
-      businessName: "Lara Beauty Bar",
-      city: "Paphos",
-      category: "Beauty Salons",
-      transactionsCount: 1,
-      noShowAmount: 0,
-      lateCancelAmount: 20,
-      isMobile: false,
-      payoutMonth: "Jul 2026",
-      payoutDates: "26-25 Jul",
-      netAmount: "€18.80",
-      iban: "CY48 0002 0003 3333 4445",
-      status: "Pending"
-    }
-  ]);
+  const [selectedPayout, setSelectedPayout] = useState<BusinessPayableSummary | null>(null);
+  const [providerReference, setProviderReference] = useState("");
 
-  const filteredPayouts = payouts.filter((p) => {
-    if (fromDate || toDate) {
-      const monthPart = p.payoutMonth.split(" ")[0]; // "Jul"
-      const yearPart = p.payoutMonth.split(" ")[1]; // "2026"
-      const payoutDate = new Date(`${monthPart} 1, ${yearPart}`);
-      
-      if (fromDate) {
-        const fromLimit = new Date(fromDate);
-        fromLimit.setDate(1);
-        fromLimit.setHours(0, 0, 0, 0);
-        payoutDate.setHours(0, 0, 0, 0);
-        if (payoutDate < fromLimit) return false;
-      }
-      
-      if (toDate) {
-        const toLimit = new Date(toDate);
-        toLimit.setDate(1);
-        toLimit.setHours(0, 0, 0, 0);
-        payoutDate.setHours(0, 0, 0, 0);
-        if (payoutDate > toLimit) return false;
-      }
-    }
-    return true;
-  });
+  const query = useSuperAdminPendingPayoutsQuery();
+  const executeMutation = useExecutePayoutMutation();
+  const items = query.data?.items ?? [];
 
   const handleExportCSV = () => {
-    const headers = ["Business", "City", "Category", "Transactions", "No-show €", "Late cancel €", "Payout Period", "Net Amount", "IBAN", "Status"];
-    const rows = filteredPayouts.map((p) => [
+    const headers = ["Business", "City", "Category", "Transactions", "No-show €", "Late cancel €", "Deposits €", "Net Amount"];
+    const rows = items.map((p) => [
       `"${p.businessName}"`,
       `"${p.city}"`,
       `"${p.category}"`,
-      p.transactionsCount,
-      p.noShowAmount,
-      p.lateCancelAmount,
-      `"${p.payoutMonth} (${p.payoutDates})"`,
-      `"${p.netAmount}"`,
-      `"${p.iban}"`,
-      `"${p.status}"`
+      p.transactionCount,
+      (p.noShowAmountCents / 100).toFixed(2),
+      (p.cancellationAmountCents / 100).toFixed(2),
+      (p.depositAmountCents / 100).toFixed(2),
+      `"${formatBookingMoney(p.netCents)}"`,
     ]);
 
     const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -153,10 +56,15 @@ export default function SuperAdminFinancePending({
 
   const handleConfirmTransfer = () => {
     if (!selectedPayout) return;
-    setPayouts((prev) =>
-      prev.map((p) => (p.id === selectedPayout.id ? { ...p, status: "Sent" } : p))
+    executeMutation.mutate(
+      { businessId: selectedPayout.businessId, providerReference: providerReference || undefined },
+      {
+        onSuccess: () => {
+          setSelectedPayout(null);
+          setProviderReference("");
+        },
+      },
     );
-    setSelectedPayout(null);
   };
 
   return (
@@ -165,7 +73,7 @@ export default function SuperAdminFinancePending({
       <div className="bg-[#F5F5F5] p-5 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 border-b border-gray-200 w-full">
         <div className="flex flex-col gap-1 w-full sm:w-auto">
           <h3 className="font-semibold text-base text-[#111111] leading-tight">
-            Pending SEPA payouts - {filteredPayouts.filter((p) => p.status === "Pending").length} businesses
+            Pending SEPA payouts - {items.length} businesses
           </h3>
           <p className="text-xs text-gray-500 font-normal">
             Each payout requires individual confirmation before executing
@@ -175,7 +83,8 @@ export default function SuperAdminFinancePending({
         <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-2 bg-[#111111] hover:bg-black text-white px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors flex-1 sm:flex-initial justify-center"
+            disabled={items.length === 0}
+            className="flex items-center gap-2 bg-[#111111] hover:bg-black disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors flex-1 sm:flex-initial justify-center"
           >
             <HugeiconsIcon icon={Download01Icon} className="w-4 h-4 text-white" />
             <span>Export CSV</span>
@@ -192,10 +101,23 @@ export default function SuperAdminFinancePending({
 
       {/* Table/List View */}
       {!isCollapsed && (
+        query.isLoading ? (
+          <div className="flex items-center justify-center py-16 text-sm text-gray-400">
+            Loading pending payouts…
+          </div>
+        ) : query.isError ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
+            <span className="text-sm font-semibold text-rose-600">Couldn&apos;t load pending payouts</span>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
+            <span className="text-sm font-semibold text-gray-600">No Businesses have a pending balance right now</span>
+          </div>
+        ) : (
         <div className="overflow-x-auto w-full">
           <table className="w-full text-left font-sans text-xs border-collapse">
             <tbody className="divide-y divide-gray-100">
-              {filteredPayouts.map((p) => {
+              {items.map((p) => {
                 const initials = p.businessName
                   .split(" ")
                   .map((n) => n[0])
@@ -204,7 +126,7 @@ export default function SuperAdminFinancePending({
                   .toUpperCase();
 
                 return (
-                  <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
+                  <tr key={p.businessId} className="hover:bg-gray-50/50 transition-colors">
                     {/* Business Info Column */}
                     <td className="p-4 whitespace-nowrap min-w-[320px]">
                       <div className="flex items-center gap-3">
@@ -216,29 +138,19 @@ export default function SuperAdminFinancePending({
                           <span className="font-semibold text-[14px] text-gray-900">
                             {p.businessName}
                           </span>
-                          <span className="text-xs text-gray-500 font-normal flex items-center gap-1">
-                            {p.city} • {p.category} • {p.transactionsCount} transactions • No-show €{p.noShowAmount} + late cancel €{p.lateCancelAmount}
-                            {p.isMobile && (
-                              <HugeiconsIcon icon={Car04Icon} className="w-3.5 h-3.5 text-[#4E5F78] shrink-0 ml-1" />
-                            )}
+                          <span className="text-xs text-gray-500 font-normal">
+                            {p.city} • {p.category} • {p.transactionCount} transaction{p.transactionCount === 1 ? "" : "s"} • No-show {formatBookingMoney(p.noShowAmountCents)} + late cancel {formatBookingMoney(p.cancellationAmountCents)}
+                            {p.depositAmountCents > 0 ? ` + deposits ${formatBookingMoney(p.depositAmountCents)}` : ""}
                           </span>
                         </div>
-                      </div>
-                    </td>
-
-                    {/* Period Column */}
-                    <td className="p-4 whitespace-nowrap text-gray-500">
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-sm text-[#36309D]">{p.payoutMonth}</span>
-                        <span className="text-xs text-gray-400">{p.payoutDates}</span>
                       </div>
                     </td>
 
                     {/* Net Payout Amount Column */}
                     <td className="p-4 whitespace-nowrap">
                       <div className="flex flex-col">
-                        <span className="font-semibold text-sm text-[#D97706]">{p.netAmount}</span>
-                        <span className="text-[11px] text-gray-400 font-normal">Net after Stripe + SEPA</span>
+                        <span className="font-semibold text-sm text-[#D97706]">{formatBookingMoney(p.netCents)}</span>
+                        <span className="text-[11px] text-gray-400 font-normal">Net after Stripe fees</span>
                       </div>
                     </td>
 
@@ -247,13 +159,7 @@ export default function SuperAdminFinancePending({
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => {
-                            let bId = "1";
-                            if (p.businessName.toLowerCase().includes("topcut")) {
-                              bId = "2";
-                            } else if (p.businessName.toLowerCase().includes("luna")) {
-                              bId = "3";
-                            }
-                            setSharedViewingBusinessId?.(bId);
+                            setSharedViewingBusinessId?.(p.businessId);
                             setSharedViewingBusinessTab?.("Finance");
                             setActiveTab?.("Businesses");
                           }}
@@ -261,19 +167,12 @@ export default function SuperAdminFinancePending({
                         >
                           View
                         </button>
-                        {p.status === "Pending" ? (
-                          <button
-                            onClick={() => setSelectedPayout(p)}
-                            className="px-4 py-1.5 border border-[#E5E7EB] rounded-lg text-xs font-semibold text-[#111827] hover:bg-gray-50 transition-colors cursor-pointer"
-                          >
-                            Send SEPA
-                          </button>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-4 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold text-gray-400">
-                            <HugeiconsIcon icon={Tick01Icon} className="w-3.5 h-3.5 text-gray-400" />
-                            <span>Sent</span>
-                          </span>
-                        )}
+                        <button
+                          onClick={() => setSelectedPayout(p)}
+                          className="px-4 py-1.5 border border-[#E5E7EB] rounded-lg text-xs font-semibold text-[#111827] hover:bg-gray-50 transition-colors cursor-pointer"
+                        >
+                          Send SEPA
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -282,6 +181,7 @@ export default function SuperAdminFinancePending({
             </tbody>
           </table>
         </div>
+        )
       )}
 
       {/* Confirmation Modal */}
@@ -300,12 +200,26 @@ export default function SuperAdminFinancePending({
             </h3>
 
             <p className="text-sm text-gray-600 leading-relaxed">
-              Send <strong className="text-gray-900">{selectedPayout.netAmount}</strong> to <strong className="text-gray-900">{selectedPayout.businessName}</strong> for <strong className="text-gray-900">{selectedPayout.payoutMonth} ({selectedPayout.payoutDates})</strong>;
+              Confirm that you have sent <strong className="text-gray-900">{formatBookingMoney(selectedPayout.netCents)}</strong> to <strong className="text-gray-900">{selectedPayout.businessName}</strong> via your own bank/Stripe transfer.
               <br />
-              IBAN: <code className="bg-gray-50 px-1 py-0.5 rounded text-gray-800 font-mono text-xs">{selectedPayout.iban.replace(/.(?=.{4})/g, "•")}</code>
-              <br />
+              <span className="text-gray-500 text-xs mt-1 block">Bookly does not hold this Business&apos;s bank details or execute the transfer — this records your own attestation that the transfer was made.</span>
               <span className="text-rose-600 font-semibold text-xs mt-2 block">⚠️ This action is irreversible</span>
             </p>
+
+            <label className="flex flex-col gap-1 text-xs text-gray-600">
+              Your bank reference (optional)
+              <input
+                type="text"
+                value={providerReference}
+                onChange={(e) => setProviderReference(e.target.value)}
+                placeholder="e.g. bank confirmation code"
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-gray-400"
+              />
+            </label>
+
+            {executeMutation.isError ? (
+              <span className="text-xs text-rose-600">Couldn&apos;t record this payout — please try again.</span>
+            ) : null}
 
             <div className="flex justify-end items-center gap-4 mt-2">
               <button
@@ -316,9 +230,10 @@ export default function SuperAdminFinancePending({
               </button>
               <button
                 onClick={handleConfirmTransfer}
-                className="bg-[#16A34A] hover:bg-[#15803d] text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+                disabled={executeMutation.isPending}
+                className="bg-[#16A34A] hover:bg-[#15803d] disabled:opacity-50 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
               >
-                Confirm Transfer
+                {executeMutation.isPending ? "Confirming…" : "Confirm Transfer"}
               </button>
             </div>
           </div>

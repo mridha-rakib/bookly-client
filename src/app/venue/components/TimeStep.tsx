@@ -1,134 +1,170 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft02Icon, ArrowRight02Icon, Clock04Icon, InformationCircleIcon, Calendar01Icon } from "@hugeicons/core-free-icons";
+import { ArrowLeft02Icon, ArrowRight02Icon, Clock04Icon } from "@hugeicons/core-free-icons";
+
+import type { AvailabilityResult, AvailabilitySlot } from "@/lib/api/catalog";
 
 interface TimeStepProps {
-  selectedDate: string;
-  setSelectedDate: (date: string) => void;
-  selectedTimeSlot: string;
-  setSelectedTimeSlot: (slot: string) => void;
-  selectedDayNum: number;
-  setSelectedDayNum: (day: number) => void;
+  timezone: string;
+  visibleMonth: Date;
+  onPrevMonth: () => void;
+  onNextMonth: () => void;
+  availability?: AvailabilityResult;
+  isLoading?: boolean;
+  selectedDateIso?: string;
+  onSelectDate: (dateIso: string) => void;
+  selectedSlot?: AvailabilitySlot;
+  onSelectSlot: (slot: AvailabilitySlot) => void;
 }
 
+const toDateIso = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+const formatLocalTime = (isoInstant: string, timezone: string) =>
+  new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: timezone }).format(
+    new Date(isoInstant),
+  );
+
+/** The Business's own local hour-of-day for a slot — never UTC (a slot at 09:00 local in a
+ * UTC+2 business is 07:00 UTC; splitting on raw UTC hours would misclassify it). */
+const localHour = (isoInstant: string, timezone: string): number =>
+  Number(
+    new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hour12: false, timeZone: timezone }).format(
+      new Date(isoInstant),
+    ),
+  );
+
 export default function TimeStep({
-  selectedDate,
-  setSelectedDate,
-  selectedTimeSlot,
-  setSelectedTimeSlot,
-  selectedDayNum,
-  setSelectedDayNum,
+  timezone,
+  visibleMonth,
+  onPrevMonth,
+  onNextMonth,
+  availability,
+  isLoading,
+  selectedDateIso,
+  onSelectDate,
+  selectedSlot,
+  onSelectSlot,
 }: TimeStepProps) {
+  const todayIso = toDateIso(new Date());
+
+  const weeks = useMemo(() => {
+    const year = visibleMonth.getFullYear();
+    const month = visibleMonth.getMonth();
+    const firstOfMonth = new Date(year, month, 1);
+    // Monday-first grid: JS getDay() is 0=Sun..6=Sat; convert to 0=Mon..6=Sun.
+    const leadingBlanks = (firstOfMonth.getDay() + 6) % 7;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const cells: Array<{ date: Date; dateIso: string } | null> = [];
+    for (let i = 0; i < leadingBlanks; i++) cells.push(null);
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      cells.push({ date, dateIso: toDateIso(date) });
+    }
+    while (cells.length % 7 !== 0) cells.push(null);
+
+    const rows: Array<typeof cells> = [];
+    for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
+    return rows;
+  }, [visibleMonth]);
+
+  const dayByIso = useMemo(() => {
+    const map = new Map<string, (typeof availability extends undefined ? never : NonNullable<typeof availability>["days"][number])>();
+    for (const day of availability?.days ?? []) {
+      map.set(day.date, day);
+    }
+    return map;
+  }, [availability]);
+
+  const selectedDay = selectedDateIso ? dayByIso.get(selectedDateIso) : undefined;
+  const morningSlots = (selectedDay?.slots ?? []).filter(
+    (slot) => localHour(slot.startAt, timezone) < 12,
+  );
+  const afternoonSlots = (selectedDay?.slots ?? []).filter(
+    (slot) => localHour(slot.startAt, timezone) >= 12,
+  );
+
+  const renderSlotButton = (slot: AvailabilitySlot) => {
+    const isSelected = selectedSlot?.startAt === slot.startAt;
+    return (
+      <button
+        key={slot.startAt}
+        onClick={() => onSelectSlot(slot)}
+        className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+          isSelected ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
+        }`}
+      >
+        {formatLocalTime(slot.startAt, timezone)}
+      </button>
+    );
+  };
+
   return (
     <div className="flex flex-col w-full lg:w-[714px]">
-      {/* Title */}
       <h1 className="font-semibold text-3xl md:text-4xl text-[#1C1B1C]">Select Time</h1>
-      
-      {/* Status Indicators */}
-      <div className="flex flex-wrap items-center gap-5 mt-10">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-[#D88888] rounded-full shrink-0" />
-          <span className="text-sm font-medium text-[#111111] font-poppins tracking-wider">Holiday/Weekend</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-[#D1D1D1] rounded-full shrink-0" />
-          <span className="text-sm font-medium text-[#111111] font-poppins tracking-wider">Current date</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-[#E5E5E5] rounded-full shrink-0" />
-          <span className="text-sm font-medium text-[#111111] font-poppins tracking-wider">Booked slot</span>
-        </div>
-      </div>
 
       {/* Date Picker Section */}
       <div className="w-full bg-white border border-[#EBEAE6] rounded-2xl p-6 mt-[60px] shadow-sm">
-        {/* Month Selector header */}
         <div className="flex justify-between items-center w-full mb-6 px-1">
-          <span className="font-semibold text-[17.5px] text-[#0A0D14] font-poppins">August 2026</span>
+          <span className="font-semibold text-[17.5px] text-[#0A0D14] font-poppins">
+            {new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" }).format(visibleMonth)}
+          </span>
           <div className="flex items-center gap-2">
-            <button className="w-10 h-10 border border-[#E0DED9] rounded-lg flex items-center justify-center cursor-pointer hover:bg-neutral-50 text-[#141B34]">
+            <button
+              onClick={onPrevMonth}
+              className="w-10 h-10 border border-[#E0DED9] rounded-lg flex items-center justify-center cursor-pointer hover:bg-neutral-50 text-[#141B34]"
+            >
               <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />
             </button>
-            <button className="w-10 h-10 border border-[#E0DED9] rounded-lg flex items-center justify-center cursor-pointer hover:bg-neutral-50 text-[#141B34]">
+            <button
+              onClick={onNextMonth}
+              className="w-10 h-10 border border-[#E0DED9] rounded-lg flex items-center justify-center cursor-pointer hover:bg-neutral-50 text-[#141B34]"
+            >
               <HugeiconsIcon icon={ArrowRight02Icon} size={20} />
             </button>
           </div>
         </div>
 
-        {/* Days grid container */}
         <div className="grid grid-cols-7 gap-3 w-full text-center">
-          {/* Weekday headers */}
-          {["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].map(day => (
+          {["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].map((day) => (
             <span key={day} className="text-xs font-semibold text-[#8C8A85] tracking-widest py-1 font-poppins uppercase">
               {day}
             </span>
           ))}
 
-          {/* Dummy Days of previous month spacer */}
-          {[1, 2, 3, 4, 5, 6].map(i => (
-            <div key={`prev-${i}`} className="aspect-square flex items-center justify-center text-neutral-300 font-medium text-sm">
-              {25 + i}
-            </div>
-          ))}
-
-          {/* Days list */}
-          {[
-            { num: 1, label: "Mon, Aug 1", weekend: false },
-            { num: 2, label: "Tue, Aug 2", weekend: false },
-            { num: 3, label: "Wed, Aug 3", weekend: false },
-            { num: 4, label: "Thu, Aug 4", weekend: false },
-            { num: 5, label: "Fri, Aug 5", weekend: false },
-            { num: 6, label: "Sat, Aug 6", weekend: true },
-            { num: 7, label: "Sun, Aug 7", weekend: true },
-            { num: 8, label: "Mon, Aug 8", weekend: false },
-            { num: 9, label: "Tue, Aug 9", weekend: false },
-            { num: 10, label: "Wed, Aug 10", weekend: false },
-            { num: 11, label: "Thu, Aug 11", weekend: false },
-            { num: 12, label: "Fri, Aug 12", weekend: false },
-            { num: 13, label: "Sat, Aug 13", weekend: true },
-            { num: 14, label: "Sun, Aug 14", weekend: true },
-            { num: 15, label: "Mon, Aug 15", weekend: false },
-            { num: 16, label: "Tue, Aug 16", weekend: false },
-            { num: 17, label: "Wed, Aug 17", weekend: false },
-            { num: 18, label: "Thu, Aug 18", weekend: false },
-            { num: 19, label: "Fri, Aug 19", weekend: false },
-            { num: 20, label: "Sat, Aug 20", weekend: true },
-            { num: 21, label: "Sun, Aug 21", weekend: true },
-            { num: 22, label: "Mon, Aug 22", weekend: false },
-            { num: 23, label: "Tue, Aug 23", weekend: false },
-            { num: 24, label: "Wed, Aug 24", weekend: false },
-            { num: 25, label: "Thu, Aug 25", weekend: false },
-            { num: 26, label: "Fri, Aug 26", weekend: false },
-            { num: 27, label: "Sat, Aug 27", weekend: true },
-            { num: 28, label: "Sun, Aug 28", weekend: true },
-            { num: 29, label: "Mon, Aug 29", weekend: false },
-            { num: 30, label: "Tue, Aug 30", weekend: false },
-            { num: 31, label: "Wed, Aug 31", weekend: false },
-          ].map(day => {
-            const isSelected = selectedDayNum === day.num;
-            const isToday = day.num === 18;
+          {weeks.flat().map((cell, idx) => {
+            if (!cell) {
+              return <div key={`blank-${idx}`} className="aspect-square" />;
+            }
+            const day = dayByIso.get(cell.dateIso);
+            const isSelected = selectedDateIso === cell.dateIso;
+            const isToday = cell.dateIso === todayIso;
+            const isPast = cell.dateIso < todayIso;
+            const hasSlots = (day?.slots.length ?? 0) > 0;
+            const isBookable = !isPast && (day === undefined || day.isOpen);
 
             return (
               <button
-                key={day.num}
-                onClick={() => {
-                  setSelectedDayNum(day.num);
-                  setSelectedDate(day.label);
-                }}
-                className={`aspect-square flex flex-col items-center justify-center rounded-xl text-sm font-semibold transition-all cursor-pointer border ${
+                key={cell.dateIso}
+                disabled={isPast || (day !== undefined && !hasSlots)}
+                onClick={() => onSelectDate(cell.dateIso)}
+                className={`aspect-square flex flex-col items-center justify-center rounded-xl text-sm font-semibold transition-all border ${
                   isSelected
                     ? "bg-[#2E9DA7] border-[#2E9DA7] text-white"
                     : isToday
-                    ? "bg-[#D1D1D1] border-neutral-300 text-black hover:bg-neutral-200"
-                    : day.weekend
-                    ? "bg-[#D88888] border-[#D88888] text-white hover:opacity-90"
-                    : "bg-transparent border-transparent text-[#0A0D14] hover:bg-neutral-50"
+                      ? "bg-[#D1D1D1] border-neutral-300 text-black hover:bg-neutral-200"
+                      : isPast || !isBookable
+                        ? "bg-transparent border-transparent text-neutral-300 cursor-not-allowed"
+                        : day !== undefined && !hasSlots
+                          ? "bg-neutral-50 border-transparent text-neutral-300 cursor-not-allowed"
+                          : "bg-transparent border-transparent text-[#0A0D14] hover:bg-neutral-50 cursor-pointer"
                 }`}
               >
-                <span>{day.num}</span>
-                {day.num === 18 && (
+                <span>{cell.date.getDate()}</span>
+                {isToday && (
                   <span className="text-[9px] mt-0.5 font-bold uppercase tracking-tighter opacity-80">TODAY</span>
                 )}
               </button>
@@ -140,190 +176,40 @@ export default function TimeStep({
       {/* Time Slots Section */}
       <div className="w-full flex flex-col gap-8 mt-[65px]">
         <h3 className="font-semibold text-[22px] text-[#111111] font-poppins">Select Time Slot</h3>
-        
-        <div className="flex flex-col gap-7 w-full">
-          {/* Morning Slots */}
-          <div className="flex flex-col gap-4 w-full">
-            <div className="flex items-center gap-2 text-sm font-bold text-neutral-400 font-poppins uppercase tracking-widest">
-              <HugeiconsIcon icon={Clock04Icon} size={18} />
-              <span>Morning</span>
-            </div>
-            
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full font-inter">
-              <button
-                onClick={() => setSelectedTimeSlot("10:00")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "10:00" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                10:00
-              </button>
-              <button className="py-3 border border-neutral-200 rounded-lg text-sm font-semibold text-[#111111] hover:bg-[#E5E5E5] transition-colors cursor-pointer bg-neutral-50/50 opacity-50">
-                10:30
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("11:00")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "11:00" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                11:00
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("11:30")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "11:30" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                11:30
-              </button>
-            </div>
-          </div>
 
-          {/* Afternoon Slots */}
-          <div className="flex flex-col gap-4 w-full">
-            <div className="flex items-center gap-2 text-sm font-bold text-neutral-400 font-poppins uppercase tracking-widest">
-              <HugeiconsIcon icon={Clock04Icon} size={18} />
-              <span>Afternoon</span>
-            </div>
-            
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full font-inter">
-              <button
-                onClick={() => setSelectedTimeSlot("12:00")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "12:00" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                12:00
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("12:30")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "12:30" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                12:30
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("13:00")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "13:00" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                13:00
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("13:30")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "13:30" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                13:30
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("14:00")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "14:00" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                14:00
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("14:30")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "14:30" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                14:30
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("15:00")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "15:00" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                15:00
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("15:30")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "15:30" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                15:30
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("16:00")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "16:00" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                16:00
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("16:30")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "16:30" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                16:30
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("17:00")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "17:00" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                17:00
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("17:30")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "17:30" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                17:30
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("18:00")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "18:00" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                18:00
-              </button>
-              <button className="py-3 border border-neutral-200 rounded-lg text-sm font-semibold text-[#111111] hover:bg-[#E5E5E5] transition-colors cursor-pointer bg-neutral-50/50 opacity-50">
-                18:30
-              </button>
-              <button
-                onClick={() => setSelectedTimeSlot("19:00")}
-                className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  selectedTimeSlot === "19:00" ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
-                }`}
-              >
-                19:00
-              </button>
-            </div>
-          </div>
-        </div>
+        {isLoading ? (
+          <p className="text-sm text-neutral-500">Loading availability…</p>
+        ) : !selectedDateIso ? (
+          <p className="text-sm text-neutral-500">Pick a date above to see available times.</p>
+        ) : (selectedDay?.slots.length ?? 0) === 0 ? (
+          <p className="text-sm text-neutral-500">No times are available on this date. Try another day.</p>
+        ) : (
+          <div className="flex flex-col gap-7 w-full">
+            {morningSlots.length > 0 && (
+              <div className="flex flex-col gap-4 w-full">
+                <div className="flex items-center gap-2 text-sm font-bold text-neutral-400 font-poppins uppercase tracking-widest">
+                  <HugeiconsIcon icon={Clock04Icon} size={18} />
+                  <span>Morning</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full font-inter">
+                  {morningSlots.map(renderSlotButton)}
+                </div>
+              </div>
+            )}
 
-        {/* Group Size Warning banner */}
-        <div className="w-full bg-[#F0F0FF] border border-neutral-200 rounded-xl p-5 flex gap-3.5 items-start mt-10">
-          <HugeiconsIcon icon={InformationCircleIcon} size={24} className="text-black shrink-0" />
-          <div className="flex flex-col gap-1 text-[14.5px] leading-relaxed text-[#666666] font-inter">
-            <span>Your selected group size exceeds the remaining capacity for this time slot.</span>
-            <span>Only 2 spots are available. Please choose another time or date.</span>
+            {afternoonSlots.length > 0 && (
+              <div className="flex flex-col gap-4 w-full">
+                <div className="flex items-center gap-2 text-sm font-bold text-neutral-400 font-poppins uppercase tracking-widest">
+                  <HugeiconsIcon icon={Clock04Icon} size={18} />
+                  <span>Afternoon</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full font-inter">
+                  {afternoonSlots.map(renderSlotButton)}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-
-        {/* Fully booked calendar section helper */}
-        <div className="w-full flex flex-col items-center justify-center gap-4 mt-[60px]">
-          <span className="text-sm text-neutral-500">Available from Tue, Jun 3</span>
-          <button className="bg-black hover:bg-neutral-800 text-white rounded-full px-6 py-3 font-semibold text-sm flex items-center gap-2 cursor-pointer transition-all">
-            <span>Go to next available time</span>
-            <HugeiconsIcon icon={Calendar01Icon} size={18} />
-          </button>
-        </div>
+        )}
       </div>
     </div>
   );
