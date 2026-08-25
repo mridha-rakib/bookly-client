@@ -1,50 +1,14 @@
 "use client";
 
-import React from "react";
-
-interface BusinessDetail {
-  id: string;
-  name: string;
-  category: string;
-  type: "Premises" | "Mobile";
-  city: string;
-  status: "Approved" | "Pending" | "Warning" | "Suspended";
-  address: string;
-  ownerName: string;
-  email: string;
-  phone: string;
-  description: string;
-  accepted: string;
-  timestamp: string;
-  includes: string;
-}
+import React, { useState } from "react";
+import { useSuperAdminBusinessDetailQuery } from "@/lib/superAdminBusiness/hooks";
 
 interface SuperAdminBusinessReviewProps {
   businessId: string;
   onBack: () => void;
   onApprove: (id: string) => void;
-  onReject: (id: string) => void;
+  onReject: (id: string, reason?: string) => void;
 }
-
-// Mock details database for business applications
-const businessDetailsDb: Record<string, BusinessDetail> = {
-  "3": {
-    id: "3",
-    name: "Luna Nails Paphos",
-    category: "Nail Salons",
-    type: "Premises",
-    city: "Paphos",
-    status: "Pending",
-    address: "28 Apostolou Pavlou Ave, Paphos 8046",
-    ownerName: "Elena Georgiou",
-    email: "elena@lunaNails.cy",
-    phone: "+357 99 123456",
-    description: "Premium nail salon with gel, acrylic & nail art services.",
-    accepted: "✅ Yes",
-    timestamp: "16 May 2026 at 14:31",
-    includes: "20% commission clause acknowledged",
-  },
-};
 
 export default function SuperAdminBusinessReview({
   businessId,
@@ -52,23 +16,16 @@ export default function SuperAdminBusinessReview({
   onApprove,
   onReject,
 }: SuperAdminBusinessReviewProps) {
-  // Fetch details or fallback to Luna Nails Paphos
-  const detail = businessDetailsDb[businessId] || {
-    id: businessId,
-    name: "Luna Nails Paphos",
-    category: "Nail Salons",
-    type: "Premises",
-    city: "Paphos",
-    status: "Pending",
-    address: "28 Apostolou Pavlou Ave, Paphos 8046",
-    ownerName: "Elena Georgiou",
-    email: "elena@lunaNails.cy",
-    phone: "+357 99 123456",
-    description: "Premium nail salon with gel, acrylic & nail art services.",
-    accepted: "✅ Yes",
-    timestamp: "16 May 2026 at 14:31",
-    includes: "20% commission clause acknowledged",
-  };
+  const { data: detail, isLoading, isError } = useSuperAdminBusinessDetailQuery(businessId);
+  const [rejectReason, setRejectReason] = useState("");
+  const [showRejectForm, setShowRejectForm] = useState(false);
+
+  if (isLoading || !detail) {
+    return <div className="p-8 text-center text-gray-400">Loading application…</div>;
+  }
+  if (isError) {
+    return <div className="p-8 text-center text-rose-500">Failed to load this application.</div>;
+  }
 
   return (
     <div className="flex flex-col gap-6 w-full max-w-none pb-12 font-sans">
@@ -89,146 +46,126 @@ export default function SuperAdminBusinessReview({
           <h2 className="font-sans font-semibold text-2xl text-[#111827] leading-[32px]">
             Business Application
           </h2>
-          {/* Status Badge */}
           <div className="bg-[#D97706]/10 text-[#D97706] font-semibold text-xs py-1.5 px-3.5 rounded-full shrink-0">
             Pending Review
           </div>
         </div>
 
-        {/* Action buttons (stack on mobile, row on tablet/desktop) */}
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
-          {/* Reject button */}
           <button
-            onClick={() => onReject(detail.id)}
+            onClick={() => setShowRejectForm((v) => !v)}
             className="flex items-center justify-center gap-2 border border-[#DC2626] bg-[#F5EEEE] text-[#DC2626] rounded-full text-xs font-semibold py-2 px-5 cursor-pointer hover:bg-red-50 transition-colors w-full sm:w-auto"
           >
-            {/* Close Circle Icon */}
             <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
             <span className="whitespace-nowrap">Reject Application</span>
           </button>
 
-          {/* Approve button */}
           <button
             onClick={() => onApprove(detail.id)}
             className="flex items-center justify-center gap-2 bg-[#16A34A] text-white rounded-full text-xs font-semibold py-2 px-5 cursor-pointer hover:bg-[#16A34A]/90 transition-colors w-full sm:w-auto"
           >
-            {/* Check Circle Icon */}
             <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span className="whitespace-nowrap">Approve & Create Account</span>
+            <span className="whitespace-nowrap">Approve</span>
           </button>
         </div>
       </div>
 
+      {showRejectForm && (
+        <div className="bg-white rounded-xl shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 p-6 flex flex-col gap-3">
+          <label htmlFor="reject-reason" className="text-sm font-medium text-[#111827]">
+            Reason (optional, shown in the audit trail only)
+          </label>
+          <textarea
+            id="reject-reason"
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            rows={2}
+            className="w-full border border-gray-200 rounded-lg p-3 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#2E9DA7]"
+          />
+          <div className="flex justify-end">
+            <button
+              onClick={() => onReject(detail.id, rejectReason.trim() || undefined)}
+              className="bg-[#DC2626] text-white rounded-full text-xs font-semibold py-2 px-5 hover:bg-[#DC2626]/90 transition-colors"
+            >
+              Confirm Rejection
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 2-Column Grid Layout for Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
-        {/* Step 1 — Business Info Card */}
         <div className="bg-white rounded-xl shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 p-6 flex flex-col gap-4">
           <div className="pb-3 border-b border-gray-200">
-            <h3 className="font-semibold text-lg text-[#111827]">Step 1 — Business Info</h3>
+            <h3 className="font-semibold text-lg text-[#111827]">Business Info</h3>
           </div>
           <div className="flex flex-col">
-            {/* Row 1 */}
-            <div className="flex py-3.5 border-b border-gray-200 items-start">
-              <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">Business name</span>
-              <span className="text-sm font-medium text-[#111827]">{detail.name}</span>
-            </div>
-            {/* Row 2 */}
-            <div className="flex py-3.5 border-b border-gray-200 items-start">
-              <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">Business Type</span>
-              <span className="text-sm font-medium text-[#111827]">{detail.type}</span>
-            </div>
-            {/* Row 3 */}
-            <div className="flex py-3.5 border-b border-gray-200 items-start">
-              <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">Category</span>
-              <span className="text-sm font-medium text-[#111827]">{detail.category}</span>
-            </div>
-            {/* Row 4 */}
-            <div className="flex py-3.5 border-b border-gray-200 items-start">
-              <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">Sub Category</span>
-              <span className="text-sm font-medium text-[#111827]">{detail.category} , Sub category, Sub categpru</span>
-            </div>
-            {/* Row 5 */}
-            <div className="flex py-3.5 border-b border-gray-200 items-start">
-              <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">City</span>
-              <span className="text-sm font-medium text-[#111827]">{detail.city}</span>
-            </div>
-            {/* Row 6 */}
-            <div className="flex py-3.5 items-start">
-              <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">Address</span>
-              <span className="text-sm font-medium text-[#111827]">{detail.address}</span>
-            </div>
+            <Row label="Business name" value={detail.name} />
+            <Row label="Business Type" value={detail.visitType === "TRAVEL_TO_CUSTOMER" ? "Mobile" : "Premises"} />
+            <Row label="Category" value={detail.category} />
+            <Row label="Sub Category" value={detail.subcategories.join(", ") || "—"} />
+            <Row label="City" value={detail.address.city} />
+            <Row
+              label="Address"
+              value={`${detail.address.streetNumber} ${detail.address.streetName}, ${detail.address.area}`}
+              last
+            />
           </div>
         </div>
 
-        {/* Step 2 — Owner Info Card */}
         <div className="bg-white rounded-xl shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 p-6 flex flex-col gap-4">
           <div className="pb-3 border-b border-gray-200">
-            <h3 className="font-semibold text-lg text-[#111827]">Step 2 — Owner Info</h3>
+            <h3 className="font-semibold text-lg text-[#111827]">Owner Info</h3>
           </div>
           <div className="flex flex-col">
-            {/* Row 1 */}
-            <div className="flex py-3.5 border-b border-gray-200 items-start">
-              <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">Owner name</span>
-              <span className="text-sm font-medium text-[#111827]">{detail.ownerName}</span>
-            </div>
-            {/* Row 2 */}
-            <div className="flex py-3.5 border-b border-gray-200 items-start">
-              <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">Email</span>
-              <a href={`mailto:${detail.email}`} className="text-sm font-medium text-[#2563EB] hover:underline">
-                {detail.email}
-              </a>
-            </div>
-            {/* Row 3 */}
-            <div className="flex py-3.5 items-start">
-              <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">Phone</span>
-              <a href={`tel:${detail.phone}`} className="text-sm font-medium text-[#2563EB] hover:underline">
-                {detail.phone}
-              </a>
-            </div>
+            <Row label="Owner name" value={detail.ownerName} />
+            <Row
+              label="Email"
+              value={
+                <a href={`mailto:${detail.owner.email}`} className="text-sm font-medium text-[#2563EB] hover:underline">
+                  {detail.owner.email}
+                </a>
+              }
+            />
+            <Row
+              label="Phone"
+              value={
+                <a href={`tel:${detail.phone.e164}`} className="text-sm font-medium text-[#2563EB] hover:underline">
+                  {detail.phone.e164}
+                </a>
+              }
+              last
+            />
           </div>
         </div>
 
-        {/* Step 3 — Additional Info Card */}
-        <div className="bg-white rounded-xl shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 p-6 flex flex-col gap-4">
+        <div className="bg-white rounded-xl shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 p-6 flex flex-col gap-4 lg:col-span-2">
           <div className="pb-3 border-b border-gray-200">
-            <h3 className="font-semibold text-lg text-[#111827]">Step 3 — Additional Info</h3>
+            <h3 className="font-semibold text-lg text-[#111827]">Additional Info</h3>
           </div>
           <div className="flex flex-col">
-            <div className="flex py-3.5 items-start">
-              <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">Brief description</span>
-              <span className="text-sm font-medium text-[#111827]">{detail.description}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Step 4 — T&C Acceptance Card */}
-        <div className="bg-white rounded-xl shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 p-6 flex flex-col gap-4">
-          <div className="pb-3 border-b border-gray-200">
-            <h3 className="font-semibold text-lg text-[#111827]">Step 4 — T&C Acceptance</h3>
-          </div>
-          <div className="flex flex-col">
-            {/* Row 1 */}
-            <div className="flex py-3.5 border-b border-gray-200 items-start">
-              <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">Accepted</span>
-              <span className="text-sm font-semibold text-[#16A34A]">{detail.accepted}</span>
-            </div>
-            {/* Row 2 */}
-            <div className="flex py-3.5 border-b border-gray-200 items-start">
-              <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">Timestamp</span>
-              <span className="text-sm font-medium text-[#111827]">{detail.timestamp}</span>
-            </div>
-            {/* Row 3 */}
-            <div className="flex py-3.5 items-start">
-              <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">Includes</span>
-              <span className="text-sm font-medium text-[#111827]">{detail.includes}</span>
-            </div>
+            <Row label="Brief description" value={detail.briefDescription} last />
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Row({ label, value, last = false }: { label: string; value: React.ReactNode; last?: boolean }) {
+  return (
+    <div className={`flex py-3.5 items-start ${last ? "" : "border-b border-gray-200"}`}>
+      <span className="w-[180px] sm:w-[260px] text-sm font-medium text-[#6B7280] shrink-0">{label}</span>
+      <span className="text-sm font-medium text-[#111827]">{value}</span>
     </div>
   );
 }

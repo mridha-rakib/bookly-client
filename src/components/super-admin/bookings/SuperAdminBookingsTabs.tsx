@@ -1,54 +1,44 @@
 "use client";
 
 import React from "react";
+import type { SuperAdminBookingTabCounts } from "@/lib/api/superAdminBookings";
+
+export type BookingTabFilter = "All" | "Upcoming" | "Completed" | "Cancelled" | "No-Shows";
 
 interface SuperAdminBookingsTabsProps {
-  activeStatusFilter: "All" | "Upcoming" | "Completed" | "Cancelled" | "No-Shows";
-  setActiveStatusFilter: (filter: "All" | "Upcoming" | "Completed" | "Cancelled" | "No-Shows") => void;
-  counts: {
-    All: number;
-    Upcoming: number;
-    Completed: number;
-    Cancelled: number;
-    "No-Shows": number;
-  };
+  activeStatusFilter: BookingTabFilter;
+  setActiveStatusFilter: (filter: BookingTabFilter) => void;
+  counts: SuperAdminBookingTabCounts;
 }
 
 export default function SuperAdminBookingsTabs({
   activeStatusFilter,
   setActiveStatusFilter,
-  counts
+  counts,
 }: SuperAdminBookingsTabsProps) {
-  const tabs = ["All", "Upcoming", "Completed", "Cancelled", "No-Shows"] as const;
+  const tabs: Array<{ key: BookingTabFilter; count: number; color: string }> = [
+    { key: "All", count: counts.all, color: "bg-[#6B7280]" },
+    { key: "Upcoming", count: counts.upcoming, color: "bg-[#6366F1]" },
+    { key: "Completed", count: counts.completed, color: "bg-[#16A34A]" },
+    { key: "Cancelled", count: counts.cancelled, color: "bg-[#A31616]" },
+    { key: "No-Shows", count: counts.noShow, color: "bg-[#A36116]" },
+  ];
 
   return (
     <div className="flex items-center gap-4 w-full border-b border-[#E5E7EB] pb-px overflow-x-auto">
-      {tabs.map((filter) => {
-        const isActive = activeStatusFilter === filter;
-        const badgeBg =
-          filter === "Upcoming"
-            ? "bg-[#6366F1]"
-            : filter === "Completed"
-            ? "bg-[#16A34A]"
-            : filter === "Cancelled"
-            ? "bg-[#A31616]"
-            : filter === "No-Shows"
-            ? "bg-[#A36116]"
-            : "bg-[#6B7280]";
-
+      {tabs.map((tab) => {
+        const isActive = activeStatusFilter === tab.key;
         return (
           <button
-            key={filter}
-            onClick={() => setActiveStatusFilter(filter)}
-            className={`flex items-center gap-2 pb-2.5 px-1.5 text-sm font-medium transition-all duration-150 border-b-2 whitespace-nowrap ${
-              isActive
-                ? "border-[#6366F1] text-[#6366F1]"
-                : "border-transparent text-gray-500 hover:text-gray-900"
+            key={tab.key}
+            onClick={() => setActiveStatusFilter(tab.key)}
+            className={`flex items-center gap-2 pb-2.5 px-1.5 text-sm font-medium transition-all duration-150 border-b-2 whitespace-nowrap cursor-pointer bg-transparent border-t-0 border-x-0 ${
+              isActive ? "border-[#6366F1] text-[#6366F1]" : "border-transparent text-gray-500 hover:text-gray-900"
             }`}
           >
-            <span>{filter}</span>
-            <span className={`px-2 py-0.5 text-[11px] font-bold text-white rounded-full ${badgeBg}`}>
-              {counts[filter]}
+            <span>{tab.key}</span>
+            <span className={`px-2 py-0.5 text-[11px] font-bold text-white rounded-full ${tab.color}`}>
+              {tab.count}
             </span>
           </button>
         );

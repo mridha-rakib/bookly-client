@@ -9,6 +9,7 @@ interface SuperAdminBusinessesFilterProps {
   setSelectedType: (type: string) => void;
   selectedCategory: string;
   setSelectedCategory: (category: string) => void;
+  categoryOptions: string[];
 }
 
 export default function SuperAdminBusinessesFilter({
@@ -17,7 +18,8 @@ export default function SuperAdminBusinessesFilter({
   selectedType,
   setSelectedType,
   selectedCategory,
-  setSelectedCategory
+  setSelectedCategory,
+  categoryOptions,
 }: SuperAdminBusinessesFilterProps) {
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -31,6 +33,8 @@ export default function SuperAdminBusinessesFilter({
         <option value="Limassol">Limassol</option>
         <option value="Paphos">Paphos</option>
         <option value="Larnaca">Larnaca</option>
+        <option value="Ayia Napa">Ayia Napa</option>
+        <option value="Protaras">Protaras</option>
       </select>
 
       <select
@@ -39,8 +43,8 @@ export default function SuperAdminBusinessesFilter({
         className="bg-white border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-[13px] font-medium text-[#314158] focus:outline-none focus:ring-1 focus:ring-[#2E9DA7]"
       >
         <option value="All">Business Type</option>
-        <option value="Premises">Premises</option>
-        <option value="Mobile">Mobile</option>
+        <option value="AT_BUSINESS_LOCATION">Premises</option>
+        <option value="TRAVEL_TO_CUSTOMER">Mobile</option>
       </select>
 
       <select
@@ -49,9 +53,11 @@ export default function SuperAdminBusinessesFilter({
         className="bg-white border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-[13px] font-medium text-[#314158] focus:outline-none focus:ring-1 focus:ring-[#2E9DA7]"
       >
         <option value="All">Category</option>
-        <option value="Beauty & Wellness">Beauty & Wellness</option>
-        <option value="Hair Styling">Hair Styling</option>
-        <option value="Nail Care">Nail Care</option>
+        {categoryOptions.map((category) => (
+          <option key={category} value={category}>
+            {category}
+          </option>
+        ))}
       </select>
     </div>
   );

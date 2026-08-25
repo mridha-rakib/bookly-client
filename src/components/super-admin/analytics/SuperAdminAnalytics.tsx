@@ -59,6 +59,13 @@ export default function SuperAdminAnalytics({ setActiveTab }: SuperAdminAnalytic
 
   const subTabs: AnalyticsTab[] = ["Overview", "Bookings", "Businesses", "Customers", "Cities"];
 
+  const period = {
+    ...(appliedFromDate ? { fromDate: new Date(appliedFromDate).toISOString() } : {}),
+    ...(appliedToDate
+      ? { toDate: new Date(`${appliedToDate}T23:59:59.999Z`).toISOString() }
+      : {}),
+  };
+
   return (
     <div className="flex flex-col gap-6 w-full pb-12 font-sans">
       {/* Title & Top Filter Row */}
@@ -154,10 +161,10 @@ export default function SuperAdminAnalytics({ setActiveTab }: SuperAdminAnalytic
       </div>
 
       {/* Active Tab View Content */}
-      {activeSubTab === "Overview" && <SuperAdminAnalyticsOverview />}
-      {activeSubTab === "Bookings" && <SuperAdminBookingsAnalytics />}
-      {activeSubTab === "Businesses" && <SuperAdminBusinessesAnalytics />}
-      {activeSubTab === "Customers" && <SuperAdminCustomersAnalytics />}
+      {activeSubTab === "Overview" && <SuperAdminAnalyticsOverview period={period} />}
+      {activeSubTab === "Bookings" && <SuperAdminBookingsAnalytics period={period} />}
+      {activeSubTab === "Businesses" && <SuperAdminBusinessesAnalytics period={period} />}
+      {activeSubTab === "Customers" && <SuperAdminCustomersAnalytics period={period} />}
       {activeSubTab === "Cities" && <SuperAdminCitiesAnalytics setActiveTab={setActiveTab} />}
     </div>
   );

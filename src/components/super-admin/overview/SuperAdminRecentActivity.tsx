@@ -1,99 +1,63 @@
 "use client";
 
 import React from "react";
+import { useSuperAdminRecentActivityQuery } from "@/lib/superAdminAnalytics/hooks";
+import type { SuperAdminActivityEventType } from "@/lib/api/superAdminAnalytics";
 
+const DOT_COLOR: Record<SuperAdminActivityEventType, string> = {
+  BUSINESS_APPLICATION: "bg-orange-500",
+  BUSINESS_STATUS_CHANGED: "bg-amber-500",
+  CUSTOMER_REGISTERED: "bg-blue-500",
+  PAYOUT_PAID: "bg-emerald-500",
+};
+
+const formatRelativeTime = (isoInstant: string): string => {
+  const diffMs = Date.now() - new Date(isoInstant).getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+};
+
+/** Batch 12 — real Recent Activity, derived from Business creation/statusHistory, Customer
+ * registration, and Payout records (deferred in Batch 11 for lack of a real derivation; never a
+ * new audit/event system — see the backend service's own doc comment). */
 export default function SuperAdminRecentActivity() {
-  const activities = [
-    {
-      text: "New business application received — ",
-      highlight: "Glam Studio Nicosia",
-      time: "2 min ago",
-      dotBg: "bg-orange-500"
-    },
-    {
-      text: "Business approved — ",
-      highlight: "Lara Beauty Bar",
-      time: "15 min ago",
-      dotBg: "bg-emerald-500"
-    },
-    {
-      text: "No-show charged — ",
-      highlight: "€12.00 for booking #BK-2847",
-      highlightColor: "text-blue-600",
-      time: "34 min ago",
-      dotBg: "bg-rose-500"
-    },
-    {
-      text: "Cancellation warning flag — ",
-      highlight: "Chic Hair Limassol reached 3 this month",
-      time: "1 hr ago",
-      dotBg: "bg-orange-500"
-    },
-    {
-      text: "SEPA payout marked as sent — ",
-      highlight: "€86.50 to Nails By Maria",
-      highlightColor: "text-blue-600",
-      time: "2 hr ago",
-      dotBg: "bg-emerald-500"
-    },
-    {
-      text: "New customer registered — ",
-      highlight: "Andri Petrou",
-      time: "2 hr ago",
-      dotBg: "bg-blue-500"
-    },
-    {
-      text: "Cancellation review flag — ",
-      highlight: "TopCut Barbers reached 5 this month",
-      highlightColor: "text-blue-600",
-      time: "3 hr ago",
-      dotBg: "bg-rose-500"
-    },
-    {
-      text: "No-show waived — ",
-      highlight: "Booking #BK-2831 waived by Zen Spa Larnaca",
-      highlightColor: "text-blue-600",
-      time: "4 hr ago",
-      dotBg: "bg-neutral-400"
-    },
-    {
-      text: "Promo code created — ",
-      highlight: "SUMMER25 (25% off, 100 uses)",
-      highlightColor: "text-blue-600",
-      time: "5 hr ago",
-      dotBg: "bg-blue-500"
-    },
-    {
-      text: "Customer account deleted — ",
-      highlight: "account data erased, phone retained in hashed blocklist",
-      time: "6 hr ago",
-      dotBg: "bg-neutral-400"
-    }
-  ];
+  const { data, isLoading, isError } = useSuperAdminRecentActivityQuery(10);
 
   return (
     <div className="bg-white rounded-xl p-6 shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 flex flex-col gap-4 w-full">
       <div className="flex justify-between items-center w-full">
         <h4 className="font-sans font-semibold text-lg text-[#111827]">Recent Activity</h4>
-        <button className="font-sans text-xs font-semibold text-[#195156] hover:underline flex items-center gap-1">
-          View all <span>→</span>
-        </button>
       </div>
 
-      <div className="flex flex-col gap-4 mt-2">
-        {activities.map((act, idx) => (
-          <div key={idx} className="flex items-center justify-between gap-4 font-sans text-xs pb-3 border-b border-gray-50 last:border-0 last:pb-0">
-            <div className="flex items-center gap-3">
-              <span className={`w-2 h-2 rounded-full ${act.dotBg} shrink-0`} />
-              <p className="text-gray-600">
-                {act.text}
-                <span className={`font-semibold ${act.highlightColor || "text-gray-900"}`}>{act.highlight}</span>
-              </p>
+      {isLoading && <p className="text-xs text-gray-400">Loading…</p>}
+      {isError && <p className="text-xs text-rose-500">Failed to load.</p>}
+      {data && data.activities.length === 0 && (
+        <p className="text-xs text-gray-400">Nothing has happened yet.</p>
+      )}
+
+      {data && data.activities.length > 0 && (
+        <div className="flex flex-col gap-4 mt-2">
+          {data.activities.map((activity, idx) => (
+            <div
+              key={idx}
+              className="flex items-center justify-between gap-4 font-sans text-xs pb-3 border-b border-gray-50 last:border-0 last:pb-0"
+            >
+              <div className="flex items-center gap-3">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${DOT_COLOR[activity.type]}`} />
+                <p className="text-gray-600">{activity.summary}</p>
+              </div>
+              <span className="text-gray-400 text-[11px] shrink-0 font-medium">
+                {formatRelativeTime(activity.occurredAt)}
+              </span>
             </div>
-            <span className="text-gray-400 text-[11px] shrink-0 font-medium">{act.time}</span>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

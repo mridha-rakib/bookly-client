@@ -1,25 +1,21 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import SuperAdminBusinessesFilter from "./SuperAdminBusinessesFilter";
 import SuperAdminBusinessesTabs from "./SuperAdminBusinessesTabs";
 import SuperAdminBusinessesTable from "./SuperAdminBusinessesTable";
 import SuperAdminBusinessReview from "./SuperAdminBusinessReview";
 import SuperAdminBusinessDetail from "./business-detail/SuperAdminBusinessDetail";
+import type { BusinessStatus, BusinessVisitType } from "@/lib/api/superAdminBusiness";
+import {
+  useApproveBusinessMutation,
+  useRejectBusinessMutation,
+  useSuperAdminBusinessDetailQuery,
+  useSuperAdminBusinessesQuery,
+  useSuspendBusinessMutation,
+} from "@/lib/superAdminBusiness/hooks";
 
-interface BusinessItem {
-  id: string;
-  name: string;
-  category: string;
-  type: "Premises" | "Mobile";
-  city: string;
-  status: "Approved" | "Pending" | "Warning" | "Suspended";
-  bookings: number | null;
-  newBookings: number | null;
-  rating: number | null;
-  reviewsCount: number | null;
-  memberSince: string;
-}
+type StatusFilter = "All" | BusinessStatus;
 
 interface SuperAdminBusinessesProps {
   viewingBusinessId?: string | null;
@@ -28,165 +24,83 @@ interface SuperAdminBusinessesProps {
   setInitialDetailTab?: (tab: string) => void;
 }
 
+const PAGE_SIZE = 20;
+
 export default function SuperAdminBusinesses({
   viewingBusinessId = null,
   setViewingBusinessId = () => {},
   initialDetailTab = "Overview",
-  setInitialDetailTab = () => {}
+  setInitialDetailTab = () => {},
 }: SuperAdminBusinessesProps) {
-  const [activeStatusFilter, setActiveStatusFilter] = useState<"All" | "Approved" | "Pending" | "Warning" | "Suspended">("All");
+  const [activeStatusFilter, setActiveStatusFilter] = useState<StatusFilter>("All");
   const [selectedCity, setSelectedCity] = useState("All");
   const [selectedType, setSelectedType] = useState("All");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [page, setPage] = useState(1);
 
-  const [businesses, setBusinesses] = useState<BusinessItem[]>([
-    {
-      id: "1",
-      name: "Glam Studio",
-      category: "Beauty & Wellness",
-      type: "Mobile",
-      city: "Nicosia",
-      status: "Approved",
-      bookings: 847,
-      newBookings: 847,
-      rating: 4.3,
-      reviewsCount: 211,
-      memberSince: "12 Jan 2024"
-    },
-    {
-      id: "2",
-      name: "TopCut Barbers",
-      category: "Hair Styling",
-      type: "Premises",
-      city: "Limassol",
-      status: "Approved",
-      bookings: 532,
-      newBookings: 532,
-      rating: 4.3,
-      reviewsCount: 211,
-      memberSince: "3 Mar 2024"
-    },
-    {
-      id: "3",
-      name: "Luna Nails Paphos",
-      category: "Nail Care",
-      type: "Premises",
-      city: "Paphos",
-      status: "Pending",
-      bookings: null,
-      newBookings: null,
-      rating: null,
-      reviewsCount: null,
-      memberSince: "16 May 2026"
-    },
-    {
-      id: "4",
-      name: "Glam Studio",
-      category: "Beauty & Wellness",
-      type: "Mobile",
-      city: "Larnaca",
-      status: "Approved",
-      bookings: 1204,
-      newBookings: 1204,
-      rating: 4.3,
-      reviewsCount: 211,
-      memberSince: "20 Nov 2023"
-    },
-    {
-      id: "5",
-      name: "TopCut Barbers",
-      category: "Hair Styling",
-      type: "Premises",
-      city: "Limassol",
-      status: "Warning",
-      bookings: 320,
-      newBookings: 320,
-      rating: 4.3,
-      reviewsCount: 211,
-      memberSince: "5 Jun 2024"
-    },
-    {
-      id: "6",
-      name: "TopCut Barbers",
-      category: "Hair Styling",
-      type: "Premises",
-      city: "Nicosia",
-      status: "Warning",
-      bookings: 61,
-      newBookings: 61,
-      rating: 4.3,
-      reviewsCount: 211,
-      memberSince: "2 May 2026"
-    },
-    {
-      id: "7",
-      name: "Glam Studio",
-      category: "Beauty & Wellness",
-      type: "Mobile",
-      city: "Nicosia",
-      status: "Suspended",
-      bookings: 412,
-      newBookings: 412,
-      rating: 4.3,
-      reviewsCount: 211,
-      memberSince: "14 Aug 2024"
-    }
-  ]);
-
-  // Counts for status-based filters
-  const counts = {
-    All: businesses.length,
-    Approved: businesses.filter((b) => b.status === "Approved").length,
-    Pending: businesses.filter((b) => b.status === "Pending").length,
-    Warning: businesses.filter((b) => b.status === "Warning").length,
-    Suspended: businesses.filter((b) => b.status === "Suspended").length
+  const listParams = {
+    ...(activeStatusFilter !== "All" ? { status: activeStatusFilter } : {}),
+    ...(selectedCity !== "All" ? { city: selectedCity } : {}),
+    ...(selectedType !== "All" ? { visitType: selectedType as BusinessVisitType } : {}),
+    ...(selectedCategory !== "All" ? { category: selectedCategory } : {}),
+    page,
+    limit: PAGE_SIZE,
   };
 
-  // Filter list by selected dropdown properties and status tab
-  const filteredBusinesses = businesses.filter((b) => {
-    if (activeStatusFilter !== "All" && b.status !== activeStatusFilter) return false;
-    if (selectedCity !== "All" && b.city !== selectedCity) return false;
-    if (selectedType !== "All" && b.type !== selectedType) return false;
-    if (selectedCategory !== "All" && b.category !== selectedCategory) return false;
-    return true;
-  });
+  const { data, isLoading, isError } = useSuperAdminBusinessesQuery(listParams);
+  const approveMutation = useApproveBusinessMutation();
+  const suspendMutation = useSuspendBusinessMutation();
+  const rejectMutation = useRejectBusinessMutation();
 
-  const toggleStatus = (id: string, newStatus: "Approved" | "Suspended") => {
-    setBusinesses((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, status: newStatus } : b))
-    );
+  // Viewing a Pending business needs its detail to decide Review vs. Detail screen — fetched
+  // once, up front, rather than duplicating that branch inside each child.
+  const { data: viewingBusiness } = useSuperAdminBusinessDetailQuery(viewingBusinessId ?? undefined);
+
+  const categoryOptions = useMemo(() => {
+    const categories = new Set((data?.businesses ?? []).map((b) => b.category));
+    return Array.from(categories).sort();
+  }, [data?.businesses]);
+
+  const handleApprove = (id: string) => {
+    approveMutation.mutate(id);
+  };
+
+  const handleSuspend = (id: string) => {
+    suspendMutation.mutate({ businessId: id });
   };
 
   if (viewingBusinessId) {
-    const viewingBusiness = businesses.find((b) => b.id === viewingBusinessId);
-    if (viewingBusiness && viewingBusiness.status !== "Pending") {
+    if (!viewingBusiness) {
+      return <div className="p-8 text-center text-gray-400">Loading…</div>;
+    }
+    if (viewingBusiness.status === "PENDING") {
       return (
-        <SuperAdminBusinessDetail
+        <SuperAdminBusinessReview
           businessId={viewingBusinessId}
-          initialTab={initialDetailTab}
-          onBack={() => {
+          onBack={() => setViewingBusinessId(null)}
+          onApprove={(id) => {
+            handleApprove(id);
             setViewingBusinessId(null);
-            setInitialDetailTab("Overview");
           }}
-          onSuspend={(id) => {
-            toggleStatus(id, "Suspended");
+          onReject={(id, reason) => {
+            rejectMutation.mutate({ businessId: id, reason });
             setViewingBusinessId(null);
-            setInitialDetailTab("Overview");
           }}
         />
       );
     }
     return (
-      <SuperAdminBusinessReview
+      <SuperAdminBusinessDetail
         businessId={viewingBusinessId}
-        onBack={() => setViewingBusinessId(null)}
-        onApprove={(id) => {
-          toggleStatus(id, "Approved");
+        initialTab={initialDetailTab}
+        onBack={() => {
           setViewingBusinessId(null);
+          setInitialDetailTab("Overview");
         }}
-        onReject={(id) => {
-          toggleStatus(id, "Suspended");
+        onSuspend={(id) => {
+          handleSuspend(id);
           setViewingBusinessId(null);
+          setInitialDetailTab("Overview");
         }}
       />
     );
@@ -194,36 +108,61 @@ export default function SuperAdminBusinesses({
 
   return (
     <div className="flex flex-col gap-6 w-full pb-12">
-      {/* Title & Top Dropdown Filters Row */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
-        <h2 className="font-sans font-semibold text-2xl text-[#111827] leading-[32px]">
-          Business
-        </h2>
+        <h2 className="font-sans font-semibold text-2xl text-[#111827] leading-[32px]">Business</h2>
 
-        {/* Dropdown Filters Component */}
         <SuperAdminBusinessesFilter
           selectedCity={selectedCity}
-          setSelectedCity={setSelectedCity}
+          setSelectedCity={(v) => {
+            setSelectedCity(v);
+            setPage(1);
+          }}
           selectedType={selectedType}
-          setSelectedType={setSelectedType}
+          setSelectedType={(v) => {
+            setSelectedType(v);
+            setPage(1);
+          }}
           selectedCategory={selectedCategory}
-          setSelectedCategory={setSelectedCategory}
+          setSelectedCategory={(v) => {
+            setSelectedCategory(v);
+            setPage(1);
+          }}
+          categoryOptions={categoryOptions}
         />
       </div>
 
-      {/* Sub-Tabs Status Badges Component */}
       <SuperAdminBusinessesTabs
         activeStatusFilter={activeStatusFilter}
-        setActiveStatusFilter={setActiveStatusFilter}
-        counts={counts}
+        setActiveStatusFilter={(v) => {
+          setActiveStatusFilter(v);
+          setPage(1);
+        }}
+        counts={data?.counts ?? { ALL: 0, PENDING: 0, APPROVED: 0, WARNING: 0, SUSPENDED: 0 }}
       />
 
-      {/* Business Table List Component */}
-      <SuperAdminBusinessesTable
-        filteredBusinesses={filteredBusinesses}
-        toggleStatus={toggleStatus}
-        onView={(id) => setViewingBusinessId(id)}
-      />
+      {isError && (
+        <div className="p-8 text-center text-rose-500 bg-white rounded-xl border border-gray-100">
+          Failed to load businesses. Please try again.
+        </div>
+      )}
+
+      {isLoading && !data && (
+        <div className="p-8 text-center text-gray-400 bg-white rounded-xl border border-gray-100">
+          Loading businesses…
+        </div>
+      )}
+
+      {data && (
+        <SuperAdminBusinessesTable
+          businesses={data.businesses}
+          onView={(id) => setViewingBusinessId(id)}
+          onApprove={handleApprove}
+          onSuspend={handleSuspend}
+          isMutating={approveMutation.isPending || suspendMutation.isPending}
+          pagination={data.pagination}
+          onPageChange={setPage}
+        />
+      )}
     </div>
   );
 }
