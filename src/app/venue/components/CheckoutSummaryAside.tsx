@@ -11,6 +11,8 @@ import { formatBookingDate, formatBookingMoney, formatBookingTimeRange } from "@
 
 export type WizardStep = "addons" | "professionals" | "time" | "payment" | "confirmed";
 
+export type PromoInputStatus = "idle" | "applying" | "applied" | "error";
+
 interface CheckoutSummaryAsideProps {
   bookingStep: WizardStep | null;
   business?: CatalogBusiness;
@@ -23,6 +25,12 @@ interface CheckoutSummaryAsideProps {
   canContinue: boolean;
   isSubmitting?: boolean;
   submitError?: string;
+  promoCodeInput?: string;
+  setPromoCodeInput?: (val: string) => void;
+  promoStatus?: PromoInputStatus;
+  promoErrorMessage?: string;
+  onApplyPromo?: () => void;
+  onRemovePromo?: () => void;
 }
 
 export default function CheckoutSummaryAside({
@@ -37,6 +45,12 @@ export default function CheckoutSummaryAside({
   canContinue,
   isSubmitting,
   submitError,
+  promoCodeInput,
+  setPromoCodeInput,
+  promoStatus,
+  promoErrorMessage,
+  onApplyPromo,
+  onRemovePromo,
 }: CheckoutSummaryAsideProps) {
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileSummaryExpanded, setIsMobileSummaryExpanded] = useState(false);
@@ -69,6 +83,56 @@ export default function CheckoutSummaryAside({
   const financials = preview?.financials;
   const serviceLine = preview?.serviceLines[0];
   const buttonLabel = bookingStep === "payment" ? (isSubmitting ? "Confirming…" : "Confirm") : "Continue →";
+  const appliedPromo = preview?.promo;
+
+  const renderPromoField = () => {
+    if (bookingStep !== "payment" || !setPromoCodeInput || !onApplyPromo) return null;
+    return (
+      <div className="flex flex-col gap-2 py-2.5">
+        {promoStatus === "applied" && appliedPromo ? (
+          <div className="flex items-center justify-between gap-2 bg-[#ECFDF5] border border-[#A7F3D0] rounded-lg px-3.5 py-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-mono text-xs font-semibold text-[#065F46] bg-white border border-[#A7F3D0] rounded px-1.5 py-0.5 shrink-0">
+                {appliedPromo.code}
+              </span>
+              <span className="text-xs text-[#065F46] truncate">
+                {appliedPromo.type === "PERCENTAGE" ? `${appliedPromo.value}% off deposit` : `€${appliedPromo.value} off deposit`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={onRemovePromo}
+              className="text-xs font-semibold text-[#065F46] hover:underline cursor-pointer shrink-0"
+            >
+              Remove
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={promoCodeInput ?? ""}
+              onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase().replace(/\s/g, ""))}
+              placeholder="Promo code"
+              disabled={promoStatus === "applying"}
+              className="flex-1 min-w-0 px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 rounded-lg text-sm font-inter focus:outline-none focus:border-[#2E9DA7] focus:bg-white transition-all text-[#1C1B1C]"
+            />
+            <button
+              type="button"
+              onClick={onApplyPromo}
+              disabled={!promoCodeInput || promoStatus === "applying"}
+              className="px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer shrink-0"
+            >
+              {promoStatus === "applying" ? "Applying…" : "Apply"}
+            </button>
+          </div>
+        )}
+        {promoStatus === "error" && promoErrorMessage ? (
+          <span className="text-xs text-rose-600 font-medium">{promoErrorMessage}</span>
+        ) : null}
+      </div>
+    );
+  };
 
   const renderPriceBreakdown = () => (
     <div className="border-t border-[#E5E5E5] pt-4 flex flex-col w-full text-sm font-medium text-[#1C1B1C]">
@@ -85,7 +149,7 @@ export default function CheckoutSummaryAside({
 
       <div className="flex justify-between items-center py-2.5 relative">
         <div className="flex items-center gap-1.5">
-          <span>Deposit due now</span>
+          <span>Deposit</span>
           <div className="relative group">
             <button type="button" className="text-neutral-400 hover:text-neutral-600 cursor-pointer flex items-center">
               <HugeiconsIcon icon={InformationCircleIcon} size={16} />
@@ -99,6 +163,25 @@ export default function CheckoutSummaryAside({
           </div>
         </div>
         <span>{financials ? formatBookingMoney(financials.depositCents) : "—"}</span>
+      </div>
+
+      {appliedPromo ? (
+        <>
+          <div className="border-t border-[#E5E5E5] w-full" />
+          <div className="flex justify-between items-center py-2.5 text-[#0CA678]">
+            <span>Promo discount ({appliedPromo.code})</span>
+            <span>-{formatBookingMoney(appliedPromo.discountCents)}</span>
+          </div>
+        </>
+      ) : null}
+
+      {renderPromoField()}
+
+      <div className="border-t border-[#E5E5E5] w-full" />
+
+      <div className="flex justify-between items-center py-2.5">
+        <span>Due now</span>
+        <span>{preview ? formatBookingMoney(preview.amountDueNowCents) : "—"}</span>
       </div>
 
       <div className="border-t border-[#E5E5E5] w-full" />
@@ -259,7 +342,7 @@ export default function CheckoutSummaryAside({
             >
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-lg text-[#0D0D0D]">
-                  {financials ? formatBookingMoney(financials.depositCents) : "—"}
+                  {preview ? formatBookingMoney(preview.amountDueNowCents) : "—"}
                 </span>
                 <svg
                   className={`w-5 h-5 text-neutral-500 transition-transform duration-300 ${isMobileSummaryExpanded ? "rotate-180" : ""}`}

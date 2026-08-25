@@ -22,6 +22,7 @@ import {
   formatBookingTimeRange,
 } from "@/lib/bookings/format";
 import { toUserMessage } from "@/lib/auth/messages";
+import BookingReviewCard from "../BookingReviewCard";
 import RescheduleModal from "../RescheduleModal";
 
 function BookingViewContent() {
@@ -285,6 +286,16 @@ function BookingViewContent() {
                   <span>{booking.notes}</span>
                 </div>
               </div>
+            )}
+
+            {/* REVIEW card (Batch 14) — renders nothing unless the server confirms this booking
+                is genuinely COMPLETED + BOOKLY_MANAGED. */}
+            {bookingId && (
+              <BookingReviewCard
+                bookingId={bookingId}
+                bookingSource={booking.source}
+                bookingStatus={booking.status}
+              />
             )}
 
             {isUpcoming && (

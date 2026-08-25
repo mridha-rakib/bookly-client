@@ -6,6 +6,7 @@ import SuperAdminFinanceStats from "./SuperAdminFinanceStats";
 import SuperAdminFinancePending from "./SuperAdminFinancePending";
 import SuperAdminFinanceLog from "./SuperAdminFinanceLog";
 import { useSuperAdminPlatformSummaryQuery } from "@/lib/superAdminFinance/hooks";
+import { usePromoDiscountedMoneyQuery } from "@/lib/promo/hooks";
 
 interface SuperAdminFinanceProps {
   setActiveTab?: (tab: string) => void;
@@ -74,6 +75,7 @@ export default function SuperAdminFinance({
   }, [appliedFromDate, appliedToDate]);
 
   const summaryQuery = useSuperAdminPlatformSummaryQuery(period);
+  const discountedMoneyQuery = usePromoDiscountedMoneyQuery(period);
 
   return (
     <div className="flex flex-col gap-6 w-full pb-12 font-sans">
@@ -153,7 +155,12 @@ export default function SuperAdminFinance({
       <SuperAdminFinanceBanner protectedEarningsAllTimeCents={summaryQuery.data?.protectedEarningsAllTimeCents} />
 
       {/* Cards stats grid */}
-      <SuperAdminFinanceStats summary={summaryQuery.data} isLoading={summaryQuery.isLoading} />
+      <SuperAdminFinanceStats
+        summary={summaryQuery.data}
+        isLoading={summaryQuery.isLoading}
+        discountedMoney={discountedMoneyQuery.data}
+        isDiscountedMoneyLoading={discountedMoneyQuery.isLoading}
+      />
 
       <SuperAdminFinancePending
         setActiveTab={setActiveTab}

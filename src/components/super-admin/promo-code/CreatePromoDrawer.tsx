@@ -1,91 +1,118 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Cancel01Icon, InformationCircleIcon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon, InformationCircleIcon, Search01Icon } from "@hugeicons/core-free-icons";
 
-export interface PromoCodeItem {
-  id: string;
-  code: string;
-  type: "%" | "Fixed €";
-  value: number;
-  used: number;
-  limit: number;
-  perUserLimit: number;
-  startDate?: string;
-  expires: string;
-  scope: string;
-  status: "Active" | "Expired" | "Deactivated";
-}
+import type { PromoDetail, PromoScope, PromoType, PromoWriteInput } from "@/lib/api/promo";
+import { useSuperAdminBusinessesQuery } from "@/lib/superAdminBusiness/hooks";
+import { useCreatePromoMutation, useUpdatePromoMutation } from "@/lib/promo/hooks";
 
 interface CreatePromoDrawerProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (codeData: Omit<PromoCodeItem, "id" | "used"> & { id?: string }) => void;
-  editingCode: PromoCodeItem | null;
+  editingPromo: PromoDetail | null;
 }
 
-export default function CreatePromoDrawer({
-  isOpen,
-  onClose,
-  onSave,
-  editingCode
-}: CreatePromoDrawerProps) {
+const toDateInputValue = (iso?: string): string => (iso ? iso.slice(0, 10) : "");
+
+export default function CreatePromoDrawer({ isOpen, onClose, editingPromo }: CreatePromoDrawerProps) {
   const [codeText, setCodeText] = useState("");
-  const [discountType, setDiscountType] = useState<"%" | "Fixed €">("%");
+  const [discountType, setDiscountType] = useState<PromoType>("PERCENTAGE");
   const [discountValue, setDiscountValue] = useState<number>(5);
   const [startDate, setStartDate] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
-  const [totalLimit, setTotalLimit] = useState<number>(100);
-  const [perUserLimit, setPerUserLimit] = useState<number>(1);
-  const [scope, setScope] = useState("All first bookings");
+  const [totalLimit, setTotalLimit] = useState<string>("100");
+  const [perUserLimit, setPerUserLimit] = useState<string>("1");
+  const [scope, setScope] = useState<PromoScope>("ALL_FIRST_BOOKINGS");
+  const [selectedBusinessIds, setSelectedBusinessIds] = useState<string[]>([]);
+  const [businessSearch, setBusinessSearch] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (editingCode) {
-      setCodeText(editingCode.code);
-      setDiscountType(editingCode.type);
-      setDiscountValue(editingCode.value);
-      setStartDate(editingCode.startDate || "");
-      setExpiryDate(editingCode.expires);
-      setTotalLimit(editingCode.limit);
-      setPerUserLimit(editingCode.perUserLimit || 1);
-      setScope(editingCode.scope);
+  const createMutation = useCreatePromoMutation();
+  const updateMutation = useUpdatePromoMutation();
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+
+  const businessesQuery = useSuperAdminBusinessesQuery({
+    q: businessSearch || undefined,
+    limit: 50,
+  });
+
+  // React docs' "adjusting state when a prop changes" pattern (setState during render, guarded
+  // by a change marker) — avoids the effect-based cascading-render lint error while still
+  // resetting the form's local state whenever the drawer re-opens for a different promo (or a
+  // fresh create).
+  const resetKey = `${isOpen}:${editingPromo?.id ?? ""}`;
+  const [lastResetKey, setLastResetKey] = useState(resetKey);
+  if (resetKey !== lastResetKey) {
+    setLastResetKey(resetKey);
+    if (editingPromo) {
+      setCodeText(editingPromo.code);
+      setDiscountType(editingPromo.type);
+      setDiscountValue(editingPromo.value);
+      setStartDate(toDateInputValue(editingPromo.startAt));
+      setExpiryDate(toDateInputValue(editingPromo.expiresAt));
+      setTotalLimit(editingPromo.totalUsageLimit ? String(editingPromo.totalUsageLimit) : "");
+      setPerUserLimit(editingPromo.perUserUsageLimit ? String(editingPromo.perUserUsageLimit) : "");
+      setScope(editingPromo.scope);
+      setSelectedBusinessIds(editingPromo.businessIds);
     } else {
-      // Defaults
       setCodeText("");
-      setDiscountType("%");
+      setDiscountType("PERCENTAGE");
       setDiscountValue(5);
       setStartDate("");
       setExpiryDate("");
-      setTotalLimit(100);
-      setPerUserLimit(1);
-      setScope("All first bookings");
+      setTotalLimit("100");
+      setPerUserLimit("1");
+      setScope("ALL_FIRST_BOOKINGS");
+      setSelectedBusinessIds([]);
     }
-  }, [editingCode, isOpen]);
+    setBusinessSearch("");
+    setFormError(null);
+  }
 
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Uppercase, remove spaces
     const val = e.target.value.toUpperCase().replace(/\s/g, "");
     setCodeText(val);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!codeText) return;
+  const toggleBusiness = (businessId: string) => {
+    setSelectedBusinessIds((prev) =>
+      prev.includes(businessId) ? prev.filter((id) => id !== businessId) : [...prev, businessId],
+    );
+  };
 
-    onSave({
-      id: editingCode?.id,
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    if (!codeText || !expiryDate) return;
+    if (scope === "SELECTED_BUSINESSES" && selectedBusinessIds.length === 0) {
+      setFormError("Select at least one business for this scope.");
+      return;
+    }
+
+    const input: PromoWriteInput = {
       code: codeText,
       type: discountType,
       value: discountValue,
-      limit: totalLimit,
-      perUserLimit: perUserLimit,
-      startDate: startDate || undefined,
-      expires: expiryDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      scope: scope,
-      status: editingCode?.status || "Active"
-    });
-    onClose();
+      scope,
+      businessIds: scope === "SELECTED_BUSINESSES" ? selectedBusinessIds : [],
+      startAt: startDate ? new Date(startDate).toISOString() : undefined,
+      expiresAt: new Date(expiryDate).toISOString(),
+      totalUsageLimit: totalLimit ? Number(totalLimit) : undefined,
+      perUserUsageLimit: perUserLimit ? Number(perUserLimit) : undefined,
+    };
+
+    try {
+      if (editingPromo) {
+        await updateMutation.mutateAsync({ promoId: editingPromo.id, input });
+      } else {
+        await createMutation.mutateAsync(input);
+      }
+      onClose();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Failed to save promo code.");
+    }
   };
 
   return (
@@ -107,7 +134,7 @@ export default function CreatePromoDrawer({
         {/* Drawer Header */}
         <div className="flex items-center justify-between px-6 h-[70px] border-b border-gray-200 shrink-0">
           <h3 className="font-sans font-semibold text-lg text-[#111111]">
-            {editingCode ? "Edit Promo Code" : "Create Promo Code"}
+            {editingPromo ? "Edit Promo Code" : "Create Promo Code"}
           </h3>
           <button
             type="button"
@@ -137,23 +164,22 @@ export default function CreatePromoDrawer({
 
           {/* Discount type and value */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-gray-700 font-sans">
-              Discount value 20% MAX $35
-            </label>
+            <label className="text-xs font-medium text-gray-700 font-sans">Discount value</label>
             <div className="flex gap-2">
               <select
                 value={discountType}
-                onChange={(e) => setDiscountType(e.target.value as "%" | "Fixed €")}
+                onChange={(e) => setDiscountType(e.target.value as PromoType)}
                 className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-sans focus:outline-none focus:border-[#2E9DA7] focus:bg-white text-[#111111]"
               >
-                <option value="%">%</option>
-                <option value="Fixed €">Fixed €</option>
+                <option value="PERCENTAGE">%</option>
+                <option value="FIXED">Fixed €</option>
               </select>
               <input
                 type="number"
                 value={discountValue}
                 onChange={(e) => setDiscountValue(Number(e.target.value))}
                 min={1}
+                max={discountType === "PERCENTAGE" ? 100 : undefined}
                 required
                 className="flex-grow px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-sans focus:outline-none focus:border-[#2E9DA7] focus:bg-white transition-all text-[#111111]"
               />
@@ -177,6 +203,7 @@ export default function CreatePromoDrawer({
                 type="date"
                 value={expiryDate}
                 onChange={(e) => setExpiryDate(e.target.value)}
+                required
                 className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-sans focus:outline-none focus:border-[#2E9DA7] focus:bg-white transition-all text-[#111111]"
               />
             </div>
@@ -185,24 +212,26 @@ export default function CreatePromoDrawer({
           {/* Total limit & Per-user limit */}
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-gray-700 font-sans">Total usage limit</label>
+              <label className="text-xs font-medium text-gray-700 font-sans">
+                Total usage limit (blank = unlimited)
+              </label>
               <input
                 type="number"
                 value={totalLimit}
-                onChange={(e) => setTotalLimit(Number(e.target.value))}
+                onChange={(e) => setTotalLimit(e.target.value)}
                 min={1}
-                required
                 className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-sans focus:outline-none focus:border-[#2E9DA7] focus:bg-white transition-all text-[#111111]"
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-gray-700 font-sans">Per-user limit</label>
+              <label className="text-xs font-medium text-gray-700 font-sans">
+                Per-user limit (blank = unlimited)
+              </label>
               <input
                 type="number"
                 value={perUserLimit}
-                onChange={(e) => setPerUserLimit(Number(e.target.value))}
+                onChange={(e) => setPerUserLimit(e.target.value)}
                 min={1}
-                required
                 className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-sans focus:outline-none focus:border-[#2E9DA7] focus:bg-white transition-all text-[#111111]"
               />
             </div>
@@ -213,14 +242,59 @@ export default function CreatePromoDrawer({
             <label className="text-xs font-medium text-gray-700 font-sans">Applicable scope</label>
             <select
               value={scope}
-              onChange={(e) => setScope(e.target.value)}
+              onChange={(e) => setScope(e.target.value as PromoScope)}
               className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-sans focus:outline-none focus:border-[#2E9DA7] focus:bg-white text-[#111111]"
             >
-              <option value="All first bookings">All first bookings</option>
-              <option value="All bookings">All bookings</option>
-              <option value="Select Businesses">Select Businesses</option>
+              <option value="ALL_FIRST_BOOKINGS">All first bookings</option>
+              <option value="ALL_BOOKINGS">All bookings</option>
+              <option value="SELECTED_BUSINESSES">Select Businesses</option>
             </select>
           </div>
+
+          {/* Business selector — only for SELECTED_BUSINESSES scope */}
+          {scope === "SELECTED_BUSINESSES" && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-gray-700 font-sans">
+                Businesses ({selectedBusinessIds.length} selected)
+              </label>
+              <div className="relative">
+                <HugeiconsIcon
+                  icon={Search01Icon}
+                  className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
+                />
+                <input
+                  type="text"
+                  value={businessSearch}
+                  onChange={(e) => setBusinessSearch(e.target.value)}
+                  placeholder="Search businesses..."
+                  className="w-full pl-9 pr-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-sans focus:outline-none focus:border-[#2E9DA7] focus:bg-white transition-all text-[#111111]"
+                />
+              </div>
+              <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+                {businessesQuery.isLoading && (
+                  <div className="px-3.5 py-3 text-xs text-gray-400 font-sans">Loading businesses...</div>
+                )}
+                {!businessesQuery.isLoading && businessesQuery.data?.businesses.length === 0 && (
+                  <div className="px-3.5 py-3 text-xs text-gray-400 font-sans">No businesses found.</div>
+                )}
+                {businessesQuery.data?.businesses.map((business) => (
+                  <label
+                    key={business.id}
+                    className="flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-gray-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedBusinessIds.includes(business.id)}
+                      onChange={() => toggleBusiness(business.id)}
+                      className="rounded border-gray-300 text-[#2E9DA7] focus:ring-[#2E9DA7]"
+                    />
+                    <span className="text-sm text-gray-800 font-sans">{business.name}</span>
+                    <span className="text-xs text-gray-400 font-sans">{business.city}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Important Rules Block */}
           <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-xl p-4 flex gap-3 text-[#1E40AF]">
@@ -228,13 +302,19 @@ export default function CreatePromoDrawer({
             <div className="flex flex-col gap-1.5">
               <span className="text-sm font-semibold font-sans">Important rules:</span>
               <ul className="text-xs font-sans list-disc list-inside space-y-1 opacity-90 leading-normal">
-                <li>Codes valid ONLY on first bookings (no relationship row exists)</li>
-                <li>Discount applies to deposit amount only</li>
-                <li>If code covers full deposit; €0 charged but card still saved via Stripe Setup Intent</li>
+                <li>Discount applies to the online deposit charge only — never the service price</li>
+                <li>Bookly funds every promo discount — Businesses always receive their full entitlement</li>
+                <li>If a code covers the full deposit, €0 is charged but a card is still saved via Stripe</li>
                 <li>Codes are not stackable — one per booking</li>
               </ul>
             </div>
           </div>
+
+          {formError && (
+            <div className="text-xs text-red-600 font-sans bg-red-50 border border-red-100 rounded-lg px-3.5 py-2.5">
+              {formError}
+            </div>
+          )}
 
           {/* Bottom Action buttons */}
           <div className="flex items-center justify-end gap-3 pt-6 mt-auto border-t border-gray-100 shrink-0">
@@ -247,9 +327,10 @@ export default function CreatePromoDrawer({
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-[#2E9DA7] hover:bg-[#25828a] text-white text-sm font-medium rounded-lg transition-colors cursor-pointer"
+              disabled={isSaving}
+              className="px-5 py-2.5 bg-[#2E9DA7] hover:bg-[#25828a] disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors cursor-pointer"
             >
-              {editingCode ? "Save Changes" : "Create Code"}
+              {isSaving ? "Saving..." : editingPromo ? "Save Changes" : "Create Code"}
             </button>
           </div>
         </form>

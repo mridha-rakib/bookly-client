@@ -30,6 +30,7 @@ import type { BookingDetail, CreateBookingInput } from "@/lib/api/bookings";
 import { getStripe } from "@/lib/payments/stripe-client";
 import { formatBookingMoney } from "@/lib/bookings/format";
 import { toUserMessage } from "@/lib/auth/messages";
+import { useBusinessRatingSummaryQuery, useBusinessReviewsQuery } from "@/lib/review/hooks";
 
 function VenueDetailsContent() {
   const router = useRouter();
@@ -43,6 +44,12 @@ function VenueDetailsContent() {
 
   // Real Business + Service catalog (Batch 9) — replaces mockVenueDetails' hardcoded services.
   const catalogQuery = useBusinessCatalogQuery(venueId);
+
+  // Batch 14 — real Business rating summary + public Reviews list, replacing
+  // mockVenueDetails.rating/reviewsCount/reviews (see this file's own history).
+  const [reviewsLimit, setReviewsLimit] = useState(5);
+  const ratingSummaryQuery = useBusinessRatingSummaryQuery(venueId);
+  const reviewsQuery = useBusinessReviewsQuery(venueId, { page: 1, limit: reviewsLimit });
 
   // Booking Wizard Steps States
   const [bookingStep, setBookingStep] = useState<"addons" | "professionals" | "time" | "payment" | "confirmed" | null>(null);
@@ -91,11 +98,21 @@ function VenueDetailsContent() {
   const finalizeMutation = useFinalizeCustomerBookingMutation();
   const preview = previewMutation.data && "financials" in previewMutation.data ? previewMutation.data : undefined;
 
-  const buildBookingInput = (): CreateBookingInput | undefined => {
+  // Batch 13 — Promo Code. `appliedPromoCode` is the server-CONFIRMED code (only set after a
+  // successful preview resolves it); `promoCodeInput` is the raw, uncommitted text field.
+  // `promoCodeOverride: null` means "explicitly no promo" (used when removing); `undefined`
+  // means "use whatever's currently applied" (the default, automatic-revalidation path).
+  const [promoCodeInput, setPromoCodeInput] = useState("");
+  const [appliedPromoCode, setAppliedPromoCode] = useState<string | undefined>(undefined);
+  const [promoStatus, setPromoStatus] = useState<"idle" | "applying" | "applied" | "error">("idle");
+  const [promoErrorMessage, setPromoErrorMessage] = useState<string | undefined>(undefined);
+
+  const buildBookingInput = (promoCodeOverride?: string | null): CreateBookingInput | undefined => {
     if (!selectedService || !selectedProfessional || !selectedSlot || !idempotencyKey) return undefined;
     const staffMembershipId =
       selectedProfessional === ANY_STAFF ? selectedSlot.eligibleStaffMembershipIds[0] : selectedProfessional;
     if (!staffMembershipId) return undefined;
+    const promoCode = promoCodeOverride === null ? undefined : (promoCodeOverride ?? appliedPromoCode);
     return {
       serviceLines: [
         {
@@ -108,18 +125,71 @@ function VenueDetailsContent() {
       startAt: selectedSlot.startAt,
       notes: bookingNotes || undefined,
       idempotencyKey,
+      promoCode,
     };
   };
 
-  // Recompute the real, server-trusted quote whenever the customer's selections change enough
-  // to affect price — never trust a client-computed total (rule #1/#14).
+  // Recompute the real, server-trusted quote whenever the customer's selections (or the applied
+  // Promo Code) change enough to affect price — never trust a client-computed total (rule #1/#14).
+  // Section 26: this also re-validates the applied promo from scratch on every dependency change,
+  // never trusting a stale preview snapshot.
   useEffect(() => {
     if (bookingStep !== "time" && bookingStep !== "payment") return;
     const input = buildBookingInput();
     if (!input) return;
-    previewMutation.mutate({ businessId: venueId, input });
+    previewMutation.mutate(
+      { businessId: venueId, input },
+      {
+        onError: () => {
+          // Section 26 self-heal: if the applied promo became invalid mid-flow (e.g. usage
+          // exhausted by another customer, or the code was deactivated), never leave the
+          // customer stuck on a dead summary — drop it and re-quote without it.
+          if (appliedPromoCode) {
+            setAppliedPromoCode(undefined);
+            setPromoCodeInput("");
+            setPromoStatus("error");
+            setPromoErrorMessage("Your promo code is no longer valid and was removed.");
+            previewMutation.mutate({ businessId: venueId, input: { ...input, promoCode: undefined } });
+          }
+        },
+      },
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookingStep, selectedServiceId, selectedAddonIds.join(","), selectedProfessional, selectedSlot?.startAt]);
+  }, [bookingStep, selectedServiceId, selectedAddonIds.join(","), selectedProfessional, selectedSlot?.startAt, appliedPromoCode]);
+
+  const handleApplyPromo = async () => {
+    const code = promoCodeInput.trim();
+    if (!code) return;
+    const input = buildBookingInput(code);
+    if (!input) return;
+    setPromoStatus("applying");
+    setPromoErrorMessage(undefined);
+    try {
+      const result = await previewMutation.mutateAsync({ businessId: venueId, input });
+      if ("financials" in result && result.promo) {
+        setAppliedPromoCode(code);
+        setPromoStatus("applied");
+      } else {
+        setPromoStatus("error");
+        setPromoErrorMessage("This code isn't valid for this booking.");
+      }
+    } catch (error) {
+      setPromoStatus("error");
+      setPromoErrorMessage(toUserMessage(error));
+      // Restore the base (no-promo) summary so checkout stays usable after a failed attempt.
+      const fallbackInput = buildBookingInput();
+      if (fallbackInput) previewMutation.mutate({ businessId: venueId, input: fallbackInput });
+    }
+  };
+
+  const handleRemovePromo = () => {
+    setAppliedPromoCode(undefined);
+    setPromoCodeInput("");
+    setPromoStatus("idle");
+    setPromoErrorMessage(undefined);
+    const input = buildBookingInput(null);
+    if (input) previewMutation.mutate({ businessId: venueId, input });
+  };
 
   const handleBookService = (serviceId: string) => {
     setSelectedServiceId(serviceId);
@@ -322,14 +392,14 @@ function VenueDetailsContent() {
   const [showSortDropdown, setShowSortDropdown] = useState(false);
 
   const sortedReviews = React.useMemo(() => {
-    const list = [...mockVenueDetails.reviews];
+    const list = [...(reviewsQuery.data?.reviews ?? [])];
     if (sortBy === "Highest Rated") {
       return list.sort((a, b) => b.rating - a.rating);
     } else if (sortBy === "Lowest Rated") {
       return list.sort((a, b) => a.rating - b.rating);
     }
     return list;
-  }, [sortBy]);
+  }, [sortBy, reviewsQuery.data]);
 
   // Mouse Drag States for touch emulation on desktop
   const [isDragActive, setIsDragActive] = useState(false);
@@ -548,9 +618,18 @@ function VenueDetailsContent() {
             {/* Metadata row */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm sm:text-[15.9px] text-gray-500 font-inter">
               <div className="flex items-center gap-1.5 text-[#0D0D0D] font-semibold">
-                <span>{mockVenueDetails.rating.toFixed(1)}</span>
-                <Image src="/Icons/rattingfull.svg" alt="star" className="w-4 h-4 object-contain" width={16} height={16} />
-                <span className="font-normal text-[#757575]">({mockVenueDetails.reviewsCount} Reviews)</span>
+                {ratingSummaryQuery.data?.averageRating !== null &&
+                ratingSummaryQuery.data?.averageRating !== undefined ? (
+                  <>
+                    <span>{ratingSummaryQuery.data.averageRating.toFixed(1)}</span>
+                    <Image src="/Icons/rattingfull.svg" alt="star" className="w-4 h-4 object-contain" width={16} height={16} />
+                    <span className="font-normal text-[#757575]">
+                      ({ratingSummaryQuery.data.reviewCount} Review{ratingSummaryQuery.data.reviewCount === 1 ? "" : "s"})
+                    </span>
+                  </>
+                ) : (
+                  <span className="font-normal text-[#757575]">No reviews yet</span>
+                )}
               </div>
               <span className="text-[#0D0D0D] font-bold">•</span>
               <div className="flex items-center gap-1">
@@ -954,20 +1033,44 @@ function VenueDetailsContent() {
                     </div>
 
                     {/* Rating breakdown details stars row */}
-                    <div className="flex items-end gap-5 w-[284px] h-[27px] mb-6">
-                      <div className="flex items-center gap-3 w-[188px] h-[27px]">
-                        {[1, 2, 3, 4, 5].map((s) => (
-                          <Image key={s} src="/Icons/rattingfull.svg" alt="star" className="w-[28px] h-[27px] object-contain" width={24} height={24} />
-                        ))}
+                    {ratingSummaryQuery.data?.averageRating !== null &&
+                    ratingSummaryQuery.data?.averageRating !== undefined ? (
+                      <div className="flex items-end gap-5 w-[284px] h-[27px] mb-6">
+                        <div className="flex items-center gap-3 w-[188px] h-[27px]">
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <Image
+                              key={s}
+                              src="/Icons/rattingfull.svg"
+                              alt="star"
+                              className={`w-[28px] h-[27px] object-contain ${s <= Math.round(ratingSummaryQuery.data?.averageRating ?? 0) ? "" : "opacity-25"}`}
+                              width={24}
+                              height={24}
+                            />
+                          ))}
+                        </div>
+                        <div className="flex items-start gap-1 w-[76px] h-6 font-semibold">
+                          <span className="font-inter text-[17px] leading-6 text-[#0D0D0D]">
+                            {ratingSummaryQuery.data.averageRating.toFixed(1)}
+                          </span>
+                          <span className="font-inter text-[17px] leading-6 text-[#6950F3]">
+                            ({ratingSummaryQuery.data.reviewCount})
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-start gap-1 w-[76px] h-6 font-semibold">
-                        <span className="font-inter text-[17px] leading-6 text-[#0D0D0D]">5.0</span>
-                        <span className="font-inter text-[17px] leading-6 text-[#6950F3]">(809)</span>
-                      </div>
-                    </div>
+                    ) : (
+                      <p className="font-inter text-sm text-[#767676] mb-6">
+                        No reviews yet — be the first to book and leave one.
+                      </p>
+                    )}
 
                     {/* Reviews stack */}
                     <div className="flex flex-col py-3 gap-6 w-full">
+                      {reviewsQuery.isLoading && (
+                        <p className="text-sm text-[#767676] font-inter">Loading reviews...</p>
+                      )}
+                      {!reviewsQuery.isLoading && sortedReviews.length === 0 && (
+                        <p className="text-sm text-[#767676] font-inter">No reviews yet.</p>
+                      )}
                       {sortedReviews.map((review) => (
                         <div key={review.id} className="flex flex-col items-start py-5 gap-2 w-full border-b border-neutral-100">
 
@@ -975,27 +1078,34 @@ function VenueDetailsContent() {
                           <div className="flex items-center gap-2 w-[236.65px] h-16">
 
                             {/* Avatar Circle Container */}
-                            <div className="box-border flex flex-col justify-center items-start p-[0.0667px] w-16 h-16 bg-[#F0F0FF] border border-[#F0F0FF] rounded-full overflow-hidden shrink-0">
-                              <div className="w-[61.87px] h-[61.87px] rounded-full overflow-hidden relative">
-                                <Image src={review.avatar} alt={review.author} fill className="object-cover" />
-                              </div>
+                            <div className="box-border flex flex-col justify-center items-center p-[0.0667px] w-16 h-16 bg-[#F0F0FF] border border-[#F0F0FF] rounded-full overflow-hidden shrink-0">
+                              <span className="font-inter font-semibold text-lg text-[#6950F3]">
+                                {review.reviewerDisplayName.charAt(0).toUpperCase()}
+                              </span>
                             </div>
 
                             {/* Author Name and Date details */}
                             <div className="flex flex-col justify-center items-start gap-2 w-[164.65px] h-16">
                               <div className="w-[164.65px] h-10 relative">
                                 <span className="absolute left-0 top-0 font-inter font-medium text-[16.5px] leading-6 text-[#0D0D0D] block">
-                                  {review.author}
+                                  {review.reviewerDisplayName}
                                 </span>
                                 <span className="absolute left-0 top-6 font-inter font-normal text-xs leading-4 text-[#767676] block whitespace-nowrap">
-                                  {review.date}
+                                  {new Date(review.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
                                 </span>
                               </div>
 
                               {/* Stars row */}
                               <div className="flex items-start gap-1 w-[108px] h-4">
                                 {[1, 2, 3, 4, 5].map((s) => (
-                                  <Image key={s} src="/Icons/rattingfull.svg" alt="star" className="w-4 h-4 object-contain" width={16} height={16} />
+                                  <Image
+                                    key={s}
+                                    src="/Icons/rattingfull.svg"
+                                    alt="star"
+                                    className={`w-4 h-4 object-contain ${s <= review.rating ? "" : "opacity-25"}`}
+                                    width={16}
+                                    height={16}
+                                  />
                                 ))}
                               </div>
                             </div>
@@ -1003,24 +1113,31 @@ function VenueDetailsContent() {
                           </div>
 
                           {/* Review text comment */}
-                          <div className="flex flex-col items-start w-full h-[24px] mt-1.5">
-                            <p className="w-full h-[24px] font-inter font-normal text-[16.3px] leading-6 text-[#0D0D0D] truncate">
-                              {review.comment} <span className="font-semibold text-black cursor-pointer hover:underline">Read more</span>
-                            </p>
-                          </div>
+                          {review.comment && (
+                            <div className="flex flex-col items-start w-full mt-1.5">
+                              <p className="w-full font-inter font-normal text-[16.3px] leading-6 text-[#0D0D0D]">
+                                {review.comment}
+                              </p>
+                            </div>
+                          )}
 
                         </div>
                       ))}
                     </div>
 
                     {/* See all button */}
-                    <div className="flex flex-col items-start w-full h-12 mt-6">
-                      <button className="box-border flex items-center justify-center px-5 py-2.5 w-[89.8px] h-12 bg-white border border-[#D3D3D3] rounded-full hover:bg-neutral-50 transition-colors shadow-sm cursor-pointer">
-                        <span className="font-inter font-semibold text-[16.3px] text-[#0D0D0D] whitespace-nowrap">
-                          See all
-                        </span>
-                      </button>
-                    </div>
+                    {(reviewsQuery.data?.pagination.total ?? 0) > sortedReviews.length && (
+                      <div className="flex flex-col items-start w-full h-12 mt-6">
+                        <button
+                          onClick={() => setReviewsLimit((limit) => limit + 20)}
+                          className="box-border flex items-center justify-center px-5 py-2.5 h-12 bg-white border border-[#D3D3D3] rounded-full hover:bg-neutral-50 transition-colors shadow-sm cursor-pointer"
+                        >
+                          <span className="font-inter font-semibold text-[16.3px] text-[#0D0D0D] whitespace-nowrap">
+                            See all
+                          </span>
+                        </button>
+                      </div>
+                    )}
 
                   </div>
                 </section>
@@ -1239,15 +1356,31 @@ function VenueDetailsContent() {
                   </h2>
 
                   {/* Stars and rating block */}
-                  <div className="flex items-center gap-2 w-full max-w-[253px] h-8">
-                    <span className="font-inter font-semibold text-2xl leading-8 text-[#0D0D0D]">5.0</span>
-                    <div className="flex items-center gap-1 w-[136px] h-6 justify-center">
-                      {[1, 2, 3, 4, 5].map((s) => (
-                        <Image key={s} src="/Icons/rattingfull.svg" alt="star" className="w-6 h-6 object-contain" width={24} height={24} />
-                      ))}
+                  {ratingSummaryQuery.data?.averageRating !== null &&
+                  ratingSummaryQuery.data?.averageRating !== undefined ? (
+                    <div className="flex items-center gap-2 w-full max-w-[253px] h-8">
+                      <span className="font-inter font-semibold text-2xl leading-8 text-[#0D0D0D]">
+                        {ratingSummaryQuery.data.averageRating.toFixed(1)}
+                      </span>
+                      <div className="flex items-center gap-1 w-[136px] h-6 justify-center">
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <Image
+                            key={s}
+                            src="/Icons/rattingfull.svg"
+                            alt="star"
+                            className={`w-6 h-6 object-contain ${s <= Math.round(ratingSummaryQuery.data?.averageRating ?? 0) ? "" : "opacity-25"}`}
+                            width={24}
+                            height={24}
+                          />
+                        ))}
+                      </div>
+                      <span className="font-inter font-medium text-[23.8px] leading-8 text-[#4E5F78]">
+                        ({ratingSummaryQuery.data.reviewCount})
+                      </span>
                     </div>
-                    <span className="font-inter font-medium text-[23.8px] leading-8 text-[#4E5F78]">(809)</span>
-                  </div>
+                  ) : (
+                    <span className="font-inter font-medium text-base text-[#4E5F78]">No reviews yet</span>
+                  )}
                 </div>
 
                 {/* Dynamic UI based on Authentication (isLoggedIn state) */}
@@ -1652,6 +1785,12 @@ function VenueDetailsContent() {
                 canContinue={canContinueWizard}
                 isSubmitting={finalizeMutation.isPending || confirming3ds}
                 submitError={walletError}
+                promoCodeInput={promoCodeInput}
+                setPromoCodeInput={setPromoCodeInput}
+                promoStatus={promoStatus}
+                promoErrorMessage={promoErrorMessage}
+                onApplyPromo={handleApplyPromo}
+                onRemovePromo={handleRemovePromo}
               />
             )}
 
@@ -1681,9 +1820,18 @@ function VenueDetailsContent() {
                   )}
                   {selectedList.length === 0 && (
                     <div className="flex items-center gap-1.5 text-sm text-[#0d0d0d] font-semibold mt-1">
-                      <span>5.0</span>
-                      <Image src="/Icons/rattingfull.svg" alt="star" className="w-4 h-4 object-contain" width={16} height={16} />
-                      <span className="font-normal text-[#757575]">({mockVenueDetails.reviewsCount} Reviews)</span>
+                      {ratingSummaryQuery.data?.averageRating !== null &&
+                      ratingSummaryQuery.data?.averageRating !== undefined ? (
+                        <>
+                          <span>{ratingSummaryQuery.data.averageRating.toFixed(1)}</span>
+                          <Image src="/Icons/rattingfull.svg" alt="star" className="w-4 h-4 object-contain" width={16} height={16} />
+                          <span className="font-normal text-[#757575]">
+                            ({ratingSummaryQuery.data.reviewCount} Review{ratingSummaryQuery.data.reviewCount === 1 ? "" : "s"})
+                          </span>
+                        </>
+                      ) : (
+                        <span className="font-normal text-[#757575]">No reviews yet</span>
+                      )}
                     </div>
                   )}
                 </div>

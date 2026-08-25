@@ -188,6 +188,9 @@ export interface CreateBookingInput {
   customerCity?: BusinessCity;
   notes?: string;
   idempotencyKey: string;
+  /** Batch 13 — customer-only, optional Promo Code. Server validates/computes everything;
+   * never trust a client-computed discount. Ignored by `createManual`. */
+  promoCode?: string;
 }
 
 export interface CreateManualBookingInput extends CreateBookingInput {
@@ -214,6 +217,16 @@ export interface BookingCreationPreview {
   amountDueNowCents: number;
   requiresSavedCard: boolean;
   hasSavedCard: boolean;
+  /** Batch 13 — present only when a valid `promoCode` was submitted and resolved server-side.
+   * `depositBeforePromoCents` always equals `financials.depositCents`; `amountDueNowCents` above
+   * is already the post-promo charge — never recompute the discount in the client. */
+  promo?: {
+    code: string;
+    type: "PERCENTAGE" | "FIXED";
+    value: number;
+    depositBeforePromoCents: number;
+    discountCents: number;
+  };
 }
 
 // Matches the /bookings/finalize endpoint's two possible response bodies: a plain BookingDetail

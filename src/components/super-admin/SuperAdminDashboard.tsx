@@ -13,6 +13,7 @@ import SuperAdminSupport from "./support/SuperAdminSupport";
 import SuperAdminSettings from "./settings/SuperAdminSettings";
 import SuperAdminContent from "./content/SuperAdminContent";
 import SuperAdminPromoCode from "./promo-code/SuperAdminPromoCode";
+import SuperAdminReviews from "./reviews/SuperAdminReviews";
 
 export default function SuperAdminDashboard() {
   const [activeTab, setActiveTab] = useState("Dashboard");
@@ -86,6 +87,8 @@ export default function SuperAdminDashboard() {
               setActiveTab("Customers");
             }}
           />
+        ) : activeTab === "Reviews" ? (
+          <SuperAdminReviews />
         ) : activeTab === "Analytics" ? (
           <SuperAdminAnalytics setActiveTab={setActiveTab} />
         ) : activeTab === "Support" ? (

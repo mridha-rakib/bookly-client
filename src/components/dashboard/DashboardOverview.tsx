@@ -10,6 +10,8 @@ import {
   initialTimelineEvents,
   initialActivityFeed
 } from "@/utils/dashboardMockData";
+import { useMyBusinessProfileQuery } from "@/lib/business/hooks";
+import { useBusinessRatingSummaryQuery } from "@/lib/review/hooks";
 
 export default function DashboardOverview() {
   const [timeFilter, setTimeFilter] = useState("Today");
@@ -21,6 +23,12 @@ export default function DashboardOverview() {
   const scheduleData = initialScheduleData;
   const timelineEvents = initialTimelineEvents;
   const activityFeed = initialActivityFeed;
+
+  // Batch 14 — the only real (non-mock) card in this row; see this file's own history for why
+  // cards 1-4 remain mock (out of this batch's scope).
+  const businessQuery = useMyBusinessProfileQuery();
+  const ratingSummaryQuery = useBusinessRatingSummaryQuery(businessQuery.data?.primary?.id);
+  const ratingSummary = ratingSummaryQuery.data;
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] select-none">
@@ -146,18 +154,25 @@ export default function DashboardOverview() {
           </div>
         </div>
 
-        {/* Card 5 */}
+        {/* Card 5 — real (Batch 14) */}
         <div className="bg-white border border-[#D3D3D3] rounded-xl p-4.5 shadow-sm flex flex-col justify-between h-[96px]">
           <span className="text-[11px] font-normal text-[#888780] font-poppins">Avg Rating</span>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="text-3xl font-semibold text-[#1A1A1A] leading-none">4.9</span>
-            <Image src="/businessDashboard/Metric 5 Star.svg" alt="5 Stars" className="w-5 h-5 object-contain" width={20} height={20} />
+            <span className="text-3xl font-semibold text-[#1A1A1A] leading-none">
+              {ratingSummary?.averageRating !== null && ratingSummary?.averageRating !== undefined
+                ? ratingSummary.averageRating.toFixed(1)
+                : "—"}
+            </span>
+            {ratingSummary?.averageRating !== null && ratingSummary?.averageRating !== undefined && (
+              <Image src="/businessDashboard/Metric 5 Star.svg" alt="Stars" className="w-5 h-5 object-contain" width={20} height={20} />
+            )}
           </div>
-          <div className="flex items-center text-[11px] text-[#757575] hover:text-[#111111] cursor-pointer mt-0.5 font-poppins whitespace-nowrap select-none">
-            <span>38 verified reviews</span>
-            <svg className="w-3.5 h-3.5 ml-1.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M9 5l7 7-7 7" />
-            </svg>
+          <div className="flex items-center text-[11px] text-[#757575] mt-0.5 font-poppins whitespace-nowrap select-none">
+            <span>
+              {ratingSummary
+                ? `${ratingSummary.reviewCount} verified review${ratingSummary.reviewCount === 1 ? "" : "s"}`
+                : "No reviews yet"}
+            </span>
           </div>
         </div>
       </div>

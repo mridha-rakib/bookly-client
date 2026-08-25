@@ -4,13 +4,21 @@ import React from "react";
 
 import { formatBookingMoney } from "@/lib/bookings/format";
 import type { PlatformFinanceSummary } from "@/lib/api/superAdminFinance";
+import type { PromoDiscountedMoney } from "@/lib/api/promo";
 
 interface SuperAdminFinanceStatsProps {
   summary?: PlatformFinanceSummary;
   isLoading?: boolean;
+  discountedMoney?: PromoDiscountedMoney;
+  isDiscountedMoneyLoading?: boolean;
 }
 
-export default function SuperAdminFinanceStats({ summary, isLoading }: SuperAdminFinanceStatsProps) {
+export default function SuperAdminFinanceStats({
+  summary,
+  isLoading,
+  discountedMoney,
+  isDiscountedMoneyLoading,
+}: SuperAdminFinanceStatsProps) {
   const amount = (cents: number | undefined) =>
     cents !== undefined ? formatBookingMoney(cents) : isLoading ? "…" : "—";
 
@@ -47,8 +55,12 @@ export default function SuperAdminFinanceStats({ summary, isLoading }: SuperAdmi
     },
     {
       title: "Discounted money",
-      value: "—",
-      subtitle: "Not yet available — no promo/discount system exists",
+      value: amount(discountedMoney?.totalCents),
+      subtitle: discountedMoney
+        ? `${discountedMoney.count} Promo redemption${discountedMoney.count === 1 ? "" : "s"} · Bookly-funded`
+        : isDiscountedMoneyLoading
+          ? "Loading…"
+          : "—",
       valueColor: "text-[#0CC0DF]",
     },
   ];

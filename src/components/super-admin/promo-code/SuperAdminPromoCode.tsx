@@ -1,102 +1,60 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { PlusSignIcon, ArrowDown01Icon, ArrowUp01Icon } from "@hugeicons/core-free-icons";
-import CreatePromoDrawer, { PromoCodeItem } from "./CreatePromoDrawer";
-
-interface PromoLogItem {
-  id: string;
-  clientName: string;
-  clientEmail: string;
-  promoCode: string;
-  discount: string;
-  dateTime: string;
-  business: string;
-}
+import { PlusSignIcon, ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import CreatePromoDrawer from "./CreatePromoDrawer";
+import type { PromoDetail, PromoListItem, PromoScope, PromoType } from "@/lib/api/promo";
+import {
+  useDeletePromoMutation,
+  usePromoDetailQuery,
+  usePromoListQuery,
+  usePromoRedemptionsQuery,
+  useSetPromoStatusMutation,
+} from "@/lib/promo/hooks";
 
 interface SuperAdminPromoCodeProps {
   onClientClick?: (email: string) => void;
 }
 
+const scopeLabel: Record<PromoScope, string> = {
+  ALL_FIRST_BOOKINGS: "All first bookings",
+  ALL_BOOKINGS: "All bookings",
+  SELECTED_BUSINESSES: "Select Businesses",
+};
+
+const typeLabel = (type: PromoType) => (type === "PERCENTAGE" ? "%" : "Fixed €");
+
+const formatValue = (promo: Pick<PromoListItem, "type" | "value">) =>
+  promo.type === "PERCENTAGE" ? `${promo.value}% off` : `€${promo.value} off`;
+
+const formatDate = (iso?: string) =>
+  iso
+    ? new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    : "—";
+
+const formatDiscountLabel = (row: { promoDiscountCents: number }) =>
+  `-€${(row.promoDiscountCents / 100).toFixed(2)}`;
+
 export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCodeProps) {
   const [activeTab, setActiveTab] = useState<"All" | "Active" | "Expired" | "Deactivated">("All");
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [editingCode, setEditingCode] = useState<PromoCodeItem | null>(null);
+  const [editingPromoId, setEditingPromoId] = useState<string | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
-  const [selectedPromo, setSelectedPromo] = useState<PromoCodeItem | null>(null);
+  const [selectedPromo, setSelectedPromo] = useState<PromoListItem | null>(null);
   const [dropdownCoords, setDropdownCoords] = useState<{ top: number; left: number } | null>(null);
+  const [usageLogPromoId, setUsageLogPromoId] = useState<string | null>(null);
 
-  const [promoCodes, setPromoCodes] = useState<PromoCodeItem[]>([
-    {
-      id: "1",
-      code: "BOOKLY20",
-      type: "%",
-      value: 20,
-      used: 34,
-      limit: 100,
-      perUserLimit: 1,
-      expires: "30 Jun 2026",
-      scope: "All first bookings",
-      status: "Active"
-    },
-    {
-      id: "2",
-      code: "WELCOME5",
-      type: "Fixed €",
-      value: 5,
-      used: 8,
-      limit: 50,
-      perUserLimit: 1,
-      expires: "15 Jun 2026",
-      scope: "All first bookings",
-      status: "Active"
-    },
-    {
-      id: "3",
-      code: "SUMMER25",
-      type: "%",
-      value: 25,
-      used: 100,
-      limit: 100,
-      perUserLimit: 1,
-      expires: "30 May 2026",
-      scope: "All first bookings",
-      status: "Expired"
-    }
-  ]);
+  const listQuery = usePromoListQuery({ limit: 100 });
+  const editingPromoQuery = usePromoDetailQuery(editingPromoId ?? undefined);
+  const setStatusMutation = useSetPromoStatusMutation();
+  const deleteMutation = useDeletePromoMutation();
 
-  const [usageLogs] = useState<PromoLogItem[]>([
-    {
-      id: "1",
-      clientName: "Sara L.",
-      clientEmail: "sara.l@example.com",
-      promoCode: "SUMMER20",
-      discount: "20%",
-      dateTime: "Mon, 11 May 09:00",
-      business: "Glow Spa"
-    },
-    {
-      id: "2",
-      clientName: "Dimitra V.",
-      clientEmail: "dimitra.v@example.com",
-      promoCode: "NEWUSER15",
-      discount: "15%",
-      dateTime: "Mon, 11 May 14:30",
-      business: "Zenith Hair Salon"
-    },
-    {
-      id: "3",
-      clientName: "Chris M.",
-      clientEmail: "chris.m@example.com",
-      promoCode: "HOLIDAY10",
-      discount: "10%",
-      dateTime: "Tue, 12 May 14:00",
-      business: "Fit Gym"
-    }
-  ]);
+  const promoCodes = listQuery.data?.promos ?? [];
 
-  // Handle clicking outside action dropdown to close it
+  const usageLogPromo = usageLogPromoId ?? promoCodes[0]?.id;
+  const redemptionsQuery = usePromoRedemptionsQuery(usageLogPromo, { limit: 20 });
+
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -110,7 +68,7 @@ export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCo
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleActionClick = (e: React.MouseEvent<HTMLButtonElement>, promo: PromoCodeItem) => {
+  const handleActionClick = (e: React.MouseEvent<HTMLButtonElement>, promo: PromoListItem) => {
     e.stopPropagation();
     if (openDropdownId === promo.id) {
       setOpenDropdownId(null);
@@ -118,11 +76,11 @@ export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCo
       setDropdownCoords(null);
     } else {
       const rect = e.currentTarget.getBoundingClientRect();
-      const left = Math.max(16, rect.right - 144); // prevent going offscreen on the left
+      const left = Math.max(16, rect.right - 144);
       const spaceBelow = window.innerHeight - rect.bottom;
       let top = rect.bottom + 4;
       if (spaceBelow < 140) {
-        top = rect.top - 114; // Position above the button (dropdown is ~110px tall)
+        top = rect.top - 114;
       }
       setOpenDropdownId(promo.id);
       setSelectedPromo(promo);
@@ -130,68 +88,23 @@ export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCo
     }
   };
 
-  const handleSavePromoCode = (codeData: Omit<PromoCodeItem, "id" | "used"> & { id?: string }) => {
-    if (codeData.id) {
-      // Edit mode
-      setPromoCodes((prev) =>
-        prev.map((item) =>
-          item.id === codeData.id
-            ? {
-                ...item,
-                code: codeData.code,
-                type: codeData.type,
-                value: codeData.value,
-                limit: codeData.limit,
-                perUserLimit: codeData.perUserLimit,
-                expires: codeData.expires,
-                scope: codeData.scope,
-                status: codeData.status
-              }
-            : item
-        )
-      );
-    } else {
-      // Create mode
-      const newPromo: PromoCodeItem = {
-        id: String(Date.now()),
-        code: codeData.code,
-        type: codeData.type,
-        value: codeData.value,
-        used: 0,
-        limit: codeData.limit,
-        perUserLimit: codeData.perUserLimit,
-        expires: codeData.expires,
-        scope: codeData.scope,
-        status: "Active"
-      };
-      setPromoCodes((prev) => [newPromo, ...prev]);
-    }
-  };
-
-  const handleToggleDeactivate = (id: string) => {
-    setPromoCodes((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          const nextStatus = item.status === "Deactivated" ? "Active" : "Deactivated";
-          return { ...item, status: nextStatus };
-        }
-        return item;
-      })
-    );
+  const handleToggleDeactivate = async (promo: PromoListItem) => {
+    const nextStatus = promo.status === "DEACTIVATED" ? "ACTIVE" : "DEACTIVATED";
+    await setStatusMutation.mutateAsync({ promoId: promo.id, status: nextStatus });
     setOpenDropdownId(null);
     setSelectedPromo(null);
     setDropdownCoords(null);
   };
 
-  const handleDelete = (id: string) => {
-    setPromoCodes((prev) => prev.filter((item) => item.id !== id));
+  const handleDelete = async (promo: PromoListItem) => {
+    await deleteMutation.mutateAsync(promo.id);
     setOpenDropdownId(null);
     setSelectedPromo(null);
     setDropdownCoords(null);
   };
 
-  const handleEditClick = (item: PromoCodeItem) => {
-    setEditingCode(item);
+  const handleEditClick = (promo: PromoListItem) => {
+    setEditingPromoId(promo.id);
     setIsDrawerOpen(true);
     setOpenDropdownId(null);
     setSelectedPromo(null);
@@ -199,25 +112,27 @@ export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCo
   };
 
   const handleCreateClick = () => {
-    setEditingCode(null);
+    setEditingPromoId(null);
     setIsDrawerOpen(true);
   };
 
   const filteredPromoCodes = promoCodes.filter((c) => {
     if (activeTab === "All") return true;
-    return c.status === activeTab;
+    return c.status.toLowerCase() === activeTab.toLowerCase();
   });
 
-  const getStatusBadge = (status: PromoCodeItem["status"]) => {
+  const getStatusBadge = (status: PromoListItem["status"]) => {
     switch (status) {
-      case "Active":
+      case "ACTIVE":
         return <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#E6F4EA] text-[#137333]">Active</span>;
-      case "Expired":
+      case "EXPIRED":
         return <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#F1F3F4] text-[#5F6368]">Expired</span>;
-      case "Deactivated":
+      case "DEACTIVATED":
         return <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#FCE8E6] text-[#C5221F]">Deactivated</span>;
     }
   };
+
+  const usageLogs = redemptionsQuery.data?.redemptions ?? [];
 
   return (
     <div className="flex flex-col gap-6 w-full pb-12 font-sans">
@@ -240,7 +155,10 @@ export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCo
         {/* Navigation Tabs */}
         <div className="flex border-b border-gray-200 px-6 pt-4 gap-6 overflow-x-auto whitespace-nowrap scrollbar-none">
           {(["All", "Active", "Expired", "Deactivated"] as const).map((tab) => {
-            const count = tab === "All" ? promoCodes.length : promoCodes.filter((c) => c.status === tab).length;
+            const count =
+              tab === "All"
+                ? promoCodes.length
+                : promoCodes.filter((c) => c.status.toLowerCase() === tab.toLowerCase()).length;
             const isActive = activeTab === tab;
             return (
               <button
@@ -284,31 +202,43 @@ export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCo
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {filteredPromoCodes.map((promo) => (
-                <tr key={promo.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 text-sm font-bold text-gray-900 font-sans whitespace-nowrap">{promo.code}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 font-sans whitespace-nowrap">{promo.type}</td>
-                  <td className="px-6 py-4 text-sm font-semibold text-gray-900 font-sans whitespace-nowrap">
-                    {promo.type === "%" ? `${promo.value}% off` : `€${promo.value} off`}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 font-sans whitespace-nowrap">
-                    {promo.used} / {promo.limit}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 font-sans whitespace-nowrap">{promo.expires}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 font-sans whitespace-nowrap">{promo.scope}</td>
-                  <td className="px-6 py-4 text-sm font-sans whitespace-nowrap">{getStatusBadge(promo.status)}</td>
-                  <td className="px-6 py-4 text-sm font-sans text-right relative whitespace-nowrap">
-                    <button
-                      onClick={(e) => handleActionClick(e, promo)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-full hover:bg-gray-50 text-xs font-medium text-gray-700 transition-colors cursor-pointer"
-                    >
-                      <span>Action</span>
-                      <HugeiconsIcon icon={ArrowDown01Icon} className="w-3.5 h-3.5" />
-                    </button>
+              {listQuery.isLoading && (
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center text-sm text-gray-500 font-sans">
+                    Loading promo codes...
                   </td>
                 </tr>
-              ))}
-              {filteredPromoCodes.length === 0 && (
+              )}
+              {!listQuery.isLoading &&
+                filteredPromoCodes.map((promo) => (
+                  <tr
+                    key={promo.id}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => setUsageLogPromoId(promo.id)}
+                  >
+                    <td className="px-6 py-4 text-sm font-bold text-gray-900 font-sans whitespace-nowrap">{promo.code}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500 font-sans whitespace-nowrap">{typeLabel(promo.type)}</td>
+                    <td className="px-6 py-4 text-sm font-semibold text-gray-900 font-sans whitespace-nowrap">
+                      {formatValue(promo)}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500 font-sans whitespace-nowrap">
+                      {promo.redeemedCount} / {promo.totalUsageLimit ?? "∞"}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500 font-sans whitespace-nowrap">{formatDate(promo.expiresAt)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500 font-sans whitespace-nowrap">{scopeLabel[promo.scope]}</td>
+                    <td className="px-6 py-4 text-sm font-sans whitespace-nowrap">{getStatusBadge(promo.status)}</td>
+                    <td className="px-6 py-4 text-sm font-sans text-right relative whitespace-nowrap">
+                      <button
+                        onClick={(e) => handleActionClick(e, promo)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-full hover:bg-gray-50 text-xs font-medium text-gray-700 transition-colors cursor-pointer"
+                      >
+                        <span>Action</span>
+                        <HugeiconsIcon icon={ArrowDown01Icon} className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              {!listQuery.isLoading && filteredPromoCodes.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-6 py-12 text-center text-sm text-gray-500 font-sans">
                     No promo codes found.
@@ -324,19 +254,17 @@ export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCo
           <span className="text-xs text-gray-500 font-sans">
             Showing 1–{filteredPromoCodes.length} of {filteredPromoCodes.length}
           </span>
-          <div className="flex gap-2">
-            <button className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-400 bg-gray-50 cursor-not-allowed">
-              ← Previous
-            </button>
-            <button className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-400 bg-gray-50 cursor-not-allowed">
-              Next →
-            </button>
-          </div>
         </div>
       </div>
 
       {/* Usage Logs Table Section */}
       <div className="bg-white rounded-xl shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 overflow-hidden flex flex-col w-full mt-4">
+        <div className="px-6 pt-4 pb-2">
+          <h3 className="font-sans font-semibold text-sm text-gray-700">
+            Usage log{usageLogPromo ? ` — ${promoCodes.find((p) => p.id === usageLogPromo)?.code ?? ""}` : ""}
+          </h3>
+          <p className="text-xs text-gray-400 font-sans mt-0.5">Click a promo code row above to view its usage log.</p>
+        </div>
         <div className="overflow-x-auto w-full">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -349,51 +277,69 @@ export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCo
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {usageLogs.map((log) => (
-                <tr key={log.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 text-sm font-sans whitespace-nowrap">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-[#E5F1F6] flex items-center justify-center text-xs font-semibold text-[#2E9DA7] shrink-0">
-                        {log.clientName.split(" ").map((n) => n[0]).join("")}
-                      </div>
-                      <div className="flex flex-col">
-                        <span 
-                          onClick={() => onClientClick && onClientClick(log.clientEmail)}
-                          className="font-semibold text-gray-800 hover:text-[#2E9DA7] hover:underline cursor-pointer"
-                        >
-                          {log.clientName}
-                        </span>
-                        <span className="text-xs text-gray-400 font-normal">{log.clientEmail}</span>
-                      </div>
-                    </div>
+              {redemptionsQuery.isLoading && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500 font-sans">
+                    Loading usage log...
                   </td>
-                  <td className="px-6 py-4 text-sm font-sans whitespace-nowrap">
-                    <span className="px-2 py-1 bg-blue-50 text-[#1E40AF] text-xs font-medium rounded border border-blue-100 font-mono">
-                      {log.promoCode}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm font-semibold text-gray-900 font-sans whitespace-nowrap">{log.discount}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 font-sans whitespace-nowrap">{log.dateTime}</td>
-                  <td className="px-6 py-4 text-sm text-gray-800 font-sans font-medium whitespace-nowrap">{log.business}</td>
                 </tr>
-              ))}
+              )}
+              {!redemptionsQuery.isLoading &&
+                usageLogs.map((log) => (
+                  <tr key={log.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 text-sm font-sans whitespace-nowrap">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-[#E5F1F6] flex items-center justify-center text-xs font-semibold text-[#2E9DA7] shrink-0">
+                          {log.customerEmail.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="flex flex-col">
+                          <span
+                            onClick={() => onClientClick && onClientClick(log.customerEmail)}
+                            className="font-semibold text-gray-800 hover:text-[#2E9DA7] hover:underline cursor-pointer"
+                          >
+                            {log.customerEmail}
+                          </span>
+                          <span className="text-xs text-gray-400 font-normal">
+                            {log.isFirstBooking ? "First booking" : "Returning booking"}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm font-sans whitespace-nowrap">
+                      <span className="px-2 py-1 bg-blue-50 text-[#1E40AF] text-xs font-medium rounded border border-blue-100 font-mono">
+                        {log.code}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm font-semibold text-gray-900 font-sans whitespace-nowrap">
+                      {formatDiscountLabel(log)}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500 font-sans whitespace-nowrap">
+                      {new Date(log.redeemedAt).toLocaleString("en-GB", {
+                        weekday: "short",
+                        day: "2-digit",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-800 font-sans font-medium whitespace-nowrap">{log.businessName}</td>
+                  </tr>
+                ))}
+              {!redemptionsQuery.isLoading && usageLogs.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500 font-sans">
+                    No usage yet.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
-        {/* Footer with pagination indicators */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
           <span className="text-xs text-gray-500 font-sans">
-            Showing 1–{usageLogs.length} of {usageLogs.length}
+            Showing 1–{usageLogs.length} of {redemptionsQuery.data?.pagination.total ?? 0}
           </span>
-          <div className="flex gap-2">
-            <button className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-400 bg-gray-50 cursor-not-allowed">
-              ← Previous
-            </button>
-            <button className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-400 bg-gray-50 cursor-not-allowed">
-              Next →
-            </button>
-          </div>
         </div>
       </div>
 
@@ -401,14 +347,12 @@ export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCo
       <CreatePromoDrawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
-        onSave={handleSavePromoCode}
-        editingCode={editingCode}
+        editingPromo={editingPromoId ? (editingPromoQuery.data as PromoDetail | undefined) ?? null : null}
       />
 
       {/* Portal Action Dropdown */}
       {openDropdownId && selectedPromo && dropdownCoords && (
         <>
-          {/* Backdrop to close dropdown on click outside */}
           <div
             className="fixed inset-0 z-[9998] bg-transparent cursor-default"
             onClick={(e) => {
@@ -419,7 +363,6 @@ export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCo
             }}
           />
 
-          {/* Action dropdown popup (positioned fixed at z-[9999] in front of all elements) */}
           <div
             style={{
               position: "fixed",
@@ -436,13 +379,13 @@ export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCo
               Edit
             </button>
             <button
-              onClick={() => handleToggleDeactivate(selectedPromo.id)}
+              onClick={() => handleToggleDeactivate(selectedPromo)}
               className="w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
             >
-              {selectedPromo.status === "Deactivated" ? "Activate" : "Deactivate"}
+              {selectedPromo.status === "DEACTIVATED" ? "Activate" : "Deactivate"}
             </button>
             <button
-              onClick={() => handleDelete(selectedPromo.id)}
+              onClick={() => handleDelete(selectedPromo)}
               className="w-full text-left px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors cursor-pointer border-t border-gray-100"
             >
               Delete
