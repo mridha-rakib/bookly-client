@@ -5,6 +5,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import SearchBar from "@/components/landing-page/SearchBar";
 
+import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
 import { useCustomerBookingsQuery, useCancelByCustomerMutation } from "@/lib/bookings/hooks";
 import { CUSTOMER_BOOKING_TAB_STATUSES, formatBookingMoney, type CustomerBookingTab } from "@/lib/bookings/format";
@@ -13,9 +14,16 @@ import BookingCard from "./BookingCard";
 import RescheduleModal from "./RescheduleModal";
 
 export default function BookingsPage() {
-  const authUser = useAuthStore((state) => state.user);
-  const authStatus = useAuthStore((state) => state.status);
-  const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
+  return (
+    <RequireCustomer>
+      <BookingsPageContent />
+    </RequireCustomer>
+  );
+}
+
+function BookingsPageContent() {
+  const logout = useAuthStore((state) => state.logout);
+  const isLoggedIn = true;
 
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
   const [activeTab, setActiveTab] = useState<CustomerBookingTab>("upcoming");
@@ -51,7 +59,14 @@ export default function BookingsPage() {
 
   return (
     <div className="min-h-screen bg-[#FDFBF9] flex flex-col relative overflow-x-hidden">
-      <Navbar isLoggedIn={isLoggedIn} setIsLoggedIn={() => {}} selectedLanguage={selectedLanguage} setSelectedLanguage={setSelectedLanguage} />
+      <Navbar
+        isLoggedIn={isLoggedIn}
+        setIsLoggedIn={(val) => {
+          if (!val) void logout();
+        }}
+        selectedLanguage={selectedLanguage}
+        setSelectedLanguage={setSelectedLanguage}
+      />
 
       <main className="flex-1 w-full px-4 md:px-8 xl:px-[65px] flex flex-col z-10 relative items-center">
         <div className="w-full flex justify-center mb-[72px]">

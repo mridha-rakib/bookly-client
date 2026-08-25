@@ -9,6 +9,7 @@ import { Refresh01Icon, ArrowLeft02Icon, ArrowRight02Icon } from "@hugeicons/cor
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 
+import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
 import { useBookAgainCandidatesQuery } from "@/lib/bookings/hooks";
 import {
@@ -20,11 +21,18 @@ import {
 const PAGE_SIZE = 12;
 
 export default function BookAgainPage() {
+  return (
+    <RequireCustomer>
+      <BookAgainPageContent />
+    </RequireCustomer>
+  );
+}
+
+function BookAgainPageContent() {
   const router = useRouter();
 
-  const authUser = useAuthStore((state) => state.user);
-  const authStatus = useAuthStore((state) => state.status);
-  const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
+  const logout = useAuthStore((state) => state.logout);
+  const isLoggedIn = true;
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -71,7 +79,9 @@ export default function BookAgainPage() {
       {/* Navbar */}
       <Navbar
         isLoggedIn={isLoggedIn}
-        setIsLoggedIn={() => {}}
+        setIsLoggedIn={(val) => {
+          if (!val) void logout();
+        }}
         selectedLanguage={selectedLanguage}
         setSelectedLanguage={setSelectedLanguage}
       />

@@ -5,6 +5,7 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 
+import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
 import { useCreateSupportTicketMutation, useSupportTicketsQuery } from "@/lib/support/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
@@ -26,9 +27,16 @@ const statusBadge = (status: SupportTicketStatus) => {
 /** Batch 15B — the smallest design-consistent Customer "My Tickets" list, following the same
  * layout conventions customer/bookings/page.tsx already established. */
 export default function CustomerTicketsPage() {
-  const authUser = useAuthStore((state) => state.user);
-  const authStatus = useAuthStore((state) => state.status);
-  const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
+  return (
+    <RequireCustomer>
+      <CustomerTicketsPageContent />
+    </RequireCustomer>
+  );
+}
+
+function CustomerTicketsPageContent() {
+  const logout = useAuthStore((state) => state.logout);
+  const isLoggedIn = true;
 
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -61,7 +69,9 @@ export default function CustomerTicketsPage() {
     <div className="min-h-screen bg-[#FDFBF9] flex flex-col relative overflow-x-hidden">
       <Navbar
         isLoggedIn={isLoggedIn}
-        setIsLoggedIn={() => {}}
+        setIsLoggedIn={(val) => {
+          if (!val) void logout();
+        }}
         selectedLanguage={selectedLanguage}
         setSelectedLanguage={setSelectedLanguage}
       />

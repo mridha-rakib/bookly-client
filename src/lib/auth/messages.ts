@@ -38,6 +38,7 @@ const codeMessages: Record<string, string> = {
   STAFF_TRANSACTION_UNAVAILABLE: "Staff changes cannot be completed right now. Please try again.",
   STAFF_TEMP_PASSWORD_EMAIL_FAILED:
     "The staff account was created, but the welcome email could not be sent.",
+  INVALID_CURRENT_PASSWORD: "Your current password is incorrect.",
 };
 
 export const toUserMessage = (error: unknown): string => {

@@ -6,6 +6,7 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 
+import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
 import {
   useReopenSupportTicketMutation,
@@ -33,9 +34,8 @@ function TicketViewContent() {
   const searchParams = useSearchParams();
   const ticketId = searchParams.get("id") ?? undefined;
 
-  const authUser = useAuthStore((state) => state.user);
-  const authStatus = useAuthStore((state) => state.status);
-  const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
+  const logout = useAuthStore((state) => state.logout);
+  const isLoggedIn = true;
 
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
   const [reply, setReply] = useState("");
@@ -77,7 +77,9 @@ function TicketViewContent() {
     <div className="min-h-screen bg-[#FDFBF9] flex flex-col relative overflow-x-hidden">
       <Navbar
         isLoggedIn={isLoggedIn}
-        setIsLoggedIn={() => {}}
+        setIsLoggedIn={(val) => {
+          if (!val) void logout();
+        }}
         selectedLanguage={selectedLanguage}
         setSelectedLanguage={setSelectedLanguage}
       />
@@ -195,8 +197,10 @@ function TicketViewContent() {
 
 export default function CustomerTicketViewPage() {
   return (
-    <Suspense fallback={null}>
-      <TicketViewContent />
-    </Suspense>
+    <RequireCustomer>
+      <Suspense fallback={null}>
+        <TicketViewContent />
+      </Suspense>
+    </RequireCustomer>
   );
 }

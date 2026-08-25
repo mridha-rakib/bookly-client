@@ -2,6 +2,7 @@ import type { AuthUser, UserRole } from "@/lib/api/auth";
 
 export const authRoutes = {
   professionalAuth: "/professional/auth",
+  customerAuth: "/select-role",
   customerHome: "/",
   businessDashboard: "/business-dashboard",
   supervisorDashboard: "/supervisor-dashboard",

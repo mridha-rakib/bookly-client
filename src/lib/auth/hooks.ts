@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { authApi } from "@/lib/api/auth";
 import { useAuthStore } from "@/lib/auth/store";
@@ -105,3 +105,16 @@ export const useCurrentUserQuery = () =>
     queryKey: ["auth", "me"],
     queryFn: authApi.me,
   });
+
+export const useUpdateMyProfileMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: authApi.updateMyProfile,
+    onSuccess: (data) => {
+      queryClient.setQueryData(["auth", "me"], data);
+    },
+  });
+};
+
+export const useChangeMyPasswordMutation = () =>
+  useMutation({ mutationFn: authApi.changeMyPassword });

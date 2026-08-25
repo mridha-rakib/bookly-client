@@ -63,20 +63,15 @@ export default function Navbar({
   const userDropdownRef = useRef<HTMLDivElement>(null);
   const mobileModalRef = useRef<HTMLDivElement>(null);
 
-  // Sync avatar with localStorage and custom profileUpdate events
+  // Sync avatar with localStorage and custom profileUpdate events. This is a
+  // browser-only preview (never sent to or read from the backend — no avatar
+  // upload capability exists yet), so it intentionally lives outside the auth store.
   useEffect(() => {
     const loadAvatar = () => {
       if (typeof window !== "undefined") {
-        const saved = localStorage.getItem("profileData");
+        const saved = localStorage.getItem("customerAvatarUrl");
         if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (parsed.avatar) {
-              setAvatar(parsed.avatar);
-            }
-          } catch (e) {
-            console.error("Error parsing profileData in Navbar", e);
-          }
+          setAvatar(saved);
         }
       }
     };

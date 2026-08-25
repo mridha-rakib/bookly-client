@@ -12,6 +12,7 @@ import EdgeSoftOrbsTop from "@/components/EdgeSoftOrbsTop";
 import ServiceCard, { Recommendation } from "@/components/ServiceCard";
 import SearchBar from "@/components/landing-page/SearchBar";
 
+import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
 import { useFavoritesListQuery, useRemoveFavoriteMutation } from "@/lib/favorite/hooks";
 import type { DiscoveryBusinessCard } from "@/lib/api/discovery";
@@ -34,10 +35,17 @@ const cardToRecommendation = (card: DiscoveryBusinessCard): Recommendation => ({
 });
 
 export default function FavoritesPage() {
+  return (
+    <RequireCustomer>
+      <FavoritesPageContent />
+    </RequireCustomer>
+  );
+}
+
+function FavoritesPageContent() {
   const router = useRouter();
-  const authUser = useAuthStore((state) => state.user);
-  const authStatus = useAuthStore((state) => state.status);
-  const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
+  const logout = useAuthStore((state) => state.logout);
+  const isLoggedIn = true;
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -69,7 +77,9 @@ export default function FavoritesPage() {
       {/* Navbar */}
       <Navbar
         isLoggedIn={isLoggedIn}
-        setIsLoggedIn={() => {}}
+        setIsLoggedIn={(val) => {
+          if (!val) void logout();
+        }}
         selectedLanguage={selectedLanguage}
         setSelectedLanguage={setSelectedLanguage}
       />

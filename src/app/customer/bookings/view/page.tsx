@@ -12,6 +12,7 @@ import { Mail01Icon, Location05Icon, Calendar01Icon, Clock01Icon, Share05Icon, M
 
 import { Suspense } from "react";
 
+import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
 import { useCustomerBookingDetailQuery, useCancelByCustomerMutation } from "@/lib/bookings/hooks";
 import { useBusinessCatalogQuery } from "@/lib/catalog/hooks";
@@ -29,9 +30,8 @@ function BookingViewContent() {
   const searchParams = useSearchParams();
   const bookingId = searchParams.get("id") ?? undefined;
 
-  const authUser = useAuthStore((state) => state.user);
-  const authStatus = useAuthStore((state) => state.status);
-  const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
+  const logout = useAuthStore((state) => state.logout);
+  const isLoggedIn = true;
 
   const detailQuery = useCustomerBookingDetailQuery(bookingId);
   const booking = detailQuery.data;
@@ -62,7 +62,14 @@ function BookingViewContent() {
 
   return (
     <div className="min-h-screen bg-[#FCFAF9] flex flex-col relative overflow-x-hidden">
-      <Navbar isLoggedIn={isLoggedIn} setIsLoggedIn={() => {}} selectedLanguage="ENG" setSelectedLanguage={() => {}} />
+      <Navbar
+        isLoggedIn={isLoggedIn}
+        setIsLoggedIn={(val) => {
+          if (!val) void logout();
+        }}
+        selectedLanguage="ENG"
+        setSelectedLanguage={() => {}}
+      />
 
       <div className="w-full lg:max-w-none lg:mx-0 lg:pl-[200px] px-4 md:px-0 pt-[22px] flex items-center gap-2 text-xs font-poppins font-medium text-gray-500 uppercase tracking-wider">
         <Link href="/" className="hover:text-black">Home</Link>
@@ -363,8 +370,10 @@ function BookingViewContent() {
 
 export default function BookingViewPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <BookingViewContent />
-    </Suspense>
+    <RequireCustomer>
+      <Suspense fallback={<div>Loading...</div>}>
+        <BookingViewContent />
+      </Suspense>
+    </RequireCustomer>
   );
 }

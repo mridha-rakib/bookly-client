@@ -24,6 +24,23 @@ export interface AuthProfile {
     nationalNumber: string;
     e164: string;
   };
+  /** CUSTOMER only — undefined until the customer sets it via profile edit. */
+  address?: string;
+  /** CUSTOMER only, "YYYY-MM-DD" — undefined until the customer sets it via profile edit. */
+  dateOfBirth?: string;
+}
+
+export interface UpdateMyProfileInput {
+  firstName?: string;
+  lastName?: string;
+  gender?: Gender;
+  address?: string;
+  dateOfBirth?: string;
+}
+
+export interface ChangeMyPasswordInput {
+  currentPassword: string;
+  newPassword: string;
 }
 
 export interface AuthBusiness {
@@ -167,6 +184,20 @@ export const authApi = {
     apiRequest<CurrentUserResponse>({
       method: "GET",
       url: "/auth/me",
+    }),
+
+  updateMyProfile: (input: UpdateMyProfileInput) =>
+    apiRequest<CurrentUserResponse>({
+      method: "PATCH",
+      url: "/auth/me",
+      data: input,
+    }),
+
+  changeMyPassword: (input: ChangeMyPasswordInput) =>
+    apiRequest<undefined>({
+      method: "PATCH",
+      url: "/auth/me/password",
+      data: input,
     }),
 
   sendCustomerEmailOtp: (sessionId: string) =>

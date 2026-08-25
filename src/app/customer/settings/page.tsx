@@ -1,53 +1,45 @@
 "use client";
 
 import Image from "next/image";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { ArrowDown01Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 
 // Components
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import EdgeSoftOrbsTop from "@/components/EdgeSoftOrbsTop";
-import SuccessModal from "@/components/auth/SuccessModal";
 import { countries, Country } from "@/components/CountryData";
+import RequireCustomer from "@/components/auth/RequireCustomer";
+
+import { useAuthStore } from "@/lib/auth/store";
+import { useChangeMyPasswordMutation } from "@/lib/auth/hooks";
+import { toUserMessage } from "@/lib/auth/messages";
 
 export default function SettingsPage() {
+  return (
+    <RequireCustomer>
+      <SettingsPageContent />
+    </RequireCustomer>
+  );
+}
+
+function SettingsPageContent() {
   const router = useRouter();
   const langDropdownRef = useRef<HTMLDivElement>(null);
   const timezoneDropdownRef = useRef<HTMLDivElement>(null);
 
+  const logout = useAuthStore((state) => state.logout);
+  const isLoggedIn = true;
+
   // App Install Banner State
   const [showBanner, setShowBanner] = useState(true);
-
-  // Shared Navbar State
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
 
-  // Sync login status with localStorage
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("isLoggedIn");
-      if (saved === "true") {
-        setIsLoggedIn(true);
-      } else {
-        setIsLoggedIn(true); // Default to logged in for settings view
-      }
-    }
-  }, []);
-
-  // Account linking states
-  const [googleLinked, setGoogleLinked] = useState(true);
-  const [facebookLinked, setFacebookLinked] = useState(true);
-  const [appleLinked, setAppleLinked] = useState(true);
-
-  // Notification states
-  const [apptEmail, setApptEmail] = useState(true);
-  const [apptText, setApptText] = useState(true);
-  const [mktEmail, setMktEmail] = useState(false);
-
-  // Language state
+  // General Preferences — session-only display state. No backend field exists for a customer's
+  // language/timezone preference, so this is deliberately never persisted (localStorage or
+  // otherwise) to avoid implying it is saved to the account.
   const [showLangDropdown, setShowLangDropdown] = useState(false);
   const [selectedLang, setSelectedLang] = useState<Country>({
     name: "United States",
@@ -56,7 +48,6 @@ export default function SettingsPage() {
   });
   const [langSearch, setLangSearch] = useState("");
 
-  // Timezone state
   const [showTimezoneDropdown, setShowTimezoneDropdown] = useState(false);
   const [selectedTimezone, setSelectedTimezone] = useState("(UTC+02:00) Athens, Cyprus");
   const timezones = [
@@ -70,107 +61,54 @@ export default function SettingsPage() {
   // Modals
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [isSuccessOpen, setIsSuccessOpen] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
+  const [toastMessage, setToastMessage] = useState("");
+  const [showToast, setShowToast] = useState(false);
 
-  // Load preferences from localStorage on mount
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedGoogle = localStorage.getItem("settings_googleLinked");
-      if (savedGoogle !== null) setGoogleLinked(savedGoogle === "true");
-
-      const savedFb = localStorage.getItem("settings_facebookLinked");
-      if (savedFb !== null) setFacebookLinked(savedFb === "true");
-
-      const savedApple = localStorage.getItem("settings_appleLinked");
-      if (savedApple !== null) setAppleLinked(savedApple === "true");
-
-      const savedApptEmail = localStorage.getItem("settings_apptEmail");
-      if (savedApptEmail !== null) setApptEmail(savedApptEmail === "true");
-
-      const savedApptText = localStorage.getItem("settings_apptText");
-      if (savedApptText !== null) setApptText(savedApptText === "true");
-
-      const savedMktEmail = localStorage.getItem("settings_mktEmail");
-      if (savedMktEmail !== null) setMktEmail(savedMktEmail === "true");
-
-      const savedLangIso = localStorage.getItem("settings_langIso");
-      if (savedLangIso !== null) {
-        const found = countries.find(c => c.iso === savedLangIso);
-        if (found) setSelectedLang(found);
-      }
-
-      const savedTimezone = localStorage.getItem("settings_timezone");
-      if (savedTimezone !== null) setSelectedTimezone(savedTimezone);
-    }
-  }, []);
-
-  // Sync state functions that update localstorage
-  const toggleGoogle = () => {
-    const next = !googleLinked;
-    setGoogleLinked(next);
-    localStorage.setItem("settings_googleLinked", String(next));
+  const showSuccessToast = (message: string) => {
+    setToastMessage(message);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3500);
   };
 
-  const toggleFacebook = () => {
-    const next = !facebookLinked;
-    setFacebookLinked(next);
-    localStorage.setItem("settings_facebookLinked", String(next));
-  };
+  // Password change — the only Security & Data control with a real backend endpoint.
+  const changePasswordMutation = useChangeMyPasswordMutation();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
-  const toggleApple = () => {
-    const next = !appleLinked;
-    setAppleLinked(next);
-    localStorage.setItem("settings_appleLinked", String(next));
-  };
-
-  const toggleApptEmail = () => {
-    const next = !apptEmail;
-    setApptEmail(next);
-    localStorage.setItem("settings_apptEmail", String(next));
-  };
-
-  const toggleApptText = () => {
-    const next = !apptText;
-    setApptText(next);
-    localStorage.setItem("settings_apptText", String(next));
-  };
-
-  const toggleMktEmail = () => {
-    const next = !mktEmail;
-    setMktEmail(next);
-    localStorage.setItem("settings_mktEmail", String(next));
-  };
-
-  // Close dropdowns on outside click
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent | TouchEvent) {
-      if (langDropdownRef.current && !langDropdownRef.current.contains(event.target as Node)) {
-        setShowLangDropdown(false);
-      }
-      if (timezoneDropdownRef.current && !timezoneDropdownRef.current.contains(event.target as Node)) {
-        setShowTimezoneDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("touchstart", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("touchstart", handleClickOutside);
-    };
-  }, []);
-
-  const handlePasswordChangeSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const closePasswordModal = () => {
     setIsPasswordModalOpen(false);
-    setSuccessMessage("Your password has been changed successfully.");
-    setIsSuccessOpen(true);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordError("");
   };
 
+  const handlePasswordChangeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError("");
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New password and confirmation do not match.");
+      return;
+    }
+
+    try {
+      await changePasswordMutation.mutateAsync({ currentPassword, newPassword });
+      closePasswordModal();
+      showSuccessToast("Your password has been changed successfully.");
+    } catch (error) {
+      setPasswordError(toUserMessage(error));
+    }
+  };
+
+  // Delete Account — no backend lifecycle exists yet (bookings/payments/reviews/audit retention
+  // implications are unresolved), so this is deliberately non-functional rather than faking a
+  // real deletion and clearing the session.
   const handleDeleteAccountSubmit = () => {
     setIsDeleteModalOpen(false);
-    setSuccessMessage("Your account has been deleted permanently.");
-    setIsSuccessOpen(true);
+    showSuccessToast("Account deletion isn't available yet. Please contact support.");
   };
 
   return (
@@ -209,7 +147,9 @@ export default function SettingsPage() {
       {/* Navbar */}
       <Navbar
         isLoggedIn={isLoggedIn}
-        setIsLoggedIn={setIsLoggedIn}
+        setIsLoggedIn={(val) => {
+          if (!val) void logout();
+        }}
         selectedLanguage={selectedLanguage}
         setSelectedLanguage={setSelectedLanguage}
       />
@@ -236,7 +176,7 @@ export default function SettingsPage() {
 
       {/* Main Settings Form Container */}
       <main className="flex-grow w-full max-w-[1024px] mx-auto px-4 md:px-8 xl:px-0 mt-[40px] flex flex-col gap-10">
-        
+
         {/* Header */}
         <div className="w-full flex flex-col items-start p-0 gap-2">
           <h1 className="font-manrope font-bold text-[30px] leading-[36px] text-[#020305]">
@@ -249,8 +189,8 @@ export default function SettingsPage() {
 
         {/* Sections Container */}
         <div className="w-full flex flex-col gap-8">
-          
-          {/* Linked Accounts Section */}
+
+          {/* Linked Accounts Section — not available yet: no OAuth/social-auth capability exists */}
           <section className="bg-white border border-[#C6C6CB] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-xl flex flex-col items-start overflow-hidden">
             <div className="w-full box-border border-b border-[#C6C6CB] px-6 py-4 flex flex-row items-center gap-2">
               <div className="w-5 h-5 flex items-center justify-center">
@@ -262,95 +202,38 @@ export default function SettingsPage() {
             </div>
 
             <div className="w-full p-6 flex flex-col gap-4 max-w-[910px]">
-              
-              {/* Google */}
-              <div className="w-full box-border flex flex-row justify-between items-center p-4 border border-[#C6C6CB] rounded-lg">
-                <div className="flex flex-row items-center gap-4">
-                  <div className="w-10 h-10 bg-[#EBE7E7] rounded-full flex items-center justify-center shrink-0">
-                    <Image src="/settingsIcons/google.svg" alt="Google" className="w-6 h-6 object-contain" width={24} height={24} />
-                  </div>
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <span className="font-manrope font-bold text-base text-[#020305]">Google</span>
-                      {googleLinked && (
-                        <span className="bg-[#CFE1FE] text-[#53647D] px-2 py-0.5 rounded-full font-manrope font-bold text-[10px] uppercase tracking-wide">
-                          Linked
-                        </span>
-                      )}
-                    </div>
-                    <span className="font-manrope font-normal text-sm text-[#4E5F78]">
-                      {googleLinked ? "Connected to elena.p@example.com" : "Not connected"}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  onClick={toggleGoogle}
-                  className="font-manrope font-semibold text-sm text-[#BA1A1A] px-3 py-1.5 rounded-md hover:bg-red-50 transition-colors"
+              {[
+                { name: "Google", icon: "/settingsIcons/google.svg" },
+                { name: "Facebook", icon: "/settingsIcons/facebook.svg" },
+                { name: "Apple", icon: "/settingsIcons/apple.svg" },
+              ].map((provider) => (
+                <div
+                  key={provider.name}
+                  className="w-full box-border flex flex-row justify-between items-center p-4 border border-[#C6C6CB] rounded-lg"
                 >
-                  {googleLinked ? "Unlink" : "Link"}
-                </button>
-              </div>
-
-              {/* Facebook */}
-              <div className="w-full box-border flex flex-row justify-between items-center p-4 border border-[#C6C6CB] rounded-lg">
-                <div className="flex flex-row items-center gap-4">
-                  <div className="w-10 h-10 bg-[#EBE7E7] rounded-full flex items-center justify-center shrink-0">
-                    <Image src="/settingsIcons/facebook.svg" alt="Facebook" className="w-6 h-6 object-contain" width={24} height={24} />
-                  </div>
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <span className="font-manrope font-bold text-base text-[#020305]">Facebook</span>
-                      {facebookLinked && (
-                        <span className="bg-[#CFE1FE] text-[#53647D] px-2 py-0.5 rounded-full font-manrope font-bold text-[10px] uppercase tracking-wide">
-                          Linked
-                        </span>
-                      )}
+                  <div className="flex flex-row items-center gap-4">
+                    <div className="w-10 h-10 bg-[#EBE7E7] rounded-full flex items-center justify-center shrink-0">
+                      <Image src={provider.icon} alt={provider.name} className="w-6 h-6 object-contain" width={24} height={24} />
                     </div>
-                    <span className="font-manrope font-normal text-sm text-[#4E5F78]">
-                      {facebookLinked ? "Connected as Elena Papadopoulos" : "Not connected"}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  onClick={toggleFacebook}
-                  className="font-manrope font-semibold text-sm text-[#BA1A1A] px-3 py-1.5 rounded-md hover:bg-red-50 transition-colors"
-                >
-                  {facebookLinked ? "Unlink" : "Link"}
-                </button>
-              </div>
-
-              {/* Apple */}
-              <div className="w-full box-border flex flex-row justify-between items-center p-4 border border-[#C6C6CB] rounded-lg">
-                <div className="flex flex-row items-center gap-4">
-                  <div className="w-10 h-10 bg-[#EBE7E7] rounded-full flex items-center justify-center shrink-0">
-                    <Image src="/settingsIcons/apple.svg" alt="Apple" className="w-6 h-6 object-contain" width={24} height={24} />
-                  </div>
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <span className="font-manrope font-bold text-base text-[#020305]">Apple</span>
-                      {appleLinked && (
-                        <span className="bg-[#CFE1FE] text-[#53647D] px-2 py-0.5 rounded-full font-manrope font-bold text-[10px] uppercase tracking-wide">
-                          Linked
-                        </span>
-                      )}
+                    <div className="flex flex-col">
+                      <span className="font-manrope font-bold text-base text-[#020305]">{provider.name}</span>
+                      <span className="font-manrope font-normal text-sm text-[#4E5F78]">Not connected</span>
                     </div>
-                    <span className="font-manrope font-normal text-sm text-[#4E5F78]">
-                      {appleLinked ? "Connected as Elena Papadopoulos" : "Not connected"}
-                    </span>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => showSuccessToast(`Linking a ${provider.name} account isn't available yet.`)}
+                    className="font-manrope font-semibold text-sm text-[#4E5F78] px-3 py-1.5 rounded-md hover:bg-neutral-50 transition-colors"
+                  >
+                    Link
+                  </button>
                 </div>
-                <button
-                  onClick={toggleApple}
-                  className="font-manrope font-semibold text-sm text-[#BA1A1A] px-3 py-1.5 rounded-md hover:bg-red-50 transition-colors"
-                >
-                  {appleLinked ? "Unlink" : "Link"}
-                </button>
-              </div>
-
+              ))}
             </div>
           </section>
 
-          {/* Notification Preferences Section */}
+          {/* Notification Preferences Section — not available yet: no backend preference field
+              exists, and nothing on the notification-sending side would consume it. */}
           <section className="bg-white border border-[#C6C6CB] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-xl flex flex-col items-start overflow-hidden">
             <div className="w-full box-border border-b border-[#C6C6CB] px-6 py-4 flex flex-row items-center gap-2">
               <div className="w-5 h-5 flex items-center justify-center">
@@ -363,10 +246,9 @@ export default function SettingsPage() {
 
             <div className="w-full p-6 flex flex-col gap-6">
               <p className="font-manrope font-normal text-sm text-[#4E5F78]">
-                We will send you updates about your appointments, news and offers.
+                Notification preferences aren&apos;t configurable yet — you&apos;ll always receive booking confirmations and reminders by email.
               </p>
 
-              {/* Appointment Notifications sub-area */}
               <div className="w-full flex flex-col gap-4">
                 <div className="w-full border-b border-[#C6C6CB] pb-2">
                   <h3 className="font-manrope font-bold text-base text-[#020305]">
@@ -374,52 +256,28 @@ export default function SettingsPage() {
                   </h3>
                 </div>
 
-                {/* Email toggle */}
-                <div className="flex flex-row justify-between items-center py-4">
-                  <div className="flex flex-col">
-                    <span className="font-manrope font-bold text-base text-[#020305]">Email</span>
-                    <span className="font-manrope font-normal text-sm text-[#4E5F78]">
-                      Receive booking confirmations and reminders via email.
-                    </span>
-                  </div>
-                  <button
-                    onClick={toggleApptEmail}
-                    className={`relative w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer ${
-                      apptEmail ? "bg-[#1F8900]" : "bg-[#76777B]"
-                    }`}
+                {[
+                  { label: "Email", description: "Receive booking confirmations and reminders via email." },
+                  { label: "Text message", description: "Get real-time updates directly to your phone." },
+                ].map((item, i) => (
+                  <div
+                    key={item.label}
+                    className={`flex flex-row justify-between items-center py-4 ${i > 0 ? "border-t border-[#C6C6CB]" : ""}`}
                   >
-                    <span
-                      className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all duration-200 ${
-                        apptEmail ? "left-[22px]" : "left-0.5"
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                {/* Text toggle */}
-                <div className="flex flex-row justify-between items-center py-4 border-t border-[#C6C6CB]">
-                  <div className="flex flex-col">
-                    <span className="font-manrope font-bold text-base text-[#020305]">Text message</span>
-                    <span className="font-manrope font-normal text-sm text-[#4E5F78]">
-                      Get real-time updates directly to your phone.
-                    </span>
+                    <div className="flex flex-col">
+                      <span className="font-manrope font-bold text-base text-[#020305]">{item.label}</span>
+                      <span className="font-manrope font-normal text-sm text-[#4E5F78]">{item.description}</span>
+                    </div>
+                    <div
+                      title="Not configurable yet"
+                      className="relative w-11 h-6 rounded-full bg-[#76777B] opacity-50 cursor-not-allowed"
+                    >
+                      <span className="absolute top-0.5 left-[22px] w-5 h-5 bg-white rounded-full" />
+                    </div>
                   </div>
-                  <button
-                    onClick={toggleApptText}
-                    className={`relative w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer ${
-                      apptText ? "bg-[#1F8900]" : "bg-[#76777B]"
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all duration-200 ${
-                        apptText ? "left-[22px]" : "left-0.5"
-                      }`}
-                    />
-                  </button>
-                </div>
+                ))}
               </div>
 
-              {/* Marketing Notifications sub-area */}
               <div className="w-full flex flex-col gap-4 mt-4">
                 <div className="w-full border-b border-[#C6C6CB] pb-2">
                   <h3 className="font-manrope font-bold text-base text-[#020305]">
@@ -427,7 +285,6 @@ export default function SettingsPage() {
                   </h3>
                 </div>
 
-                {/* Marketing Email toggle */}
                 <div className="flex flex-row justify-between items-center py-4">
                   <div className="flex flex-col">
                     <span className="font-manrope font-bold text-base text-[#020305]">Email</span>
@@ -435,25 +292,19 @@ export default function SettingsPage() {
                       Be the first to know about discounts and local events via email.
                     </span>
                   </div>
-                  <button
-                    onClick={toggleMktEmail}
-                    className={`relative w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer ${
-                      mktEmail ? "bg-[#1F8900]" : "bg-[#76777B]"
-                    }`}
+                  <div
+                    title="Not configurable yet"
+                    className="relative w-11 h-6 rounded-full bg-[#76777B] opacity-50 cursor-not-allowed"
                   >
-                    <span
-                      className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all duration-200 ${
-                        mktEmail ? "left-[22px]" : "left-0.5"
-                      }`}
-                    />
-                  </button>
+                    <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full" />
+                  </div>
                 </div>
               </div>
-
             </div>
           </section>
 
-          {/* General Preferences Section */}
+          {/* General Preferences Section — display-only for this session; no backend field to
+              persist to, so nothing is written to storage. */}
           <section className="bg-white border border-[#C6C6CB] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-xl flex flex-col items-start relative z-20">
             <div className="w-full box-border border-b border-[#C6C6CB] px-6 py-4 flex flex-row items-center gap-2">
               <div className="w-5 h-5 flex items-center justify-center">
@@ -465,7 +316,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="w-full p-6 flex flex-col sm:flex-row gap-6">
-              
+
               {/* Language Dropdown Container */}
               <div className="flex-1 flex flex-col gap-2 relative" ref={langDropdownRef}>
                 <span className="font-manrope font-bold text-sm text-[#020305]">Language</span>
@@ -503,7 +354,6 @@ export default function SettingsPage() {
                             type="button"
                             onClick={() => {
                               setSelectedLang(c);
-                              localStorage.setItem("settings_langIso", c.iso);
                               setShowLangDropdown(false);
                               setLangSearch("");
                             }}
@@ -542,7 +392,6 @@ export default function SettingsPage() {
                         type="button"
                         onClick={() => {
                           setSelectedTimezone(tz);
-                          localStorage.setItem("settings_timezone", tz);
                           setShowTimezoneDropdown(false);
                         }}
                         className="px-4 py-2 hover:bg-neutral-50 text-left w-full transition-colors cursor-pointer font-manrope font-normal text-sm text-[#1C1B1C]"
@@ -569,7 +418,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="w-full p-6 flex flex-col gap-6">
-              
+
               {/* Password */}
               <div className="flex flex-row justify-between items-center gap-4">
                 <div className="flex-grow flex flex-col">
@@ -627,6 +476,8 @@ export default function SettingsPage() {
                 <input
                   type="password"
                   required
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
                   placeholder="••••••••"
                   className="w-full h-11 px-3 border border-[#C6C6CB] rounded-lg focus:outline-none focus:border-[#0CC0DF] font-manrope text-sm"
                 />
@@ -636,6 +487,9 @@ export default function SettingsPage() {
                 <input
                   type="password"
                   required
+                  minLength={6}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="••••••••"
                   className="w-full h-11 px-3 border border-[#C6C6CB] rounded-lg focus:outline-none focus:border-[#0CC0DF] font-manrope text-sm"
                 />
@@ -645,23 +499,33 @@ export default function SettingsPage() {
                 <input
                   type="password"
                   required
+                  minLength={6}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="••••••••"
                   className="w-full h-11 px-3 border border-[#C6C6CB] rounded-lg focus:outline-none focus:border-[#0CC0DF] font-manrope text-sm"
                 />
               </div>
+
+              {passwordError && (
+                <p className="text-sm text-red-600 font-manrope">{passwordError}</p>
+              )}
+
               <div className="flex flex-row justify-end items-center gap-3 mt-4">
                 <button
                   type="button"
-                  onClick={() => setIsPasswordModalOpen(false)}
-                  className="px-4 py-2 border border-[#C6C6CB] rounded-lg hover:bg-neutral-50 font-manrope font-semibold text-sm text-[#020305] cursor-pointer"
+                  onClick={closePasswordModal}
+                  disabled={changePasswordMutation.isPending}
+                  className="px-4 py-2 border border-[#C6C6CB] rounded-lg hover:bg-neutral-50 font-manrope font-semibold text-sm text-[#020305] cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-[#1A1A1A] hover:bg-black text-white rounded-lg font-manrope font-semibold text-sm cursor-pointer"
+                  disabled={changePasswordMutation.isPending}
+                  className="px-4 py-2 bg-[#1A1A1A] hover:bg-black text-white rounded-lg font-manrope font-semibold text-sm cursor-pointer disabled:opacity-60"
                 >
-                  Change Password
+                  {changePasswordMutation.isPending ? "Changing..." : "Change Password"}
                 </button>
               </div>
             </form>
@@ -699,18 +563,13 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Success Notification Modal */}
-      <SuccessModal
-        isOpen={isSuccessOpen}
-        onClose={() => setIsSuccessOpen(false)}
-        onContinue={() => {
-          setIsSuccessOpen(false);
-          if (successMessage.includes("deleted")) {
-            localStorage.setItem("isLoggedIn", "false");
-            window.location.reload();
-          }
-        }}
-      />
+      {/* Success/Info Toast */}
+      {showToast && (
+        <div className="fixed bottom-6 right-6 bg-[#1A1A1A] text-white py-3.5 px-5 rounded-xl shadow-lg z-[1000] flex items-center gap-3 border border-white/10 max-w-[360px]">
+          <HugeiconsIcon icon={CheckmarkCircle02Icon} size={20} className="text-[#2E9DA7] shrink-0" />
+          <span className="text-sm font-medium">{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }

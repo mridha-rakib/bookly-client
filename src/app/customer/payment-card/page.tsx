@@ -10,17 +10,25 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import EdgeSoftOrbsTop from "@/components/EdgeSoftOrbsTop";
 
+import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
 import { paymentsApi, type SavedCardStatus } from "@/lib/api/payments";
 import { getStripe } from "@/lib/payments/stripe-client";
 import { CardCollectionForm } from "@/components/payments/CardCollectionForm";
 
 export default function PaymentCardPage() {
+  return (
+    <RequireCustomer>
+      <PaymentCardPageContent />
+    </RequireCustomer>
+  );
+}
+
+function PaymentCardPageContent() {
   const router = useRouter();
 
-  const authUser = useAuthStore((state) => state.user);
-  const authStatus = useAuthStore((state) => state.status);
-  const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
+  const logout = useAuthStore((state) => state.logout);
+  const isLoggedIn = true;
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
 
   const [cardStatus, setCardStatus] = useState<SavedCardStatus | undefined>(undefined);
@@ -54,7 +62,14 @@ export default function PaymentCardPage() {
         <Image src="/designImg/topEllipes.svg" alt="" className="absolute top-0 left-0 w-[500px] h-[500px]" width={24} height={24} />
       </div>
 
-      <Navbar isLoggedIn={isLoggedIn} setIsLoggedIn={() => {}} selectedLanguage={selectedLanguage} setSelectedLanguage={setSelectedLanguage} />
+      <Navbar
+        isLoggedIn={isLoggedIn}
+        setIsLoggedIn={(val) => {
+          if (!val) void logout();
+        }}
+        selectedLanguage={selectedLanguage}
+        setSelectedLanguage={setSelectedLanguage}
+      />
 
       <main className="flex-grow w-full max-w-[1440px] mx-auto px-4 md:px-8 xl:px-[130px] pt-8 pb-24 z-10">
         <div className="flex items-center gap-2 text-xs font-semibold text-[#808080] uppercase tracking-wider mb-8">
