@@ -14,6 +14,7 @@ import {
   Clock01Icon,
   Home01Icon,
   HeadsetIcon,
+  Ticket01Icon,
   ProfileIcon,
   Logout01Icon,
   ArrowDown01Icon,
@@ -354,7 +355,21 @@ export default function Navbar({
 
                     <div className="border-t border-[#ACAAB4] w-full"></div>
 
-                    {/* 9. Help & Support */}
+                    {/* 9. My Tickets */}
+                    <button
+                      className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
+                      onClick={() => {
+                        setShowUserDropdown(false);
+                        router.push("/customer/tickets");
+                      }}
+                    >
+                      <HugeiconsIcon icon={Ticket01Icon} className="w-5 h-5 text-[#141B34]" />
+                      <span className="font-medium text-base text-[#1C1B1C]">My Tickets</span>
+                    </button>
+
+                    <div className="border-t border-[#ACAAB4] w-full"></div>
+
+                    {/* 9b. Help & Support */}
                     <button
                       className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
                       onClick={() => {

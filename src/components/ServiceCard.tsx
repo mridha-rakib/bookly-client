@@ -5,27 +5,31 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Location01Icon } from "@hugeicons/core-free-icons";
 
 export interface Recommendation {
-  id: number;
+  id: string;
   title: string;
-  rating: number;
+  rating: number | null;
   reviews: number;
   categories: string[];
   location?: string;
   distance?: string;
   lastVisited?: string;
-  startingPrice: number;
-  image: string;
+  startingPrice: number | null;
+  startingPriceSuffix?: string;
+  image: string | null;
   travelsToYou?: boolean;
   travelLocations?: string[];
   hasDiamond?: boolean;
   noDeposit?: boolean;
+  /** Batch 16 — real Businesses that are no longer publicly visible (e.g. a Favorite whose
+   * Business was later SUSPENDED) degrade the card rather than vanish or pretend to be bookable. */
+  isAvailable?: boolean;
 }
 
 interface ServiceCardProps {
   rec: Recommendation;
   isFavorite: boolean;
-  onToggleFavorite: (id: number) => void;
-  onBookNow?: (id: number) => void;
+  onToggleFavorite: (id: string) => void;
+  onBookNow?: (id: string) => void;
   hasDiamond?: boolean;
   noDeposit?: boolean;
   travelsToYou?: boolean;
@@ -43,14 +47,29 @@ export default function ServiceCard({
   className = "w-full sm:w-[360px] md:w-[406px]",
 }: ServiceCardProps) {
   const router = useRouter();
+  const isAvailable = rec.isAvailable ?? true;
   return (
     <div
-      onClick={() => router.push(`/venue?id=${rec.id}`)}
-      className={`${className} h-full bg-white border border-[#E8E6FF] rounded-2xl overflow-hidden hover:shadow-md transition-all duration-200 flex flex-col group font-poppins shrink-0 cursor-pointer`}
+      onClick={() => {
+        if (isAvailable) router.push(`/venue?id=${rec.id}`);
+      }}
+      className={`${className} h-full bg-white border border-[#E8E6FF] rounded-2xl overflow-hidden hover:shadow-md transition-all duration-200 flex flex-col group font-poppins shrink-0 ${isAvailable ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}
     >
       {/* Card Image Area */}
       <div className="relative w-full h-[140px] xs:h-[180px] sm:h-[220px] md:h-[241px] p-[4px] bg-transparent overflow-hidden shrink-0">
-        <Image src={rec.image} alt={rec.title} className="w-full h-full rounded-[8px] object-cover group-hover:scale-105 transition-transform duration-300" draggable="false" fill />
+        {rec.image ? (
+          <Image src={rec.image} alt={rec.title} className="w-full h-full rounded-[8px] object-cover group-hover:scale-105 transition-transform duration-300" draggable="false" fill />
+        ) : (
+          <div className="w-full h-full rounded-[8px] bg-neutral-100 flex items-center justify-center">
+            <span className="text-neutral-400 text-xs font-medium">{rec.title}</span>
+          </div>
+        )}
+
+        {!isAvailable && (
+          <div className="absolute top-[10px] sm:top-[14px] left-[10px] sm:left-[14px] px-2.5 py-1 bg-neutral-900/80 text-white text-[9px] sm:text-[10px] font-semibold rounded-full z-10 uppercase tracking-wide">
+            No longer available
+          </div>
+        )}
 
         {/* Premium Diamond Badge Overlay (Top Left) */}
         {hasDiamond && (
@@ -99,8 +118,14 @@ export default function ServiceCard({
           </h3>
           <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
             <Image src="/Icons/star.svg" alt="star" className="w-[12px] h-[12px] sm:w-[16px] sm:h-[16px]" draggable="false" width={24} height={24} />
-            <span className="text-[10px] sm:text-xs font-semibold text-[#1C1B1C]">{rec.rating}</span>
-            <span className="text-[9px] sm:text-xs font-medium text-[#757575]">({rec.reviews})</span>
+            {rec.rating !== null ? (
+              <>
+                <span className="text-[10px] sm:text-xs font-semibold text-[#1C1B1C]">{rec.rating}</span>
+                <span className="text-[9px] sm:text-xs font-medium text-[#757575]">({rec.reviews})</span>
+              </>
+            ) : (
+              <span className="text-[9px] sm:text-xs font-medium text-[#757575]">New</span>
+            )}
           </div>
         </div>
 
@@ -145,8 +170,12 @@ export default function ServiceCard({
               <HugeiconsIcon icon={Location01Icon} size={12} className="sm:hidden" />
               <HugeiconsIcon icon={Location01Icon} size={16} className="hidden sm:inline" />
               <span>{rec.location}</span>
-              <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-neutral-300 mx-0.5 sm:mx-1"></span>
-              <span>{rec.distance}</span>
+              {rec.distance && (
+                <>
+                  <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-neutral-300 mx-0.5 sm:mx-1"></span>
+                  <span>{rec.distance}</span>
+                </>
+              )}
             </div>
             {rec.lastVisited && (
               <span className="text-[9px] sm:text-[11px] text-[#757575] font-medium pl-4 sm:pl-5">{rec.lastVisited}</span>
@@ -158,11 +187,24 @@ export default function ServiceCard({
         <div className="border-t border-neutral-100 pt-3 sm:pt-4 mt-auto flex justify-between items-center gap-2 sm:gap-4">
           <div className="flex flex-col">
             <span className="text-[8px] sm:text-[10px] font-semibold text-[#757575] uppercase tracking-wider">Starting Price</span>
-            <span className="text-sm sm:text-lg md:text-xl font-bold text-[#1C1B1C]">${rec.startingPrice}</span>
+            <span className="text-sm sm:text-lg md:text-xl font-bold text-[#1C1B1C]">
+              {rec.startingPrice !== null ? (
+                <>
+                  ${rec.startingPrice}
+                  {rec.startingPriceSuffix}
+                </>
+              ) : (
+                "Price on request"
+              )}
+            </span>
           </div>
           <button
-            onClick={() => onBookNow?.(rec.id)}
-            className="bg-[#131313] hover:bg-black text-white px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-semibold tracking-wide transition-all active:scale-95 cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isAvailable) onBookNow?.(rec.id);
+            }}
+            disabled={!isAvailable}
+            className="bg-[#131313] hover:bg-black text-white px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-semibold tracking-wide transition-all active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Book Now
           </button>

@@ -212,6 +212,13 @@ export const useCustomerBookingDetailQuery = (bookingId: string | undefined) =>
     enabled: Boolean(bookingId),
   });
 
+// Batch 16 — Book Again, same "cross-business, own-history" scope as the rest of this section.
+export const useBookAgainCandidatesQuery = (pagination: { page?: number; limit?: number } = {}) =>
+  useQuery({
+    queryKey: [...bookingKeys.customerAll, "bookAgain", pagination] as const,
+    queryFn: () => bookingsApi.listBookAgainCandidates(pagination),
+  });
+
 const invalidateCustomerBookingCaches = (queryClient: ReturnType<typeof useQueryClient>) => {
   void queryClient.invalidateQueries({ queryKey: bookingKeys.customerLists() });
 };

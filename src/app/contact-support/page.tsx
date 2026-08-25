@@ -4,6 +4,8 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { contactApi } from "@/lib/api/contact";
+import { toUserMessage } from "@/lib/auth/messages";
 
 export default function ContactSupportPage() {
   const router = useRouter();
@@ -16,15 +18,25 @@ export default function ContactSupportPage() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !subject || !message) {
-      alert("Please fill in all fields.");
+      setErrorMsg("Please fill in all fields.");
       return;
     }
-    // Simulate API call
-    setIsSubmitted(true);
+    setErrorMsg("");
+    setIsSubmitting(true);
+    try {
+      await contactApi.submit({ name, email, subject, message });
+      setIsSubmitted(true);
+    } catch (error) {
+      setErrorMsg(toUserMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -89,7 +101,13 @@ export default function ContactSupportPage() {
 
             {/* Inner White Form Container */}
             <div className="flex-1 w-full bg-white p-6 md:p-8 flex flex-col gap-6">
-              
+
+              {errorMsg && (
+                <div className="w-full p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm font-medium">
+                  {errorMsg}
+                </div>
+              )}
+
               {/* Row: Name and Email */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
                 
@@ -168,15 +186,17 @@ export default function ContactSupportPage() {
               <button
                 type="button"
                 onClick={() => router.back()}
-                className="box-border flex items-center justify-center py-3 px-6 h-12 border border-[#5A576B] rounded-xl text-sm font-semibold text-[#5A576B] hover:bg-neutral-50 active:scale-95 transition-all cursor-pointer"
+                disabled={isSubmitting}
+                className="box-border flex items-center justify-center py-3 px-6 h-12 border border-[#5A576B] rounded-xl text-sm font-semibold text-[#5A576B] hover:bg-neutral-50 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="flex items-center justify-center py-3 px-6 h-12 bg-[#0D0D0D] hover:bg-black text-white text-sm font-semibold rounded-xl shadow active:scale-95 transition-all cursor-pointer"
+                disabled={isSubmitting}
+                className="flex items-center justify-center py-3 px-6 h-12 bg-[#0D0D0D] hover:bg-black text-white text-sm font-semibold rounded-xl shadow active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Submit
+                {isSubmitting ? "Sending…" : "Submit"}
               </button>
             </div>
 

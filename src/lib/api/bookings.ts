@@ -165,6 +165,26 @@ export interface BookingListResponse {
   pagination: { page: number; limit: number; total: number };
 }
 
+// Batch 16 — matches api/src/modules/booking/book-again.dto.ts exactly.
+export interface BookAgainCandidate {
+  originalBookingId: string;
+  originalReference: string;
+  businessId: string;
+  businessName: string;
+  businessImageUrl?: string;
+  primaryServiceName: string;
+  serviceId: string;
+  staffMembershipId?: string;
+  originalStartAt: string;
+  originalTotalCents: number;
+  currency: string;
+}
+
+export interface BookAgainListResponse {
+  candidates: BookAgainCandidate[];
+  pagination: { page: number; limit: number; total: number };
+}
+
 export interface BookingServiceLineInput {
   serviceId: string;
   staffMembershipId: string;
@@ -371,5 +391,19 @@ export const bookingsApi = {
       method: "POST",
       url: `/me/bookings/${bookingId}/reschedule`,
       data: { startAt },
+    }),
+
+  // Batch 16 — Book Again. Every field on the returned candidate is historical/informational
+  // only (see api/src/modules/booking/book-again.dto.ts) — never reused to create the new
+  // booking; the real wizard (finalizeCustomerBooking above) re-derives pricing/availability/
+  // staff-eligibility/promo/first-returning fresh every time.
+  listBookAgainCandidates: (pagination: { page?: number; limit?: number } = {}) =>
+    apiRequest<BookAgainListResponse>({
+      method: "GET",
+      url: "/me/bookings/book-again",
+      params: {
+        ...(pagination.page ? { page: String(pagination.page) } : {}),
+        ...(pagination.limit ? { limit: String(pagination.limit) } : {}),
+      },
     }),
 };

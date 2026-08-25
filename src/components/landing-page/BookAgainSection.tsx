@@ -6,8 +6,8 @@ import Carousel from "./Carousel";
 
 interface BookAgainSectionProps {
   services: Recommendation[];
-  favorites: number[];
-  toggleFavorite: (id: number) => void;
+  favorites: string[];
+  toggleFavorite: (id: string) => void;
 }
 
 export default function BookAgainSection({

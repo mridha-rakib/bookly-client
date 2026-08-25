@@ -2,7 +2,7 @@ import { Recommendation } from "@/components/ServiceCard";
 
 export const mockExploreServices: Recommendation[] = [
   {
-    id: 1,
+    id: "1",
     title: "Soho Vintage Barbers | Sheikh Zayed Road",
     rating: 4.9,
     reviews: 299,
@@ -15,7 +15,7 @@ export const mockExploreServices: Recommendation[] = [
     hasDiamond: true,
   },
   {
-    id: 2,
+    id: "2",
     title: "Soho Vintage Barbers | Sheikh Zayed Road",
     rating: 4.9,
     reviews: 299,
@@ -28,7 +28,7 @@ export const mockExploreServices: Recommendation[] = [
     noDeposit: true,
   },
   {
-    id: 3,
+    id: "3",
     title: "Soho Vintage Barbers | Sheikh Zayed Road",
     rating: 4.9,
     reviews: 299,
@@ -41,7 +41,7 @@ export const mockExploreServices: Recommendation[] = [
     noDeposit: true,
   },
   {
-    id: 4,
+    id: "4",
     title: "Soho Vintage Barbers | Sheikh Zayed Road",
     rating: 4.9,
     reviews: 299,
@@ -53,7 +53,7 @@ export const mockExploreServices: Recommendation[] = [
     image: "/img/service_demo.jpg",
   },
   {
-    id: 5,
+    id: "5",
     title: "Precision Men's Grooming | Larnaca",
     rating: 4.6,
     reviews: 92,
@@ -65,7 +65,7 @@ export const mockExploreServices: Recommendation[] = [
     travelLocations: ["Larnaca", "Nicosia"],
   },
   {
-    id: 6,
+    id: "6",
     title: "Serenity Yoga Studio | Limassol",
     rating: 5.0,
     reviews: 74,

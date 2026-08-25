@@ -14,9 +14,8 @@ const mockCoordinates: { [key: string]: [number, number] } = {
   "Limassol": [34.678, 33.041],
   "Nicosia": [35.185, 33.382],
   "Paphos": [34.776, 32.421],
-  "Protaros": [35.012, 34.054],
-  "Aya Napa": [34.981, 33.999],
-  "Sheikh Zayed Road, Dubai": [25.204, 55.270] // default center fallback
+  "Protaras": [35.012, 34.054],
+  "Ayia Napa": [34.981, 33.999],
 };
 
 export default function ExploreMap({ services }: ExploreMapProps) {
@@ -82,8 +81,9 @@ export default function ExploreMap({ services }: ExploreMapProps) {
       const finalCoords: L.LatLngExpression = [coords[0] + latOffset, coords[1] + lngOffset];
 
       // Custom divIcon matching address label styling: "Soho Vintage 4.5"
-      const labelText = service.title.split("|")[0].trim().substring(0, 14) + ` ${service.rating}`;
-      
+      const ratingLabel = service.rating !== null ? String(service.rating) : "New";
+      const labelText = `${service.title.split("|")[0].trim().substring(0, 14)} ${ratingLabel}`;
+
       const customIcon = L.divIcon({
         className: "custom-map-address-pin",
         html: `
@@ -105,8 +105,8 @@ export default function ExploreMap({ services }: ExploreMapProps) {
         .bindPopup(`
           <div style="font-family: Poppins, sans-serif; padding: 2px;">
             <strong style="display: block; margin-bottom: 4px;">${service.title}</strong>
-            <span style="color: #E49D12;">★ ${service.rating} (${service.reviews} reviews)</span>
-            <div style="margin-top: 6px; font-weight: bold;">Starting from $${service.startingPrice}</div>
+            <span style="color: #E49D12;">${service.rating !== null ? `★ ${service.rating} (${service.reviews} reviews)` : "New — no reviews yet"}</span>
+            ${service.startingPrice !== null ? `<div style="margin-top: 6px; font-weight: bold;">Starting from $${service.startingPrice}</div>` : ""}
           </div>
         `);
 

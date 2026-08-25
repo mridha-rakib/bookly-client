@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight02Icon, ArrowLeft02Icon } from "@hugeicons/core-free-icons";
@@ -12,141 +12,53 @@ import EdgeSoftOrbsTop from "@/components/EdgeSoftOrbsTop";
 import ServiceCard, { Recommendation } from "@/components/ServiceCard";
 import SearchBar from "@/components/landing-page/SearchBar";
 
+import { useAuthStore } from "@/lib/auth/store";
+import { useFavoritesListQuery, useRemoveFavoriteMutation } from "@/lib/favorite/hooks";
+import type { DiscoveryBusinessCard } from "@/lib/api/discovery";
+
+const PAGE_SIZE = 12;
+
+const cardToRecommendation = (card: DiscoveryBusinessCard): Recommendation => ({
+  id: card.id,
+  title: card.name,
+  rating: card.averageRating,
+  reviews: card.reviewCount,
+  categories: [card.category, ...card.subcategories],
+  location: card.city,
+  startingPrice: card.startingPriceCents !== null ? Math.round(card.startingPriceCents / 100) : null,
+  startingPriceSuffix:
+    card.startingPricingMode === "HOURLY" ? "/hr" : card.startingPricingMode === "PER_PERSON" ? "/person" : "",
+  image: card.imageUrl ?? null,
+  travelsToYou: card.visitType === "TRAVEL_TO_CUSTOMER",
+  isAvailable: card.isAvailable,
+});
+
 export default function FavoritesPage() {
   const router = useRouter();
-
-  // Shared Navbar State
-  const [isLoggedIn, setIsLoggedIn] = useState(true);
+  const authUser = useAuthStore((state) => state.user);
+  const authStatus = useAuthStore((state) => state.status);
+  const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
-
-  // Favorites state (initially pre-populated with IDs 1 to 24)
-  const [favorites, setFavorites] = useState<number[]>(
-    Array.from({ length: 24 }, (_, i) => i + 1)
-  );
-
-  // Sync login & favorites status with localStorage
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedLogin = localStorage.getItem("isLoggedIn");
-      if (savedLogin === "false") {
-        setIsLoggedIn(false);
-      }
-
-      const savedFavorites = localStorage.getItem("favorites");
-      if (savedFavorites) {
-        try {
-          setFavorites(JSON.parse(savedFavorites));
-        } catch (e) {
-          console.error("Error parsing favorites", e);
-        }
-      } else {
-        localStorage.setItem("favorites", JSON.stringify(favorites));
-      }
-    }
-  }, []);
-
-  const toggleFavorite = (id: number) => {
-    setFavorites((prev) => {
-      const updated = prev.includes(id)
-        ? prev.filter((favId) => favId !== id)
-        : [...prev, id];
-      if (typeof window !== "undefined") {
-        localStorage.setItem("favorites", JSON.stringify(updated));
-      }
-      return updated;
-    });
-  };
-
-  // Mock Diverse Favorite Services (24 items)
-  const favoriteServices: Recommendation[] = Array.from({ length: 24 }, (_, i) => {
-    const titles = [
-      "Soho Vintage Barbers | Sheikh Zayed Road",
-      "Gold Gym Spa & Massage | Nicosia Center",
-      "Zara Hair & Beauty Salon | Ledra Street",
-      "Zen Spa & Wellness | Limassol Marina",
-      "Elite Auto Detailing & Polish | Paphos",
-      "Precision Men's Grooming | Larnaca",
-      "Serenity Yoga & Pilates | Limassol",
-      "Luxury Nails, Lash & Beauty | Strovolos"
-    ];
-    const categoriesList = [
-      ["Barber", "Salon"],
-      ["Massage", "Wellness"],
-      ["Salon", "Beauty"],
-      ["Spa", "Wellness"],
-      ["Automotive"],
-      ["Barber"],
-      ["Wellness"],
-      ["Beauty", "Salon"]
-    ];
-    const locations = [
-      "Sheikh Zayed Road, Dubai",
-      "Nicosia Center, Nicosia",
-      "Ledra Street, Nicosia",
-      "Limassol Marina, Limassol",
-      "Peyia Road, Paphos",
-      "Finikoudes, Larnaca",
-      "Seafront, Limassol",
-      "Strovolos, Nicosia"
-    ];
-    const images = [
-      "/img/service_demo.jpg",
-      "/img/service_demo.jpg",
-      "/img/service_demo.jpg",
-      "/img/service_demo.jpg"
-    ];
-
-    const idx = i % 8;
-    return {
-      id: i + 1,
-      title: titles[idx],
-      rating: 4.6 + (i % 5) * 0.1,
-      reviews: 80 + (i * 12) % 300,
-      categories: categoriesList[idx],
-      location: locations[idx],
-      distance: `${1 + (i % 6)}km away`,
-      lastVisited: `Last visited ${1 + (i % 4)} months ago`,
-      startingPrice: 12 + (i % 7) * 8,
-      image: images[i % 4],
-      noDeposit: i % 3 === 0,
-      hasDiamond: i % 5 === 0,
-      travelsToYou: idx === 5 || idx === 6,
-      travelLocations: idx === 5 ? ["Larnaca", "Dekhelia"] : idx === 6 ? ["Limassol"] : undefined
-    };
-  });
-
-  // Filtering based on favorite IDs
-  const activeFavorites = favoriteServices.filter((item) => favorites.includes(item.id));
-
-  // Pagination Logic
-  const [itemsPerPage, setItemsPerPage] = useState(12);
-  useEffect(() => {
-    const updateItemsPerPage = () => {
-      const width = window.innerWidth;
-      if (width >= 1280) {
-        setItemsPerPage(12);
-      } else if (width >= 768) {
-        setItemsPerPage(9);
-      } else {
-        setItemsPerPage(6);
-      }
-    };
-    updateItemsPerPage();
-    window.addEventListener("resize", updateItemsPerPage);
-    return () => window.removeEventListener("resize", updateItemsPerPage);
-  }, []);
-
   const [currentPage, setCurrentPage] = useState(1);
-  const totalPages = Math.ceil(activeFavorites.length / itemsPerPage);
 
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const currentItems = activeFavorites.slice(startIndex, startIndex + itemsPerPage);
+  const favoritesQuery = useFavoritesListQuery({ page: currentPage, limit: PAGE_SIZE });
+  const removeFavoriteMutation = useRemoveFavoriteMutation();
+
+  const favorites = favoritesQuery.data?.favorites ?? [];
+  const total = favoritesQuery.data?.pagination.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const items = favorites.map(cardToRecommendation);
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= totalPages) {
       setCurrentPage(page);
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
+  };
+
+  const handleToggleFavorite = (id: string) => {
+    // Every card on this page is already favorited — the only real action here is removing.
+    removeFavoriteMutation.mutate(id);
   };
 
   return (
@@ -157,17 +69,17 @@ export default function FavoritesPage() {
       {/* Navbar */}
       <Navbar
         isLoggedIn={isLoggedIn}
-        setIsLoggedIn={setIsLoggedIn}
+        setIsLoggedIn={() => {}}
         selectedLanguage={selectedLanguage}
         setSelectedLanguage={setSelectedLanguage}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 w-full px-4 md:px-8 xl:px-[65px] mt-[8px] flex flex-col z-10 relative">
-        
+
         {/* Reusable Search Bar with same dropdown behavior and styling */}
         <div className="w-full flex justify-center mb-[72px]">
-          <SearchBar onSearch={(sq, lq, st) => console.log("Searching favorites:", sq, lq, st)} />
+          <SearchBar onSearch={() => router.push("/explore")} />
         </div>
 
         {/* Title and Subtitle */}
@@ -180,21 +92,38 @@ export default function FavoritesPage() {
           </p>
         </div>
 
-        {/* Grid Layout of Favorite items */}
-        {currentItems.length > 0 ? (
+        {!isLoggedIn ? (
+          <div className="w-full text-center py-20">
+            <p className="text-[#757575] text-lg font-medium mb-4">Log in to see your saved favorites.</p>
+            <button
+              onClick={() => router.push("/customer")}
+              className="py-3 px-6 bg-[#131313] hover:bg-black text-white rounded-full text-sm font-semibold transition-colors cursor-pointer"
+            >
+              Log in
+            </button>
+          </div>
+        ) : favoritesQuery.isLoading ? (
+          <div className="w-full text-center py-20">
+            <p className="text-[#757575] text-lg font-medium">Loading your favorites…</p>
+          </div>
+        ) : favoritesQuery.isError ? (
+          <div className="w-full text-center py-20">
+            <p className="text-[#757575] text-lg font-medium">Your favorites could not be loaded right now.</p>
+          </div>
+        ) : items.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-x-4 sm:gap-x-6 gap-y-[20px] justify-items-start w-full mt-8">
-            {currentItems.map((item) => (
+            {items.map((item) => (
               <ServiceCard
                 key={item.id}
                 rec={item}
                 isFavorite={true}
-                onToggleFavorite={toggleFavorite}
+                onToggleFavorite={handleToggleFavorite}
               />
             ))}
           </div>
         ) : (
           <div className="w-full text-center py-20">
-            <p className="text-[#757575] text-lg font-medium">You don't have any favorites saved yet.</p>
+            <p className="text-[#757575] text-lg font-medium">You don&apos;t have any favorites saved yet.</p>
           </div>
         )}
 

@@ -202,6 +202,23 @@ function VenueDetailsContent() {
     setBookingStep("addons");
   };
 
+  // Batch 16 — Book Again's optional `?serviceId=` pre-selection. Reuses the existing real wizard
+  // entry point above unchanged; only pre-opens it if the id is genuinely present in this
+  // Business's CURRENT real catalog — an archived/renamed Service simply never matches and the
+  // wizard stays closed, degrading silently and truthfully rather than resurrecting stale data.
+  // Fires at most once per page load (never re-fires if the customer picks a different Service).
+  // Applied during render via a state flag (the "adjusting state" pattern — refs may not be read
+  // during render in this codebase's lint config), not inside a useEffect.
+  const [hasAppliedServicePreselect, setHasAppliedServicePreselect] = useState(false);
+  if (!hasAppliedServicePreselect && catalogQuery.data) {
+    setHasAppliedServicePreselect(true);
+    const requestedServiceId = searchParams.get("serviceId");
+    if (requestedServiceId) {
+      const exists = catalogQuery.data.services.some((s) => s.id === requestedServiceId);
+      if (exists) handleBookService(requestedServiceId);
+    }
+  }
+
   const canContinueWizard = (() => {
     if (bookingStep === "addons") return true;
     if (bookingStep === "professionals") return Boolean(selectedProfessional);
@@ -1559,7 +1576,7 @@ function VenueDetailsContent() {
         {(() => {
           const mockLocations: Recommendation[] = [
             {
-              id: 2001,
+              id: "2001",
               title: "Soho Vintage Barbers | Sheikh Zayed Road",
               rating: 4.9,
               reviews: 120,
@@ -1572,7 +1589,7 @@ function VenueDetailsContent() {
               hasDiamond: true
             },
             {
-              id: 2002,
+              id: "2002",
               title: "Zara Hair & Beauty | Limassol Marina",
               rating: 4.8,
               reviews: 85,
@@ -1585,7 +1602,7 @@ function VenueDetailsContent() {
               noDeposit: true
             },
             {
-              id: 2003,
+              id: "2003",
               title: "Gold Gym Spa & Massage | Nicosia",
               rating: 4.7,
               reviews: 310,
@@ -1598,7 +1615,7 @@ function VenueDetailsContent() {
               hasDiamond: true
             },
             {
-              id: 2004,
+              id: "2004",
               title: "Elite Car Detailing | Paphos",
               rating: 4.9,
               reviews: 145,

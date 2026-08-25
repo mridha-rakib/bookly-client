@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Refresh01Icon, ArrowLeft02Icon, ArrowRight02Icon } from "@hugeicons/core-free-icons";
@@ -8,211 +8,35 @@ import { Refresh01Icon, ArrowLeft02Icon, ArrowRight02Icon } from "@hugeicons/cor
 // Components
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import AddToHomeScreenButton from "@/components/landing-page/AddToHomeScreenButton";
-import EdgeSoftOrbsTop from "@/components/EdgeSoftOrbsTop";
 
-interface VisitedService {
-  id: number;
-  title: string;
-  price: number;
-  category: string;
-  lastVisited: string;
-  distance: string;
-  image: string;
-  noDeposit?: boolean;
-}
+import { useAuthStore } from "@/lib/auth/store";
+import { useBookAgainCandidatesQuery } from "@/lib/bookings/hooks";
+import {
+  useAddFavoriteMutation,
+  useFavoriteIdsQuery,
+  useRemoveFavoriteMutation,
+} from "@/lib/favorite/hooks";
+
+const PAGE_SIZE = 12;
 
 export default function BookAgainPage() {
   const router = useRouter();
 
-  // App Install Banner State
-  const [showBanner, setShowBanner] = useState(true);
-
-  // Shared Navbar State
-  const [isLoggedIn, setIsLoggedIn] = useState(true);
+  const authUser = useAuthStore((state) => state.user);
+  const authStatus = useAuthStore((state) => state.status);
+  const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
-
-  // Favorites state
-  const [favorites, setFavorites] = useState<number[]>([1, 3, 5]);
-
-  // Sync login & favorites status with localStorage
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedLogin = localStorage.getItem("isLoggedIn");
-      if (savedLogin === "false") {
-        setIsLoggedIn(false);
-      }
-      
-      const savedFavorites = localStorage.getItem("favorites");
-      if (savedFavorites) {
-        try {
-          setFavorites(JSON.parse(savedFavorites));
-        } catch (e) {
-          console.error("Error parsing favorites", e);
-        }
-      }
-    }
-  }, []);
-
-  const toggleFavorite = (id: number) => {
-    setFavorites((prev) => {
-      const updated = prev.includes(id) ? prev.filter((favId) => favId !== id) : [...prev, id];
-      if (typeof window !== "undefined") {
-        localStorage.setItem("favorites", JSON.stringify(updated));
-      }
-      return updated;
-    });
-  };
-
-  // Mock Visited services data matching the screenshot
-  const visitedServices: VisitedService[] = [
-    {
-      id: 1,
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      price: 12,
-      category: "Hair Cut",
-      lastVisited: "Last visited 2 months ago",
-      distance: "3 km away",
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: 2,
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      price: 12,
-      category: "Hair Cut",
-      lastVisited: "Last visited 2 months ago",
-      distance: "3 km away",
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: 3,
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      price: 12,
-      category: "Hair Cut",
-      lastVisited: "Last visited 2 months ago",
-      distance: "3 km away",
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: 4,
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      price: 12,
-      category: "Hair Cut",
-      lastVisited: "Last visited 2 months ago",
-      distance: "3 km away",
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: 5,
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      price: 12,
-      category: "Hair Cut",
-      lastVisited: "Last visited 2 months ago",
-      distance: "3 km away",
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: 6,
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      price: 12,
-      category: "Hair Cut",
-      lastVisited: "Last visited 2 months ago",
-      distance: "3 km away",
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: 7,
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      price: 12,
-      category: "Hair Cut",
-      lastVisited: "Last visited 2 months ago",
-      distance: "3 km away",
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: 8,
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      price: 12,
-      category: "Hair Cut",
-      lastVisited: "Last visited 2 months ago",
-      distance: "3 km away",
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: 9,
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      price: 12,
-      category: "Hair Cut",
-      lastVisited: "Last visited 2 months ago",
-      distance: "3 km away",
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: 10,
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      price: 12,
-      category: "Hair Cut",
-      lastVisited: "Last visited 2 months ago",
-      distance: "3 km away",
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: 11,
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      price: 12,
-      category: "Hair Cut",
-      lastVisited: "Last visited 2 months ago",
-      distance: "3 km away",
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: 12,
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      price: 12,
-      category: "Hair Cut",
-      lastVisited: "Last visited 2 months ago",
-      distance: "3 km away",
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-  ];
-
-  // Pagination Logic
-  const [itemsPerPage, setItemsPerPage] = useState(12);
-
-  useEffect(() => {
-    const updateItemsPerPage = () => {
-      const width = window.innerWidth;
-      if (width >= 1280) { // xl
-        setItemsPerPage(12); // 4 columns * 3 rows
-      } else if (width >= 768) { // md-lg
-        setItemsPerPage(9);  // 3 columns * 3 rows
-      } else { // below md
-        setItemsPerPage(6);  // 2 columns * 3 rows
-      }
-    };
-
-    updateItemsPerPage();
-    window.addEventListener("resize", updateItemsPerPage);
-    return () => window.removeEventListener("resize", updateItemsPerPage);
-  }, []);
-
   const [currentPage, setCurrentPage] = useState(1);
-  const totalPages = Math.ceil(visitedServices.length / itemsPerPage);
 
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const currentItems = visitedServices.slice(startIndex, startIndex + itemsPerPage);
+  const candidatesQuery = useBookAgainCandidatesQuery({ page: currentPage, limit: PAGE_SIZE });
+  const favoriteIdsQuery = useFavoriteIdsQuery(isLoggedIn);
+  const addFavoriteMutation = useAddFavoriteMutation();
+  const removeFavoriteMutation = useRemoveFavoriteMutation();
+
+  const candidates = candidatesQuery.data?.candidates ?? [];
+  const total = candidatesQuery.data?.pagination.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const favoriteIds = favoriteIdsQuery.data?.businessIds ?? [];
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= totalPages) {
@@ -221,13 +45,33 @@ export default function BookAgainPage() {
     }
   };
 
+  const handleToggleFavorite = (businessId: string) => {
+    if (!isLoggedIn) {
+      router.push("/customer");
+      return;
+    }
+    if (favoriteIds.includes(businessId)) {
+      removeFavoriteMutation.mutate(businessId);
+    } else {
+      addFavoriteMutation.mutate(businessId);
+    }
+  };
+
+  // Real re-navigation into the existing, real venue/booking wizard — never a second booking
+  // engine. `serviceId` is an optional pre-selection hint only; the venue page re-validates it
+  // against the CURRENT real catalog and silently ignores it if the Service is no longer offered
+  // (confirmed rule: never resurrect a historical Service configuration).
+  const handleRebook = (businessId: string, serviceId: string) => {
+    router.push(`/venue?id=${businessId}&serviceId=${serviceId}`);
+  };
+
   return (
     <div className="min-h-screen bg-[#FDFBF9] flex flex-col relative overflow-x-hidden font-poppins">
-    
-      {/* 2. Navbar */}
+
+      {/* Navbar */}
       <Navbar
         isLoggedIn={isLoggedIn}
-        setIsLoggedIn={setIsLoggedIn}
+        setIsLoggedIn={() => {}}
         selectedLanguage={selectedLanguage}
         setSelectedLanguage={setSelectedLanguage}
       />
@@ -235,8 +79,8 @@ export default function BookAgainPage() {
       {/* Breadcrumbs Section */}
       <div className="w-full px-4 md:px-8 xl:px-[65px] ">
         <nav className="flex flex-row items-center p-0 gap-3 h-6">
-          <button 
-            onClick={() => router.push("/")} 
+          <button
+            onClick={() => router.push("/")}
             className="font-poppins font-normal text-xs sm:text-sm leading-5 tracking-[0.075em] uppercase text-[#757575] hover:text-black transition-colors cursor-pointer"
           >
             Home
@@ -264,83 +108,114 @@ export default function BookAgainPage() {
           </p>
         </div>
 
-        {/* Grid Layout of Book Again items */}
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-x-4 sm:gap-x-6 gap-y-[20px] justify-items-start w-full mt-4">
-          {currentItems.map((item) => {
-            const isFav = favorites.includes(item.id);
-            return (
-              <div 
-                key={item.id} 
-                className="w-full max-w-[360px] md:max-w-[406px] h-full bg-white border border-[#E8E6FF] rounded-2xl overflow-hidden hover:shadow-md transition-all duration-200 flex flex-col group font-poppins shrink-0"
-              >
-                {/* Image Section */}
-                <div className="relative w-full h-[140px] xs:h-[180px] sm:h-[220px] md:h-[241px] p-[4px] bg-transparent overflow-hidden shrink-0">
-                  <img
-                    src={item.image}
-                    alt={item.title}
-                    className="w-full h-[132px] xs:h-[172px] sm:h-[212px] md:h-[233px] rounded-[8px] object-cover group-hover:scale-105 transition-transform duration-300"
-                    draggable="false"
-                  />
+        {!isLoggedIn ? (
+          <div className="w-full text-center py-20">
+            <p className="text-[#757575] text-lg font-medium mb-4">Log in to see your booking history.</p>
+            <button
+              onClick={() => router.push("/customer")}
+              className="py-3 px-6 bg-[#131313] hover:bg-black text-white rounded-full text-sm font-semibold transition-colors cursor-pointer"
+            >
+              Log in
+            </button>
+          </div>
+        ) : candidatesQuery.isLoading ? (
+          <div className="w-full text-center py-20">
+            <p className="text-[#757575] text-lg font-medium">Loading your booking history…</p>
+          </div>
+        ) : candidatesQuery.isError ? (
+          <div className="w-full text-center py-20">
+            <p className="text-[#757575] text-lg font-medium">Your booking history could not be loaded right now.</p>
+          </div>
+        ) : candidates.length === 0 ? (
+          <div className="w-full text-center py-20">
+            <p className="text-[#757575] text-lg font-medium">
+              You don&apos;t have any completed bookings to repeat yet.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-x-4 sm:gap-x-6 gap-y-[20px] justify-items-start w-full mt-4">
+            {candidates.map((item) => {
+              const isFav = favoriteIds.includes(item.businessId);
+              return (
+                <div
+                  key={item.originalBookingId}
+                  className="w-full max-w-[360px] md:max-w-[406px] h-full bg-white border border-[#E8E6FF] rounded-2xl overflow-hidden hover:shadow-md transition-all duration-200 flex flex-col group font-poppins shrink-0"
+                >
+                  {/* Image Section */}
+                  <div className="relative w-full h-[140px] xs:h-[180px] sm:h-[220px] md:h-[241px] p-[4px] bg-transparent overflow-hidden shrink-0">
+                    {item.businessImageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={item.businessImageUrl}
+                        alt={item.businessName}
+                        className="w-full h-[132px] xs:h-[172px] sm:h-[212px] md:h-[233px] rounded-[8px] object-cover group-hover:scale-105 transition-transform duration-300"
+                        draggable="false"
+                      />
+                    ) : (
+                      <div className="w-full h-[132px] xs:h-[172px] sm:h-[212px] md:h-[233px] rounded-[8px] bg-neutral-100 flex items-center justify-center">
+                        <span className="text-neutral-400 text-xs font-medium px-2 text-center">{item.businessName}</span>
+                      </div>
+                    )}
 
-                  {/* Favorite Heart Icon Overlay */}
-                  <button
-                    className="absolute top-[10px] sm:top-[14px] right-[10px] sm:right-[14px] rounded-full backdrop-blur-sm flex items-center justify-center text-[#E49D12] hover:bg-white active:scale-90 transition-all cursor-pointer z-10"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFavorite(item.id);
-                    }}
-                  >
-                    <img
-                      src={isFav ? "/Icons/whiteHeart.svg" : "/Icons/whiteHeartwithoutfill.svg"}
-                      alt="Heart"
-                      className="w-4 h-4 sm:w-[24px] sm:h-[24px]"
-                      draggable="false"
-                    />
-                  </button>
+                    {/* Favorite Heart Icon Overlay */}
+                    <button
+                      className="absolute top-[10px] sm:top-[14px] right-[10px] sm:right-[14px] rounded-full backdrop-blur-sm flex items-center justify-center text-[#E49D12] hover:bg-white active:scale-90 transition-all cursor-pointer z-10"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleFavorite(item.businessId);
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={isFav ? "/Icons/whiteHeart.svg" : "/Icons/whiteHeartwithoutfill.svg"}
+                        alt="Heart"
+                        className="w-4 h-4 sm:w-[24px] sm:h-[24px]"
+                        draggable="false"
+                      />
+                    </button>
+                  </div>
 
-                  {/* No Deposit Needed Badge Overlay */}
-                  {item.noDeposit && (
-                    <div className="absolute bottom-[8px] sm:bottom-[12px] left-[8px] sm:left-[12px] px-2 py-0.5 sm:w-[152px] sm:h-[22px] bg-[#2E9DA7] text-white flex items-center justify-center gap-0.5 rounded-full text-[9px] sm:text-xs font-medium shadow-sm z-10 whitespace-nowrap">
-                      <span>No deposit</span>
-                      <span className="hidden sm:inline"> needed</span>
-                      <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-white shrink-0 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
+                  {/* Details Section */}
+                  <div className="px-3 pb-3 pt-3 sm:px-5 sm:pb-5 sm:pt-[20px] flex-1 flex flex-col gap-2 sm:gap-3">
+                    <h3 className="text-sm md:text-base font-semibold leading-tight text-[#1C1B1C] line-clamp-2">
+                      {item.businessName}
+                    </h3>
+
+                    {/* Service & historical price (informational only — never reused as the new price) */}
+                    <div className="text-xs sm:text-sm font-semibold text-[#1C1B1C]">
+                      {item.primaryServiceName}
+                      <span className="text-[#757575] font-normal mx-1">•</span>
+                      <span className="text-[#757575] font-normal">
+                        Last paid {(item.originalTotalCents / 100).toFixed(2)} {item.currency}
+                      </span>
                     </div>
-                  )}
-                </div>
 
-                {/* Details Section */}
-                <div className="px-3 pb-3 pt-3 sm:px-5 sm:pb-5 sm:pt-[20px] flex-1 flex flex-col gap-2 sm:gap-3">
-                  <h3 className="text-sm md:text-base font-semibold leading-tight text-[#1C1B1C] line-clamp-2">
-                    {item.title}
-                  </h3>
+                    {/* Last Visited */}
+                    <div className="text-[11px] sm:text-xs font-normal text-[#757575] flex items-center gap-1.5">
+                      <span>
+                        Last visited{" "}
+                        {new Date(item.originalStartAt).toLocaleDateString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </span>
+                    </div>
 
-                  {/* Price & Category */}
-                  <div className="text-xs sm:text-sm font-semibold text-[#1C1B1C]">
-                    ${item.price} <span className="text-[#757575] font-normal mx-1">•</span> <span className="text-[#757575] font-normal">{item.category}</span>
+                    {/* Rebook Button */}
+                    <button
+                      onClick={() => handleRebook(item.businessId, item.serviceId)}
+                      className="w-full mt-3 bg-[#131313] hover:bg-black text-white py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 tracking-wide transition-all active:scale-95 cursor-pointer"
+                    >
+                      <HugeiconsIcon icon={Refresh01Icon} size={16} />
+                      <span>Rebook</span>
+                    </button>
                   </div>
-
-                  {/* Last Visited and Distance */}
-                  <div className="text-[11px] sm:text-xs font-normal text-[#757575] flex items-center gap-1.5">
-                    <span>{item.lastVisited}</span>
-                    <span>•</span>
-                    <span>{item.distance}</span>
-                  </div>
-
-                  {/* Rebook Button */}
-                  <button
-                    onClick={() => console.log("Rebooking item", item.id)}
-                    className="w-full mt-3 bg-[#131313] hover:bg-black text-white py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 tracking-wide transition-all active:scale-95 cursor-pointer"
-                  >
-                    <HugeiconsIcon icon={Refresh01Icon} size={16} />
-                    <span>Rebook</span>
-                  </button>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Pagination Section */}
         {totalPages > 1 && (

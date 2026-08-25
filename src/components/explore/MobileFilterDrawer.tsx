@@ -5,9 +5,9 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Search01Icon,
   ArrowRight02Icon,
-  ArrowDown01Icon,
   StarIcon,
 } from "@hugeicons/core-free-icons";
+import { BUSINESS_CITIES } from "@/lib/constants/cities";
 
 export interface MobileFilterDrawerProps {
   showMobileFilters: boolean;
@@ -16,10 +16,9 @@ export interface MobileFilterDrawerProps {
   setSearchQuery: (val: string) => void;
   travelsToYou: boolean;
   setTravelsToYou: (val: boolean) => void;
+  categories: string[];
   selectedCategories: string[];
   toggleCategory: (cat: string) => void;
-  expandedCategories: string[];
-  toggleExpandCategory: (cat: string) => void;
   selectedLocations: string[];
   toggleLocation: (loc: string) => void;
   selectedRatings: number[];
@@ -40,10 +39,9 @@ export default function MobileFilterDrawer({
   setSearchQuery,
   travelsToYou,
   setTravelsToYou,
+  categories,
   selectedCategories,
   toggleCategory,
-  expandedCategories,
-  toggleExpandCategory,
   selectedLocations,
   toggleLocation,
   selectedRatings,
@@ -119,49 +117,21 @@ export default function MobileFilterDrawer({
           <div className="flex flex-col gap-4 bg-white p-4 rounded-xl border border-neutral-100">
             <span className="font-semibold text-xs text-black uppercase tracking-wider">Category</span>
             <div className="flex flex-col gap-3.5">
-              {[
-                { name: "Beauty & Wellness", count: 1, subs: ["Sub category", "Sub category"] },
-                { name: "Health & Fitness", count: 1 },
-                { name: "Sports & Activities", count: 1 },
-                { name: "Experiences & Tours", count: 1 },
-                { name: "Entertainment & Events", count: 1 },
-                { name: "Pets & Home", count: 1 },
-                { name: "Automotive", count: 1 }
-              ].map((cat, idx) => (
-                <div key={idx} className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between w-full">
-                    <label className="flex items-center gap-2.5 cursor-pointer text-sm">
-                      <input
-                        type="checkbox"
-                        checked={selectedCategories.includes(cat.name)}
-                        onChange={() => toggleCategory(cat.name)}
-                        className="w-4 h-4 border border-neutral-300 rounded cursor-pointer accent-black"
-                      />
-                      <span className="text-[#4E5F78]">{cat.name}</span>
-                    </label>
-                    <button 
-                      onClick={() => toggleExpandCategory(cat.name)}
-                      className="text-[#141B34] cursor-pointer"
-                    >
-                      <HugeiconsIcon icon={ArrowDown01Icon} size={16} />
-                    </button>
-                  </div>
-                  {expandedCategories.includes(cat.name) && cat.subs && (
-                    <div className="pl-6 flex flex-col gap-2.5 py-1">
-                      {cat.subs.map((sub, sIdx) => (
-                        <label key={sIdx} className="flex items-center gap-2.5 cursor-pointer text-xs">
-                          <input
-                            type="checkbox"
-                            className="w-3.5 h-3.5 border border-neutral-300 rounded accent-black cursor-pointer"
-                          />
-                          <span className="text-[#757575]">{sub}</span>
-                          <span className="text-[#8693A8]">(1)</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
+              {categories.length === 0 ? (
+                <span className="text-xs text-[#ACAAB4]">No categories yet</span>
+              ) : (
+                categories.map((cat) => (
+                  <label key={cat} className="flex items-center gap-2.5 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selectedCategories.includes(cat)}
+                      onChange={() => toggleCategory(cat)}
+                      className="w-4 h-4 border border-neutral-300 rounded cursor-pointer accent-black"
+                    />
+                    <span className="text-[#4E5F78]">{cat}</span>
+                  </label>
+                ))
+              )}
             </div>
           </div>
 
@@ -187,7 +157,7 @@ export default function MobileFilterDrawer({
           <div className="flex flex-col gap-4 bg-white p-4 rounded-xl border border-neutral-100">
             <span className="font-semibold text-xs text-black uppercase tracking-wider">Business Location</span>
             <div className="flex flex-col gap-2.5">
-              {["Larnaca", "Limassol", "Nicosia", "Paphos", "Protaros", "Aya Napa"].map((loc, idx) => (
+              {BUSINESS_CITIES.map((loc, idx) => (
                 <label key={idx} className="flex items-center gap-2.5 text-sm cursor-pointer">
                   <input
                     type="checkbox"

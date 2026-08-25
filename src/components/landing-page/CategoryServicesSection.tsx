@@ -17,9 +17,13 @@ import BookAgainSection from "@/components/landing-page/BookAgainSection";
 
 export default function CategoryServicesSection() {
   const [selectedCategory, setSelectedCategory] = useState("all");
-  const [favorites, setFavorites] = useState<number[]>([]);
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
+  // One-time read of a browser-only API (localStorage doesn't exist during SSR) — no external
+  // subscription applies here, so this is the legitimate exception, same as elsewhere in this
+  // codebase (see ClientsPage.tsx's own identical suppression).
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("isLoggedIn");
@@ -28,8 +32,9 @@ export default function CategoryServicesSection() {
       }
     }
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-  const toggleFavorite = (id: number) => {
+  const toggleFavorite = (id: string) => {
     setFavorites((prev) =>
       prev.includes(id) ? prev.filter((favId) => favId !== id) : [...prev, id]
     );
@@ -38,7 +43,7 @@ export default function CategoryServicesSection() {
   // Mock Book Again services data
   const bookAgainServices: Recommendation[] = [
     {
-      id: 101,
+      id: "101",
       title: "Soho Vintage Barbers | Sheikh Zayed Road",
       rating: 4.9,
       reviews: 120,
@@ -51,7 +56,7 @@ export default function CategoryServicesSection() {
       hasDiamond: true,
     },
     {
-      id: 102,
+      id: "102",
       title: "Zara Hair & Beauty | Limassol Marina",
       rating: 4.8,
       reviews: 85,
@@ -62,7 +67,7 @@ export default function CategoryServicesSection() {
       noDeposit: true,
     },
     {
-      id: 103,
+      id: "103",
       title: "Gold Gym Spa & Massage | Nicosia",
       rating: 4.7,
       reviews: 310,
@@ -73,7 +78,7 @@ export default function CategoryServicesSection() {
       hasDiamond: true,
     },
     {
-      id: 104,
+      id: "104",
       title: "Elite Car Detailing | Paphos",
       rating: 4.9,
       reviews: 145,
@@ -84,7 +89,7 @@ export default function CategoryServicesSection() {
       noDeposit: true,
     },
     {
-      id: 105,
+      id: "105",
       title: "Precision Men's Grooming | Larnaca",
       rating: 4.6,
       reviews: 92,
@@ -96,7 +101,7 @@ export default function CategoryServicesSection() {
       travelLocations: ["Larnaca", "Nicosia"],
     },
     {
-      id: 106,
+      id: "106",
       title: "Serenity Yoga Studio | Limassol",
       rating: 5.0,
       reviews: 74,
@@ -111,7 +116,7 @@ export default function CategoryServicesSection() {
   // Mock recommendations data
   const recommendations: Recommendation[] = [
     {
-      id: 1,
+      id: "1",
       title: "Soho Vintage Barbers | Sheikh Zayed Road",
       rating: 4.9,
       reviews: 299,
@@ -124,7 +129,7 @@ export default function CategoryServicesSection() {
       hasDiamond: true,
     },
     {
-      id: 2,
+      id: "2",
       title: "Soho Vintage Barbers | Sheikh Zayed Road",
       rating: 4.9,
       reviews: 299,
@@ -137,7 +142,7 @@ export default function CategoryServicesSection() {
       noDeposit: true,
     },
     {
-      id: 3,
+      id: "3",
       title: "Soho Vintage Barbers | Sheikh Zayed Road",
       rating: 4.9,
       reviews: 299,
@@ -150,7 +155,7 @@ export default function CategoryServicesSection() {
       noDeposit: true,
     },
     {
-      id: 4,
+      id: "4",
       title: "Soho Vintage Barbers | Sheikh Zayed Road",
       rating: 4.9,
       reviews: 299,
@@ -164,7 +169,7 @@ export default function CategoryServicesSection() {
       noDeposit: true,
     },
     {
-      id: 5,
+      id: "5",
       title: "Soho Vintage Barbers | Sheikh Zayed Road",
       rating: 4.9,
       reviews: 299,
@@ -176,7 +181,7 @@ export default function CategoryServicesSection() {
       image: "/img/service_demo.jpg",
     },
     {
-      id: 6,
+      id: "6",
       title: "Soho Vintage Barbers | Sheikh Zayed Road",
       rating: 4.9,
       reviews: 299,
@@ -194,7 +199,7 @@ export default function CategoryServicesSection() {
   // Mock services near you data
   const servicesNearYou: Recommendation[] = [
     {
-      id: 11,
+      id: "11",
       title: "Zara Hair & Beauty Salon | Nicosia Center",
       rating: 4.7,
       reviews: 142,
@@ -207,7 +212,7 @@ export default function CategoryServicesSection() {
       hasDiamond: true,
     },
     {
-      id: 12,
+      id: "12",
       title: "Zen Spa & Massage | Limassol Marina",
       rating: 4.9,
       reviews: 88,
@@ -220,7 +225,7 @@ export default function CategoryServicesSection() {
       noDeposit: true,
     },
     {
-      id: 13,
+      id: "13",
       title: "Elite Barber Studio | Larnaca Bay",
       rating: 4.8,
       reviews: 210,
@@ -232,7 +237,7 @@ export default function CategoryServicesSection() {
       image: "/img/service_demo.jpg",
     },
     {
-      id: 14,
+      id: "14",
       title: "Dynamic Fitness Coach | Paphos District",
       rating: 5.0,
       reviews: 45,
@@ -245,7 +250,7 @@ export default function CategoryServicesSection() {
       noDeposit: true,
     },
     {
-      id: 15,
+      id: "15",
       title: "Luxury Nails & Lashes | Limassol",
       rating: 4.6,
       reviews: 95,
@@ -257,7 +262,7 @@ export default function CategoryServicesSection() {
       image: "/img/service_demo.jpg",
     },
     {
-      id: 16,
+      id: "16",
       title: "Pet Care & Grooming | Nicosia",
       rating: 4.9,
       reviews: 120,
@@ -275,7 +280,7 @@ export default function CategoryServicesSection() {
   // Mock popular businesses data (Service cards format)
   const popularBusinesses: Recommendation[] = [
     {
-      id: 31,
+      id: "31",
       title: "Soho Vintage Barbers | Sheikh Zayed Road",
       rating: 4.9,
       reviews: 299,
@@ -289,7 +294,7 @@ export default function CategoryServicesSection() {
       noDeposit: true,
     },
     {
-      id: 32,
+      id: "32",
       title: "Zara Hair & Beauty Salon | Nicosia Center",
       rating: 4.7,
       reviews: 142,
@@ -302,7 +307,7 @@ export default function CategoryServicesSection() {
       hasDiamond: true,
     },
     {
-      id: 33,
+      id: "33",
       title: "Zen Spa & Massage | Limassol Marina",
       rating: 4.9,
       reviews: 88,
@@ -315,7 +320,7 @@ export default function CategoryServicesSection() {
       noDeposit: true,
     },
     {
-      id: 34,
+      id: "34",
       title: "Luxury Nails & Lashes | Limassol",
       rating: 4.6,
       reviews: 95,
@@ -327,7 +332,7 @@ export default function CategoryServicesSection() {
       image: "/img/service_demo.jpg",
     },
     {
-      id: 35,
+      id: "35",
       title: "Absolute Tattoo Studio | Ayia Napa",
       rating: 4.8,
       reviews: 320,
@@ -340,7 +345,7 @@ export default function CategoryServicesSection() {
       hasDiamond: true,
     },
     {
-      id: 36,
+      id: "36",
       title: "Precision Men's Grooming | Larnaca",
       rating: 4.6,
       reviews: 92,
