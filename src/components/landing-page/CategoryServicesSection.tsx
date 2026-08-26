@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Car04Icon,
@@ -16,6 +17,7 @@ import Carousel from "@/components/landing-page/Carousel";
 import BookAgainSection from "@/components/landing-page/BookAgainSection";
 
 export default function CategoryServicesSection() {
+  const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [favorites, setFavorites] = useState<string[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -494,7 +496,7 @@ export default function CategoryServicesSection() {
                   rec={rec}
                   isFavorite={favorites.includes(rec.id)}
                   onToggleFavorite={toggleFavorite}
-                  onBookNow={(id) => console.log("Booking item", id)}
+                  onBookNow={(id) => router.push(`/venue?id=${id}`)}
                 />
               </div>
             ))}
@@ -507,7 +509,7 @@ export default function CategoryServicesSection() {
                 rec={rec}
                 isFavorite={favorites.includes(rec.id)}
                 onToggleFavorite={toggleFavorite}
-                onBookNow={(id) => console.log("Booking item", id)}
+                onBookNow={(id) => router.push(`/venue?id=${id}`)}
               />
             ))}
           </div>
@@ -530,7 +532,7 @@ export default function CategoryServicesSection() {
                   rec={rec}
                   isFavorite={favorites.includes(rec.id)}
                   onToggleFavorite={toggleFavorite}
-                  onBookNow={(id) => console.log("Booking item", id)}
+                  onBookNow={(id) => router.push(`/venue?id=${id}`)}
                 />
               </div>
             ))}
@@ -543,7 +545,7 @@ export default function CategoryServicesSection() {
                 rec={rec}
                 isFavorite={favorites.includes(rec.id)}
                 onToggleFavorite={toggleFavorite}
-                onBookNow={(id) => console.log("Booking item", id)}
+                onBookNow={(id) => router.push(`/venue?id=${id}`)}
               />
             ))}
           </div>
@@ -566,7 +568,7 @@ export default function CategoryServicesSection() {
                   rec={rec}
                   isFavorite={favorites.includes(rec.id)}
                   onToggleFavorite={toggleFavorite}
-                  onBookNow={(id) => console.log("Booking item", id)}
+                  onBookNow={(id) => router.push(`/venue?id=${id}`)}
                 />
               </div>
             ))}
@@ -579,7 +581,7 @@ export default function CategoryServicesSection() {
                 rec={rec}
                 isFavorite={favorites.includes(rec.id)}
                 onToggleFavorite={toggleFavorite}
-                onBookNow={(id) => console.log("Booking item", id)}
+                onBookNow={(id) => router.push(`/venue?id=${id}`)}
               />
             ))}
           </div>

@@ -118,3 +118,31 @@ export const useUpdateMyProfileMutation = () => {
 
 export const useChangeMyPasswordMutation = () =>
   useMutation({ mutationFn: authApi.changeMyPassword });
+
+// Batch 18 — Customer email/phone self-change. Requesting/resending never touches cached /auth/me
+// state (the old contact stays authoritative until verified); only a successful verify updates it.
+export const useRequestEmailChangeMutation = () =>
+  useMutation({ mutationFn: authApi.requestEmailChange });
+
+export const useVerifyEmailChangeMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: authApi.verifyEmailChange,
+    onSuccess: (data) => {
+      queryClient.setQueryData(["auth", "me"], data);
+    },
+  });
+};
+
+export const useRequestPhoneChangeMutation = () =>
+  useMutation({ mutationFn: authApi.requestPhoneChange });
+
+export const useVerifyPhoneChangeMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: authApi.verifyPhoneChange,
+    onSuccess: (data) => {
+      queryClient.setQueryData(["auth", "me"], data);
+    },
+  });
+};

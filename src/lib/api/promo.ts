@@ -40,6 +40,7 @@ export interface PromoRedemptionRow {
   id: string;
   promoId: string;
   code: string;
+  customerUserId: string;
   customerEmail: string;
   businessId: string;
   businessName: string;

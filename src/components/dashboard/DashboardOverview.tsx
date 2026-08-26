@@ -2,16 +2,16 @@
 import Image from "next/image";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Clock01Icon } from "@hugeicons/core-free-icons";
-import {
-  initialScheduleData,
-  initialTimelineEvents,
-  initialActivityFeed
-} from "@/utils/dashboardMockData";
 import { useMyBusinessProfileQuery } from "@/lib/business/hooks";
 import { useBusinessRatingSummaryQuery } from "@/lib/review/hooks";
+import { useCurrentUserQuery } from "@/lib/auth/hooks";
+import { buildDashboardSubtitle } from "@/utils/dashboardGreeting";
+import { useDashboardOverviewQuery } from "@/lib/dashboardOverview/hooks";
+import { formatEuro } from "@/lib/services/format";
+import { describeActivity } from "@/utils/dashboardActivity";
 
 export default function DashboardOverview() {
   const [timeFilter, setTimeFilter] = useState("Today");
@@ -20,19 +20,33 @@ export default function DashboardOverview() {
   const [customEndDate, setCustomEndDate] = useState("");
   const [showCustomPicker, setShowCustomPicker] = useState(false);
 
-  const scheduleData = initialScheduleData;
-  const timelineEvents = initialTimelineEvents;
-  const activityFeed = initialActivityFeed;
-
-  // Batch 14 — the only real (non-mock) card in this row; see this file's own history for why
-  // cards 1-4 remain mock (out of this batch's scope).
   const businessQuery = useMyBusinessProfileQuery();
-  const ratingSummaryQuery = useBusinessRatingSummaryQuery(businessQuery.data?.primary?.id);
+  const businessId = businessQuery.data?.primary?.id;
+  const ratingSummaryQuery = useBusinessRatingSummaryQuery(businessId);
   const ratingSummary = ratingSummaryQuery.data;
+  const currentUserQuery = useCurrentUserQuery();
+  const overviewQuery = useDashboardOverviewQuery(businessId);
+  const overview = overviewQuery.data;
+  const financials = overview?.financials ?? null;
+
+  const scheduleData = useMemo(() => {
+    if (!overview) return [];
+    if (scheduleFilter === "All") return overview.schedule;
+    return overview.schedule.filter((row) => {
+      const hour = Number(row.time.split(":")[0]);
+      const isPM = hour >= 12;
+      return scheduleFilter === "PM" ? isPM : !isPM;
+    });
+  }, [overview, scheduleFilter]);
+  const timelineEvents = overview?.timeline ?? [];
+  const activityFeed = useMemo(
+    () => (financials?.recentActivity ?? []).map((entry) => ({ id: entry.id, ...describeActivity(entry) })),
+    [financials],
+  );
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] select-none">
-      <DashboardHeader title="Dashboard" subtitle="Wednesday, 27 May 2026 · Good morning, Elena" />
+      <DashboardHeader title="Dashboard" subtitle={buildDashboardSubtitle(currentUserQuery.data?.profile?.firstName)} />
       <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col gap-6">
 
       {/* Time Toggle Buttons Row */}
@@ -122,8 +136,12 @@ export default function DashboardOverview() {
         <div className="bg-white border border-[#D3D3D3] rounded-xl p-4.5 shadow-sm flex flex-col justify-between h-[96px]">
           <span className="text-[11px] font-normal text-[#888780] font-poppins">Today's bookings</span>
           <div className="flex flex-col mt-0.5">
-            <span className="text-3xl font-semibold text-[#1A1A1A] leading-none">8</span>
-            <span className="text-xs text-[#757575] mt-1.5 font-poppins">3 remaining</span>
+            <span className="text-3xl font-semibold text-[#1A1A1A] leading-none">
+              {overview ? overview.todayBookingsCount : "—"}
+            </span>
+            <span className="text-xs text-[#757575] mt-1.5 font-poppins">
+              {overview ? `${overview.todayRemainingCount} remaining` : ""}
+            </span>
           </div>
         </div>
 
@@ -131,7 +149,9 @@ export default function DashboardOverview() {
         <div className="bg-white border border-[#D3D3D3] rounded-xl p-4.5 shadow-sm flex flex-col justify-between h-[96px]">
           <span className="text-[11px] font-normal text-[#888780] font-poppins">To collect today</span>
           <div className="flex flex-col mt-0.5">
-            <span className="text-3xl font-semibold text-[#1D9E75] leading-none">€320</span>
+            <span className="text-3xl font-semibold text-[#1D9E75] leading-none">
+              {financials ? formatEuro(financials.payAtVenueDueCents) : "—"}
+            </span>
             <span className="text-xs text-[#757575] mt-1.5 font-poppins">pay at venue</span>
           </div>
         </div>
@@ -140,8 +160,12 @@ export default function DashboardOverview() {
         <div className="bg-white border border-[#D3D3D3] rounded-xl p-4.5 shadow-sm flex flex-col justify-between h-[96px]">
           <span className="text-[11px] font-normal text-[#888780] font-poppins">No-shows this month</span>
           <div className="flex flex-col mt-0.5">
-            <span className="text-3xl font-semibold text-[#E24B4A] leading-none">2</span>
-            <span className="text-xs text-[#757575] mt-1.5 font-poppins">€45 charged</span>
+            <span className="text-3xl font-semibold text-[#E24B4A] leading-none">
+              {financials ? financials.noShowMonthCount : "—"}
+            </span>
+            <span className="text-xs text-[#757575] mt-1.5 font-poppins">
+              {financials ? `${formatEuro(financials.noShowMonthChargedCents)} charged` : ""}
+            </span>
           </div>
         </div>
 
@@ -149,12 +173,14 @@ export default function DashboardOverview() {
         <div className="bg-white border border-[#D3D3D3] rounded-xl p-4.5 shadow-sm flex flex-col justify-between h-[96px]">
           <span className="text-[11px] font-normal text-[#888780] font-poppins">Monthly revenue</span>
           <div className="flex flex-col mt-0.5">
-            <span className="text-3xl font-semibold text-[#1D9E75] leading-none">€4280</span>
+            <span className="text-3xl font-semibold text-[#1D9E75] leading-none">
+              {financials ? formatEuro(financials.monthlyRevenueCents) : "—"}
+            </span>
             <span className="text-xs text-transparent mt-1.5 select-none font-poppins">-</span>
           </div>
         </div>
 
-        {/* Card 5 — real (Batch 14) */}
+        {/* Card 5 — real */}
         <div className="bg-white border border-[#D3D3D3] rounded-xl p-4.5 shadow-sm flex flex-col justify-between h-[96px]">
           <span className="text-[11px] font-normal text-[#888780] font-poppins">Avg Rating</span>
           <div className="flex items-center gap-1.5 mt-0.5">
@@ -221,32 +247,43 @@ export default function DashboardOverview() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
-                  {scheduleData.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-neutral-50/50 transition-colors">
+                  {scheduleData.map((row) => (
+                    <tr key={row.bookingId} className="hover:bg-neutral-50/50 transition-colors">
                       <td className="py-3 px-4 text-xs text-[#888780] font-poppins">{row.time}</td>
                       <td className="py-3 px-4">
                         <div className="flex flex-col">
-                          <span className="text-xs font-medium text-[#1A1A1A] font-poppins">{row.name}</span>
-                          <span className="text-[11px] text-[#888780] font-poppins">{row.service}</span>
+                          <span className="text-xs font-medium text-[#1A1A1A] font-poppins">{row.customerName}</span>
+                          <span className="text-[11px] text-[#888780] font-poppins">{row.serviceName}</span>
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-xs text-[#5F5E5A] font-poppins">{row.payment}</td>
-                      <td className="py-3 px-4 text-xs text-[#5F5E5A] font-poppins">{row.platformFee}</td>
-                      <td className="py-3 px-4 text-xs text-[#5F5E5A] font-poppins">{row.remainingFee}</td>
-                      <td className="py-3 px-4 text-xs text-[#5F5E5A] font-poppins">{row.staff}</td>
+                      <td className="py-3 px-4 text-xs text-[#5F5E5A] font-poppins">{formatEuro(row.totalPaymentCents)}</td>
+                      <td className="py-3 px-4 text-xs text-[#5F5E5A] font-poppins">{formatEuro(row.platformFeeCents)}</td>
+                      <td className="py-3 px-4 text-xs text-[#5F5E5A] font-poppins">{formatEuro(row.remainingFeeCents)}</td>
+                      <td className="py-3 px-4 text-xs text-[#5F5E5A] font-poppins">{row.staffName}</td>
                       <td className="py-3 px-4">
                         <span
                           className={`inline-block px-2.5 py-1 text-[11px] font-medium rounded-full whitespace-nowrap ${
-                            row.lead === "New customer"
+                            row.leadType === "NEW_CUSTOMER"
                               ? "bg-[#E1F5EE] text-[#085041]"
                               : "bg-blue-50 text-blue-700"
                           }`}
                         >
-                          {row.lead}
+                          {row.leadType === "NEW_CUSTOMER"
+                            ? "New customer"
+                            : row.leadType === "MANUAL"
+                              ? "Manual"
+                              : "Returning"}
                         </span>
                       </td>
                     </tr>
                   ))}
+                  {overview && scheduleData.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="py-6 px-4 text-xs text-[#888780] font-poppins text-center">
+                        No bookings scheduled today.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -269,18 +306,21 @@ export default function DashboardOverview() {
           <div className="bg-white border border-[#E8E8E6] rounded-xl p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-[#0F1E35] font-poppins mb-4">Today's Schedule</h3>
             <div className="space-y-4">
-              {timelineEvents.map((evt, idx) => (
-                <div key={idx} className="flex gap-4 items-start">
+              {timelineEvents.map((evt) => (
+                <div key={evt.bookingId} className="flex gap-4 items-start">
                   <span className="bg-[#111111] text-white text-[10px] font-medium px-2 py-1 rounded w-12 text-center shrink-0">
                     {evt.time}
                   </span>
                   <div className="flex flex-col pl-1">
-                    <span className="text-xs font-semibold text-[#111111]">{evt.name}</span>
+                    <span className="text-xs font-semibold text-[#111111]">{evt.customerName}</span>
                     <span className="text-[11px] text-neutral-500">{evt.detail}</span>
-                    <span className="text-[10px] text-amber-600 font-medium mt-0.5">{evt.duration}</span>
+                    <span className="text-[10px] text-amber-600 font-medium mt-0.5">{evt.durationMin} min</span>
                   </div>
                 </div>
               ))}
+              {overview && timelineEvents.length === 0 && (
+                <span className="text-xs text-[#888780] font-poppins">No bookings scheduled today.</span>
+              )}
             </div>
           </div>
 
@@ -303,11 +343,14 @@ export default function DashboardOverview() {
                   </div>
                 </div>
               ))}
+              {overview && activityFeed.length === 0 && (
+                <span className="text-xs text-[#888780] font-poppins">No recent activity yet.</span>
+              )}
             </div>
           </div>
         </div>
       </div>
-    
+
       </div></main>
   );
 }

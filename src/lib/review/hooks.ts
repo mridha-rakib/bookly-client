@@ -37,6 +37,25 @@ export const useBusinessReviewsQuery = (
     enabled: Boolean(businessId),
   });
 
+// Batch 19 — Business dashboard (Owner/Supervisor) variants, same query key shape with a "dashboard"
+// segment so they never collide in cache with the public/customer-facing reads above.
+export const useBusinessRatingSummaryForDashboardQuery = (businessId: string | undefined) =>
+  useQuery({
+    queryKey: [...reviewKeys.businessSummary(businessId ?? ""), "dashboard"],
+    queryFn: () => reviewApi.getBusinessRatingSummaryForDashboard(businessId as string),
+    enabled: Boolean(businessId),
+  });
+
+export const useBusinessReviewsForDashboardQuery = (
+  businessId: string | undefined,
+  pagination: { page?: number; limit?: number } = {},
+) =>
+  useQuery({
+    queryKey: [...reviewKeys.businessList(businessId ?? "", pagination), "dashboard"],
+    queryFn: () => reviewApi.listBusinessReviewsForDashboard(businessId as string, pagination),
+    enabled: Boolean(businessId),
+  });
+
 export const useCreateReviewMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({

@@ -5,23 +5,45 @@ import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import React, { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { StarIcon } from "@hugeicons/core-free-icons";
-import { useMyBusinessProfileQuery } from "@/lib/business/hooks";
-import { useBusinessRatingSummaryQuery, useBusinessReviewsQuery } from "@/lib/review/hooks";
+import { useManagedBusinessContext } from "@/lib/business/hooks";
+import {
+  useBusinessRatingSummaryForDashboardQuery,
+  useBusinessReviewsForDashboardQuery,
+} from "@/lib/review/hooks";
 
-/** Batch 14 — real, read-only Reviews. Business Owner only (no reply/moderation/delete action
- * exists for any Business role — confirmed rule 1.9/19). Supervisor/Staff variants of this page
- * remain unwired: neither role has any real "current business" resolution anywhere in this
- * frontend yet (a pre-existing gap outside this batch's scope — see the batch report). */
+/** Batch 14 — real, read-only Reviews (no reply/moderation/delete action exists for any Business
+ * role — confirmed rule 1.9/19). Batch 19 — now wired for Business Owner AND Supervisor via
+ * `useManagedBusinessContext` (the same real `/auth/me`-based business resolution Booking screens
+ * use) and a dedicated ownership/membership-checked dashboard endpoint (see
+ * api/.../review.route.ts's createBusinessReviewRoute) instead of the CUSTOMER-only public one
+ * this page used to call. STAFF has no backend read access here either (confirmed rule — same
+ * boundary as Booking/Client management), so it gets the same honest "not available" state
+ * Calendar/Bookings already show Staff. */
 export default function DashboardReviewsList() {
   const [page, setPage] = useState(1);
-  const businessQuery = useMyBusinessProfileQuery();
-  const businessId = businessQuery.data?.primary?.id;
-  const summaryQuery = useBusinessRatingSummaryQuery(businessId);
-  const reviewsQuery = useBusinessReviewsQuery(businessId, { page, limit: 10 });
+  const { businessId, isLoading: businessIsLoading } = useManagedBusinessContext();
+  const summaryQuery = useBusinessRatingSummaryForDashboardQuery(businessId);
+  const reviewsQuery = useBusinessReviewsForDashboardQuery(businessId, { page, limit: 10 });
 
   const reviews = reviewsQuery.data?.reviews ?? [];
   const total = reviewsQuery.data?.pagination.total ?? 0;
-  const isLoading = businessQuery.isLoading || summaryQuery.isLoading || reviewsQuery.isLoading;
+  const isLoading = businessIsLoading || summaryQuery.isLoading || reviewsQuery.isLoading;
+
+  if (!businessIsLoading && !businessId) {
+    return (
+      <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] md: select-none font-poppins relative">
+        <DashboardHeader title="Reviews" subtitle="Verified reviews from Bookly customers" />
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
+          <span className="font-poppins text-sm font-semibold text-[#5F5E5A]">
+            Reviews aren&apos;t available for your account
+          </span>
+          <span className="font-poppins text-xs text-[#ABAAA6] max-w-sm">
+            Only the Business Owner and an active Supervisor can view Business reviews.
+          </span>
+        </div>
+      </main>
+    );
+  }
 
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });

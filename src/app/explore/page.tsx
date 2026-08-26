@@ -82,6 +82,10 @@ export default function ExplorePage() {
     return () => clearTimeout(timeout);
   }, [searchQuery]);
 
+  // Filtering is already live via the searchParams dependency array below; this just lets the
+  // Filter/submit buttons skip the debounce delay instead of being no-ops.
+  const applyFiltersNow = () => setDebouncedQuery(searchQuery.trim());
+
   // Any filter change resets to page 1 — a stale page number past the new result count would
   // otherwise show an empty page silently. Applied during render (the "adjusting state" pattern)
   // by comparing against the previous filter signature, rather than inside a useEffect.
@@ -211,6 +215,7 @@ export default function ExplorePage() {
               handleClearAll={handleClearAll}
               showMap={showMap}
               setShowMap={setShowMap}
+              onApplyFilters={applyFiltersNow}
             />
           )}
     <div className="flex-1 w-full">

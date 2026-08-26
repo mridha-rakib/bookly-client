@@ -16,6 +16,8 @@ import {
   HeadsetIcon,
   Logout01Icon
 } from "@hugeicons/core-free-icons";
+import { useAuthStore } from "@/lib/auth/store";
+import { useCurrentUserQuery } from "@/lib/auth/hooks";
 
 interface StaffSidebarProps {
   isCollapsed: boolean;
@@ -37,6 +39,15 @@ export default function StaffSidebar({
   footerMenuRef
 }: StaffSidebarProps) {
   const [profileImage, setProfileImage] = useState("/businessDashboard/downLogo.png");
+  const logout = useAuthStore((state) => state.logout);
+  const meQuery = useCurrentUserQuery();
+  const businessName = meQuery.data?.business?.name ?? meQuery.data?.profile?.fullName ?? "";
+  const userEmail = meQuery.data?.user.email ?? "";
+
+  const handleLogout = () => {
+    setShowFooterMenu(false);
+    void logout();
+  };
 
   useEffect(() => {
     const loadProfileImage = () => {
@@ -175,8 +186,8 @@ export default function StaffSidebar({
             <Image src={profileImage} alt="User Profile" className="w-10 h-10 rounded-full object-cover border border-[#4E5F78]" width={40} height={40} />
             {!isCollapsed && (
               <div className="flex flex-col">
-                <span className="font-semibold text-sm text-[#111111]">MasterPlan LLC</span>
-                <span className="text-[11px] text-[#4E5F78] max-w-[140px] truncate">basel@msplan.com</span>
+                <span className="font-semibold text-sm text-[#111111] max-w-[140px] truncate">{businessName || " "}</span>
+                <span className="text-[11px] text-[#4E5F78] max-w-[140px] truncate">{userEmail}</span>
               </div>
             )}
           </div>
@@ -208,8 +219,8 @@ export default function StaffSidebar({
                 <HugeiconsIcon icon={HeadsetIcon} className="w-5 h-5 text-[#111111] shrink-0" />
                 <span className="font-manrope font-medium text-xs text-[#111111]">Contact Support</span>
               </button>
-              <button 
-                onClick={() => setShowFooterMenu(false)}
+              <button
+                onClick={handleLogout}
                 className="flex items-center gap-3 py-2 px-2.5 hover:bg-[#A8BEC1] rounded-lg text-left transition-all cursor-pointer w-full"
               >
                 <HugeiconsIcon icon={Logout01Icon} className="w-5 h-5 text-[#111111] shrink-0" />

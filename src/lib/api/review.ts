@@ -83,4 +83,26 @@ export const reviewApi = {
         ...(pagination.limit ? { limit: String(pagination.limit) } : {}),
       },
     }),
+
+  // --- Batch 19 — Business dashboard (Owner/Supervisor viewing their OWN business's reviews).
+  // Same shape as the public reads above; a separately-authorized endpoint (ownership/membership-
+  // checked, not CUSTOMER-role-checked) — see api/.../review.route.ts's createBusinessReviewRoute.
+  getBusinessRatingSummaryForDashboard: (businessId: string) =>
+    apiRequest<BusinessRatingSummary>({
+      method: "GET",
+      url: `/businesses/${businessId}/reviews/summary`,
+    }),
+
+  listBusinessReviewsForDashboard: (
+    businessId: string,
+    pagination: { page?: number; limit?: number } = {},
+  ) =>
+    apiRequest<PublicReviewListResult>({
+      method: "GET",
+      url: `/businesses/${businessId}/reviews`,
+      params: {
+        ...(pagination.page ? { page: String(pagination.page) } : {}),
+        ...(pagination.limit ? { limit: String(pagination.limit) } : {}),
+      },
+    }),
 };

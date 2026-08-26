@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useRouter } from "next/navigation";
 import ServiceCard, { Recommendation } from "@/components/ServiceCard";
 import Carousel from "./Carousel";
 
@@ -15,6 +16,7 @@ export default function BookAgainSection({
   favorites,
   toggleFavorite
 }: BookAgainSectionProps) {
+  const router = useRouter();
   return (
     <section className="w-full px-4 md:px-8 xl:px-[68px] mt-[40x]">
       {/* Section Header */}
@@ -36,7 +38,7 @@ export default function BookAgainSection({
                 rec={rec}
                 isFavorite={favorites.includes(rec.id)}
                 onToggleFavorite={toggleFavorite}
-                onBookNow={(id) => console.log("Booking item", id)}
+                onBookNow={(id) => router.push(`/venue?id=${id}`)}
               />
             </div>
           ))}

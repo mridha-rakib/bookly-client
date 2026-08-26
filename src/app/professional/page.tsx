@@ -67,7 +67,7 @@ export default function ProfessionalVisitTypePage() {
               className="font-semibold text-[#240183] hover:underline"
               onClick={(e) => {
                 e.preventDefault();
-                console.log("Contact support");
+                router.push("/contact-support");
               }}
             >
               Contact support

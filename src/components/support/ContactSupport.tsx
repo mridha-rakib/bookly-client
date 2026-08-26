@@ -7,6 +7,7 @@ import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import { useCurrentUserQuery } from "@/lib/auth/hooks";
 import { useCreateSupportTicketMutation, useSupportTicketQuery } from "@/lib/support/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
+import { buildDashboardSubtitle } from "@/utils/dashboardGreeting";
 import SupportBreadcrumbs from "./SupportBreadcrumbs";
 import SupportFormFields from "./SupportFormFields";
 import SupportFormActions from "./SupportFormActions";
@@ -29,6 +30,7 @@ type Mode = "list" | "create" | "detail";
  * ClientsPage.tsx) — no modal/drawer, no new design language.
  */
 export default function ContactSupport({ setActiveTab }: ContactSupportProps) {
+  const currentUserQuery = useCurrentUserQuery();
   const [mode, setMode] = useState<Mode>("list");
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   // Shares its cache entry with RequesterTicketDetail's own identical query (same ticketId) —
@@ -49,7 +51,7 @@ export default function ContactSupport({ setActiveTab }: ContactSupportProps) {
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] relative">
-      <DashboardHeader title="Support" subtitle="Wednesday, 27 May 2026 · Good morning, Elena" />
+      <DashboardHeader title="Support" subtitle={buildDashboardSubtitle(currentUserQuery.data?.profile?.firstName)} />
 
       <div className="flex-1 overflow-y-auto pl-12 pr-6 md:pr-8 py-6 flex flex-col gap-[30px] w-full max-w-[864px]">
         <SupportBreadcrumbs setActiveTab={setActiveTab} trail={breadcrumbTrail} />

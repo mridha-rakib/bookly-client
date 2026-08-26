@@ -34,7 +34,6 @@ import {
 import SupervisorSidebar from "./SupervisorSidebar";
 import SupervisorOverview from "./SupervisorOverview";
 import SupervisorSettings from "./SupervisorSettings";
-import SupervisorStaffList from "./SupervisorStaffList";
 
 // Modular Dashboard sub-components
 import DashboardCalendar from "@/components/dashboard/DashboardCalendar";
@@ -43,6 +42,7 @@ import DashboardBookingForm from "@/components/dashboard/DashboardBookingForm";
 import ClientsPage from "@/components/clients/ClientsPage";
 import ContactSupport from "@/components/support/ContactSupport";
 import DashboardReviewsList from "@/components/dashboard/DashboardReviewsList";
+import NotAvailableForRole from "@/components/dashboard/NotAvailableForRole";
 
 export default function SupervisorDashboard() {
   const [activeTab, setActiveTab] = useState("Calendar");
@@ -199,7 +199,17 @@ export default function SupervisorDashboard() {
     }
 
     if (activeTab === "Staff") {
-      return <SupervisorStaffList />;
+      // No product rule grants SUPERVISOR team-management access (staff.route.ts is BUSINESS_OWNER-
+      // only — see its own doc comment on this being a deliberate later-phase permission, not yet
+      // granted) — honest-unavailable rather than a mock add/edit/delete-teammate UI.
+      return (
+        <NotAvailableForRole
+          title="Staff"
+          subtitle="Team members, hours, and service assignments"
+          message="Team management isn't available for your account"
+          detail="Only the Business Owner can manage team members."
+        />
+      );
     }
 
     if (activeTab === "Reviews") {

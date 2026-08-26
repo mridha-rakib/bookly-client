@@ -33,6 +33,7 @@ export interface FilterSidebarProps {
   handleClearAll: () => void;
   showMap: boolean;
   setShowMap: (val: boolean) => void;
+  onApplyFilters: () => void;
 }
 
 export default function FilterSidebar({
@@ -56,14 +57,15 @@ export default function FilterSidebar({
   handleClearAll,
   showMap,
   setShowMap,
+  onApplyFilters,
 }: FilterSidebarProps) {
   return (
     <aside className="hidden lg:flex flex-col items-start px-3 gap-6 w-[284px] bg-white border border-[#E5E5E5]/50 rounded-2xl py-6 shrink-0 shadow-sm sticky top-24 h-fit">
       
       {/* Filter & View Map Row */}
       <div className="flex flex-row items-center gap-3 w-full self-stretch">
-        <button 
-          onClick={() => {}}
+        <button
+          onClick={onApplyFilters}
           className="flex flex-row items-center justify-center py-2 px-4 gap-2 h-10 bg-[#000000] text-white rounded-xl text-sm font-semibold cursor-pointer shrink-0 transition-colors hover:bg-neutral-800 whitespace-nowrap"
         >
           <HugeiconsIcon icon={FilterHorizontalIcon} size={18} className="text-white" />
@@ -88,8 +90,8 @@ export default function FilterSidebar({
           placeholder="Search..."
           className="flex-1 w-0 bg-transparent border-none outline-none text-base placeholder-[#ACAAB4] text-[#1C1B1C]"
         />
-        <button 
-          onClick={() => {}} // Search submit
+        <button
+          onClick={onApplyFilters}
           className="w-12 h-12 rounded-full bg-[#111111] hover:bg-black flex items-center justify-center text-white shrink-0 cursor-pointer transition-colors"
           aria-label="Submit search"
         >

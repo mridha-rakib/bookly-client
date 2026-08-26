@@ -25,6 +25,7 @@ import {
 } from "@hugeicons/core-free-icons";
 
 import { useAuthStore } from "@/lib/auth/store";
+import { useCurrentUserQuery } from "@/lib/auth/hooks";
 
 interface DashboardSidebarProps {
   isCollapsed: boolean;
@@ -48,6 +49,9 @@ export default function DashboardSidebar({
   const [profileImage, setProfileImage] = useState("/businessDashboard/downLogo.png");
   const logout = useAuthStore((state) => state.logout);
   const isLoggingOut = useAuthStore((state) => state.isLoggingOut);
+  const meQuery = useCurrentUserQuery();
+  const businessName = meQuery.data?.business?.name ?? meQuery.data?.profile?.fullName ?? "";
+  const userEmail = meQuery.data?.user.email ?? "";
 
   const handleLogout = () => {
     setShowFooterMenu(false);
@@ -168,7 +172,7 @@ export default function DashboardSidebar({
           {!isCollapsed && (
             <span className="text-[10px] font-medium tracking-[2px] uppercase text-[#111111]/60 px-3 block mb-2">Bookings</span>
           )}
-          {renderMenuItem("All Bookings", ProfileIcon, "All Bookings", 3)}
+          {renderMenuItem("All Bookings", ProfileIcon, "All Bookings")}
           {renderMenuItem("Upcoming", Orbit01Icon, "Upcoming")}
           {renderMenuItem("Canceled", CancelSquareIcon, "Canceled")}
         </div>
@@ -214,8 +218,8 @@ export default function DashboardSidebar({
             <Image src={profileImage} alt="User Profile" className="w-10 h-10 rounded-full object-cover border border-[#4E5F78]" width={40} height={40} />
             {!isCollapsed && (
               <div className="flex flex-col">
-                <span className="font-semibold text-sm text-[#111111]">MasterPlan LLC</span>
-                <span className="text-[11px] text-[#4E5F78] max-w-[140px] truncate">agent@msplan.com</span>
+                <span className="font-semibold text-sm text-[#111111] max-w-[140px] truncate">{businessName || " "}</span>
+                <span className="text-[11px] text-[#4E5F78] max-w-[140px] truncate">{userEmail}</span>
               </div>
             )}
           </div>

@@ -3,7 +3,7 @@ import Image from "next/image";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   User02Icon,
@@ -14,44 +14,60 @@ import {
   SecurityCheckIcon,
   Camera01Icon,
   InformationCircleIcon,
-  Tick01Icon,
-  ArrowDown01Icon,
-  ArrowLeft01Icon,
-  ArrowRight01Icon
+  Tick01Icon
 } from "@hugeicons/core-free-icons";
 
-import {
-  initialMembers,
-  initialCancellationRules,
-  MemberItem,
-  CancellationRule
-} from "@/data/settingsMockData";
-
 import { SettingsInput } from "../settings/SettingsInput";
-import { SettingsToggle } from "../settings/SettingsToggle";
 import { SettingsSubSidebar } from "../settings/SettingsSubSidebar";
 import { Security2FAPanel } from "../settings/Security2FAPanel";
+import { useCurrentUserQuery } from "@/lib/auth/hooks";
+import { useMyBusinessProfileQuery } from "@/lib/business/hooks";
+import { useStaffListQuery } from "@/lib/staff/hooks";
+import {
+  cancellationTiers,
+  type CancellationFeeMode,
+} from "@/lib/api/business-cancellation-policy";
+import {
+  useCancellationPolicyQuery,
+  useUpdateCancellationPolicyMutation,
+} from "@/lib/business/cancellation-policy-hooks";
+
+// Batch 19 — fixed five-window labels matching cancellationTiers' order exactly (see
+// api/.../business-cancellation-policy.model.ts's own comment on why this UI never lets an
+// owner omit/reorder/duplicate a window).
+const CANCELLATION_TIER_LABELS: Record<(typeof cancellationTiers)[number], string> = {
+  MORE_THAN_72_HOURS: "More than 72 hours",
+  BETWEEN_24_AND_72_HOURS: "24 - 72 hours",
+  BETWEEN_12_AND_24_HOURS: "12 - 24 hours",
+  BETWEEN_2_AND_12_HOURS: "2 - 12 hours",
+  UNDER_2_HOURS: "Under 2 hours",
+};
+
+type CancellationRuleFormState = { mode: CancellationFeeMode; percentage: number };
 
 export default function DashboardSettings() {
   const [activeSubTab, setActiveSubTab] = useState<string>("Personal info");
 
-  // Personal Info States
-  const [personalName, setPersonalName] = useState("Hohb doe");
-  const [personalEmail, setPersonalEmail] = useState("Eslsj@gam.com");
-  const [personalRole, setPersonalRole] = useState("Supervisor");
-  const [personalPhone, setPersonalPhone] = useState("1234556666");
+  const meQuery = useCurrentUserQuery();
+  const businessProfileQuery = useMyBusinessProfileQuery();
+  const businessId = businessProfileQuery.data?.primary?.id;
 
-  const [profileImage, setProfileImage] = useState<string>("/businessDashboard/downLogo.png");
+  // Personal Info — read-only, real (Batch 19): sourced from /auth/me. There is no PATCH /auth/me
+  // equivalent for BUSINESS_OWNER (only CUSTOMER has one, see Batch 17/18), so editing stays
+  // honestly non-functional below rather than silently discarding changes.
+  const personalName = meQuery.data?.profile?.fullName ?? "";
+  const personalEmail = meQuery.data?.user.email ?? "";
+  const personalRole = "Owner";
+  const personalPhone = meQuery.data?.profile?.phone
+    ? `${meQuery.data.profile.phone.countryCode} ${meQuery.data.profile.phone.nationalNumber}`
+    : "";
+
+  const [profileImage, setProfileImage] = useState<string>(
+    () =>
+      (typeof window !== "undefined" && localStorage.getItem("settingsProfileImage")) ||
+      "/businessDashboard/downLogo.png",
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedImage = localStorage.getItem("settingsProfileImage");
-      if (savedImage) {
-        setProfileImage(savedImage);
-      }
-    }
-  }, []);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -67,97 +83,68 @@ export default function DashboardSettings() {
     }
   };
 
-  // Members List State (Role Tab)
-  const [members, setMembers] = useState<MemberItem[]>(initialMembers);
-  const [membersPage, setMembersPage] = useState(1);
+  // Role tab — real Staff list (Batch 19), same query the real Staff page uses. Role editing
+  // stays on that page (single mutation path — see staff.route.ts); this tab is read-only.
+  const staffListQuery = useStaffListQuery(businessId);
+  const staffMembers = staffListQuery.data?.members ?? [];
 
-  // Cancellation & No-show States
-  const [rules, setRules] = useState<CancellationRule[]>(initialCancellationRules);
+  // Cancellation & No-show — real (Batch 19), see business-cancellation-policy-hooks.ts.
+  const cancellationPolicyQuery = useCancellationPolicyQuery(businessId);
+  const updateCancellationPolicyMutation = useUpdateCancellationPolicyMutation(businessId);
+  const [cancellationForm, setCancellationForm] = useState<
+    Record<(typeof cancellationTiers)[number], CancellationRuleFormState>
+  >(() =>
+    Object.fromEntries(
+      cancellationTiers.map((tier) => [tier, { mode: "FREE" as CancellationFeeMode, percentage: 20 }]),
+    ) as Record<(typeof cancellationTiers)[number], CancellationRuleFormState>,
+  );
   const [noShowPercent, setNoShowPercent] = useState(20);
+  const [cancellationFormError, setCancellationFormError] = useState("");
+  const [cancellationFormInitialized, setCancellationFormInitialized] = useState(false);
 
-  // Payments State
-  const [bankHolder, setBankHolder] = useState("Elena Georgiou");
-  const [bankIban, setBankIban] = useState("CY17 0020 0195 0000 3570 0012 3456");
-  const [bankName, setBankName] = useState("Bank of Cyprus");
-  const [bankVat, setBankVat] = useState("");
-
-  // Integrations Connected State
-  const [isGoogleConnected, setIsGoogleConnected] = useState(true);
-
-  // Notifications Toggles
-  const [notifEmail, setNotifEmail] = useState(true);
-  const [notifSms, setNotifSms] = useState(false);
-  const [notifPush, setNotifPush] = useState(true);
-
-  // Security Toggles
-  const [twoFactor, setTwoFactor] = useState(false);
-
-  // Country Picker State
-  const [selectedCountry, setSelectedCountry] = useState({
-    code: "+357",
-    name: "Cyprus",
-    svg: (
-      <svg className="w-5 h-3.5 shrink-0 rounded-[1px] shadow-[0px_0.5px_2px_rgba(0,0,0,0.25)]" viewBox="0 0 900 600" xmlns="http://www.w3.org/2000/svg">
-        <rect width="900" height="600" fill="#fff"/>
-        <path d="M418 135c3 1 12 1 18 3 7 3 20 6 30 11 11 6 22 13 32 20 15 11 31 24 41 38 7 11 14 26 15 39 1 14-3 30-10 42-10 17-27 28-44 36-16 8-36 12-54 13-18 1-38-3-54-10-18-8-32-23-40-41-4-9-6-20-6-30s1-19 5-28c9-21 27-37 46-49 13-8 27-14 42-17 11-3 20-5 27-5 2-8 3-15 4-22-2-6-5-12-8-17-7-14-19-25-33-33-14-9-31-13-48-12-17 0-35 5-49 15-13 9-23 23-28 38-5 13-6 29-2 43 4 15 12 28 22 39 12 13 27 23 44 29 18 7 38 9 57 7 19-2 38-9 54-19s28-25 35-43c7-17 9-37 4-55-4-19-14-36-28-49-14-13-32-21-50-25-18-4-37-3-55 2-17 5-33 14-46 26-12 12-21 28-24 45-3 15-2 32 4 47 6 15 16 27 28 37s27 16 43 19c15 3 32 2 47-3 15-5 28-15 37-28 9-12 13-28 12-43" fill="#D47000"/>
-        <path d="M290 400s30 50 160 50 160-50 160-50-60 10-160 10-160-10-160-10z" fill="#006A3B"/>
-      </svg>
-    )
-  });
-  const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
-
-  const countries = [
-    {
-      code: "+880",
-      name: "Bangladesh",
-      svg: (
-        <svg className="w-5 h-3.5 shrink-0 rounded-[1px] shadow-[0px_0.5px_2px_rgba(0,0,0,0.25)]" viewBox="0 0 20 12" xmlns="http://www.w3.org/2000/svg">
-          <rect width="20" height="12" fill="#006a4e"/>
-          <circle cx="9" cy="6" r="4" fill="#f42a41"/>
-        </svg>
-      )
-    },
-    {
-      code: "+1",
-      name: "United States",
-      svg: (
-        <svg className="w-5 h-3.5 shrink-0 rounded-[1px] shadow-[0px_0.5px_2px_rgba(0,0,0,0.25)]" viewBox="0 0 20 13" xmlns="http://www.w3.org/2000/svg">
-          <rect width="20" height="13" fill="#b22234"/>
-          <path d="M0,1h20M0,3h20M0,5h20M0,7h20M0,9h20M0,11h20" stroke="#fff" strokeWidth={1}/>
-          <rect width="8" height="7" fill="#3c3b6e"/>
-          <circle cx="2" cy="2" r="0.4" fill="#fff"/>
-          <circle cx="6" cy="2" r="0.4" fill="#fff"/>
-          <circle cx="4" cy="3.5" r="0.4" fill="#fff"/>
-          <circle cx="2" cy="5" r="0.4" fill="#fff"/>
-          <circle cx="6" cy="5" r="0.4" fill="#fff"/>
-        </svg>
-      )
-    },
-    {
-      code: "+44",
-      name: "United Kingdom",
-      svg: (
-        <svg className="w-5 h-3.5 shrink-0 rounded-[1px] shadow-[0px_0.5px_2px_rgba(0,0,0,0.25)]" viewBox="0 0 60 30" xmlns="http://www.w3.org/2000/svg">
-          <rect width="60" height="30" fill="#012169"/>
-          <path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" strokeWidth="6" />
-          <path d="M0,0 L60,30 M60,0 L0,30" stroke="#012169" strokeWidth="4" />
-          <path d="M30,0 v30 M0,15 h60" stroke="#fff" strokeWidth="10" />
-          <path d="M30,0 v30 M0,15 h60" stroke="#C8102E" strokeWidth="6" />
-        </svg>
-      )
-    },
-    {
-      code: "+357",
-      name: "Cyprus",
-      svg: (
-        <svg className="w-5 h-3.5 shrink-0 rounded-[1px] shadow-[0px_0.5px_2px_rgba(0,0,0,0.25)]" viewBox="0 0 900 600" xmlns="http://www.w3.org/2000/svg">
-          <rect width="900" height="600" fill="#fff"/>
-          <path d="M418 135c3 1 12 1 18 3 7 3 20 6 30 11 11 6 22 13 32 20 15 11 31 24 41 38 7 11 14 26 15 39 1 14-3 30-10 42-10 17-27 28-44 36-16 8-36 12-54 13-18 1-38-3-54-10-18-8-32-23-40-41-4-9-6-20-6-30s1-19 5-28c9-21 27-37 46-49 13-8 27-14 42-17 11-3 20-5 27-5 2-8 3-15 4-22-2-6-5-12-8-17-7-14-19-25-33-33-14-9-31-13-48-12-17 0-35 5-49 15-13 9-23 23-28 38-5 13-6 29-2 43 4 15 12 28 22 39 12 13 27 23 44 29 18 7 38 9 57 7 19-2 38-9 54-19s28-25 35-43c7-17 9-37 4-55-4-19-14-36-28-49-14-13-32-21-50-25-18-4-37-3-55 2-17 5-33 14-46 26-12 12-21 28-24 45-3 15-2 32 4 47 6 15 16 27 28 37s27 16 43 19c15 3 32 2 47-3 15-5 28-15 37-28 9-12 13-28 12-43" fill="#D47000"/>
-          <path d="M290 400s30 50 160 50 160-50 160-50-60 10-160 10-160-10-160-10z" fill="#006A3B"/>
-        </svg>
-      )
+  if (cancellationPolicyQuery.data && !cancellationFormInitialized) {
+    setCancellationFormInitialized(true);
+    const byTier = new Map(cancellationPolicyQuery.data.tiers.map((rule) => [rule.tier, rule]));
+    setCancellationForm(
+      Object.fromEntries(
+        cancellationTiers.map((tier) => {
+          const rule = byTier.get(tier);
+          return [tier, { mode: rule?.mode ?? "FREE", percentage: rule?.percentage ?? 20 }];
+        }),
+      ) as Record<(typeof cancellationTiers)[number], CancellationRuleFormState>,
+    );
+    if (cancellationPolicyQuery.data.noShowPercentage !== undefined) {
+      setNoShowPercent(cancellationPolicyQuery.data.noShowPercentage);
     }
-  ];
+  }
+
+  const handleSaveCancellationPolicy = async () => {
+    setCancellationFormError("");
+    try {
+      await updateCancellationPolicyMutation.mutateAsync({
+        tiers: cancellationTiers.map((tier) => {
+          const rule = cancellationForm[tier];
+          return rule.mode === "FREE"
+            ? { tier, mode: "FREE" as const }
+            : { tier, mode: "PERCENTAGE" as const, percentage: rule.percentage };
+        }),
+        noShowPercentage: noShowPercent,
+      });
+    } catch (error) {
+      setCancellationFormError(
+        error instanceof Error ? error.message : "Couldn't save the cancellation policy.",
+      );
+    }
+  };
+
+  // Payments — no backend exists for a Business's payout bank details anywhere in this codebase
+  // (confirmed — Finance/payout modules only ever read Stripe-derived data, never a
+  // Business-submitted IBAN). Kept local/decorative and honestly non-functional below rather than
+  // silently discarding what would look like real bank details.
+  const [bankHolder, setBankHolder] = useState("");
+  const [bankIban, setBankIban] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [bankVat, setBankVat] = useState("");
 
   const subTabs = [
     { name: "Personal info", icon: User02Icon },
@@ -226,11 +213,7 @@ export default function DashboardSettings() {
                 </div>
 
                 {/* Name */}
-                <SettingsInput
-                  label="Name"
-                  value={personalName}
-                  onChange={setPersonalName}
-                />
+                <SettingsInput label="Name" value={personalName} onChange={() => {}} disabled={true} />
 
                 {/* Email and Role Row */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -238,78 +221,24 @@ export default function DashboardSettings() {
                     label="Email"
                     type="email"
                     value={personalEmail}
-                    onChange={setPersonalEmail}
+                    onChange={() => {}}
                     disabled={true}
                   />
 
-                  <div className="flex flex-col gap-1">
-                    <span className="font-poppins font-semibold text-[10px] tracking-[0.8px] uppercase text-[#6B7280]">
-                      ROLE
-                    </span>
-                    <select
-                      value={personalRole}
-                      onChange={(e) => setPersonalRole(e.target.value)}
-                      className="h-10 border border-[#D3D1C7] bg-white rounded-[8px] px-3.5 text-[14px] text-[#1A1A1A] font-poppins focus:outline-none cursor-pointer"
-                    >
-                      <option value="Owner">Owner</option>
-                      <option value="Supervisor">Supervisor</option>
-                      <option value="Staff">Staff</option>
-                    </select>
-                  </div>
+                  <SettingsInput label="Role" value={personalRole} onChange={() => {}} disabled={true} />
                 </div>
 
                 {/* Mobile number */}
-                <div className="flex flex-col gap-1">
-                  <span className="font-poppins font-semibold text-[10px] tracking-[0.8px] uppercase text-[#6B7280]">
-                    MOBILE NUMBER
-                  </span>
-                  <div className="flex items-center border border-[#D3D1C7] rounded-[8px] h-10 relative">
-                    <div 
-                      onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
-                      className="flex items-center gap-1.5 px-3 border-r border-[#D3D1C7] bg-neutral-50 h-full select-none cursor-pointer hover:bg-neutral-100 transition-colors"
-                    >
-                      {selectedCountry.svg}
-                      <span className="text-xs font-semibold text-neutral-600">{selectedCountry.code}</span>
-                      <HugeiconsIcon icon={ArrowDown01Icon} className="w-3.5 h-3.5 text-neutral-500" strokeWidth={1.5} />
-                    </div>
-                    <input
-                      type="text"
-                      value={personalPhone}
-                      onChange={(e) => setPersonalPhone(e.target.value)}
-                      className="flex-1 px-3 text-[14px] text-[#1A1A1A] font-poppins focus:outline-none h-full bg-transparent"
-                    />
+                <SettingsInput
+                  label="Mobile number"
+                  value={personalPhone || "Not set"}
+                  onChange={() => {}}
+                  disabled={true}
+                />
 
-                    {/* Country Code Dropdown */}
-                    {isCountryDropdownOpen && (
-                      <div className="absolute top-11 left-0 bg-white border border-[#D3D1C7] rounded-lg shadow-lg w-[200px] z-[999] py-1 max-h-[220px] overflow-y-auto">
-                        {countries.map((c) => (
-                          <div
-                            key={c.code}
-                            onClick={() => {
-                              setSelectedCountry(c);
-                              setIsCountryDropdownOpen(false);
-                            }}
-                            className="flex items-center gap-3 px-3 py-2 hover:bg-neutral-50 cursor-pointer transition-colors"
-                          >
-                            {c.svg}
-                            <span className="text-xs font-semibold text-neutral-600 w-10 shrink-0">{c.code}</span>
-                            <span className="text-xs text-neutral-700 truncate">{c.name}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex items-center justify-end gap-3 mt-4 border-t border-neutral-100 pt-4">
-                  <button className="px-4 py-2 border border-[#DEDDE3] rounded-[8px] text-xs font-semibold text-[#5B5D58] hover:bg-neutral-50 transition-colors cursor-pointer">
-                    Cancel
-                  </button>
-                  <button className="px-4 py-2 bg-[#111111] hover:bg-black text-white rounded-[8px] text-xs font-semibold transition-colors cursor-pointer">
-                    Save changes
-                  </button>
-                </div>
+                <p className="font-poppins text-xs text-[#888780]">
+                  Editing personal info isn&apos;t available yet.
+                </p>
 
               </div>
             </div>
@@ -320,7 +249,9 @@ export default function DashboardSettings() {
             <div className="flex flex-col gap-[14px] w-full">
               <div>
                 <h2 className="font-poppins font-medium text-base text-[#1A1A1A]">Role</h2>
-                <p className="font-poppins font-normal text-xs text-[#888780] mt-0.5">Assign role to members</p>
+                <p className="font-poppins font-normal text-xs text-[#888780] mt-0.5">
+                  Your team&apos;s roles — manage members from the Staff page
+                </p>
               </div>
 
               {/* Members Table Card */}
@@ -331,15 +262,28 @@ export default function DashboardSettings() {
                       <th className="py-3 px-6">MEMBER</th>
                       <th className="py-3 px-6">ROLE</th>
                       <th className="py-3 px-6">STATUS</th>
-                      <th className="py-3 px-6">ACTION</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#E2E8F0]">
-                    {members.map((m, idx) => (
-                      <tr key={idx} className="hover:bg-neutral-50/50 h-[72px]">
+                    {staffListQuery.isLoading && (
+                      <tr>
+                        <td className="py-6 px-6 text-xs text-neutral-400" colSpan={3}>
+                          Loading team members…
+                        </td>
+                      </tr>
+                    )}
+                    {!staffListQuery.isLoading && staffMembers.length === 0 && (
+                      <tr>
+                        <td className="py-6 px-6 text-xs text-neutral-400" colSpan={3}>
+                          No team members yet.
+                        </td>
+                      </tr>
+                    )}
+                    {staffMembers.map((m) => (
+                      <tr key={m.userId} className="hover:bg-neutral-50/50 h-[72px]">
                         <td className="py-2.5 px-6">
                           <div className="flex items-center gap-3">
-                            <Image src={m.avatar} alt={m.name} className="w-10 h-10 rounded-full object-cover border border-[#E2E8F0]" width={40} height={40} />
+                            <Image src={m.avatarUrl || "/businessDashboard/downLogo.png"} alt={m.name} className="w-10 h-10 rounded-full object-cover border border-[#E2E8F0]" width={40} height={40} />
                             <div className="flex flex-col">
                               <span className="font-poppins font-medium text-[16px] leading-[28px] text-[#16123E]">
                                 {m.name}
@@ -352,61 +296,23 @@ export default function DashboardSettings() {
                         </td>
                         <td className="py-2.5 px-6">
                           <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${
-                            m.role === "Owner" ? "bg-[#E0F3F5] text-[#2E9DA7]" :
-                            m.role === "Supervisor" ? "bg-[#E6F1FB] text-[#3760B7]" :
+                            m.role === "BUSINESS_OWNER" ? "bg-[#E0F3F5] text-[#2E9DA7]" :
+                            m.role === "SUPERVISOR" ? "bg-[#E6F1FB] text-[#3760B7]" :
                             "bg-[#F5F4EE] text-[#5F5E5A]"
                           }`}>
-                            {m.role}
+                            {m.role === "BUSINESS_OWNER" ? "Owner" : m.role === "SUPERVISOR" ? "Supervisor" : "Staff"}
                           </span>
                         </td>
                         <td className="py-2.5 px-6">
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-[#DCFCE7] text-[#05895A] text-xs font-semibold rounded-full">
                             <span className="w-1.5 h-1.5 bg-[#02CC87] rounded-full" />
-                            {m.status}
+                            {m.employmentActive ? "Active" : "Inactive"}
                           </span>
-                        </td>
-                        <td className="py-2.5 px-6">
-                          <select
-                            value={m.role}
-                            onChange={(e) => {
-                              const updated = [...members];
-                              updated[idx].role = e.target.value as any;
-                              setMembers(updated);
-                            }}
-                            className="border border-neutral-300 rounded-[12px] px-3 py-1.5 text-xs focus:outline-none cursor-pointer bg-white"
-                          >
-                            <option value="Owner">Owner</option>
-                            <option value="Supervisor">Supervisor</option>
-                            <option value="Staff">Staff</option>
-                          </select>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-
-                {/* Pagination */}
-                <div className="flex items-center justify-between px-6 py-4 bg-[#F8FAFC] border-t border-[#E2E8F0]">
-                  <span className="font-poppins font-medium text-xs text-[#767676]">
-                    Showing 1-{members.length} of 24 members
-                  </span>
-
-                  <div className="flex items-center gap-2">
-                    <button className="w-8 h-8 border border-[#DEDDE3] rounded-lg flex items-center justify-center hover:bg-neutral-50 transition-all cursor-pointer">
-                      <HugeiconsIcon icon={ArrowLeft01Icon} className="w-4 h-4 text-[#DEDDE3]" />
-                    </button>
-                    <button className="px-3.5 py-1.5 border border-[#A7A5B6] bg-white text-xs font-semibold rounded-lg text-[#4D4D4D] cursor-pointer">
-                      1
-                    </button>
-                    <button className="px-3.5 py-1.5 border border-[#DEDDE3] bg-white text-xs font-semibold rounded-lg text-[#808080] hover:bg-neutral-50 cursor-pointer">
-                      2
-                    </button>
-                    <button className="w-8 h-8 border border-[#DEDDE3] rounded-lg flex items-center justify-center hover:bg-neutral-50 transition-all cursor-pointer">
-                      <HugeiconsIcon icon={ArrowRight01Icon} className="w-4 h-4 text-neutral-500" />
-                    </button>
-                  </div>
-                </div>
-
               </div>
             </div>
           )}
@@ -434,56 +340,69 @@ export default function DashboardSettings() {
                 </div>
 
                 <div className="border border-neutral-200 rounded-[12px] p-5 flex flex-col gap-4">
-                  {rules.map((rule, idx) => (
-                    <div key={idx} className="flex flex-col gap-3 pb-3 border-b border-neutral-100 last:border-b-0 last:pb-0">
-                      <div className="flex items-center justify-between w-full">
-                        <span className="font-inter font-normal text-xs text-black">
-                          {rule.timeframe}
-                        </span>
-                        
-                        <div className="flex items-center gap-2 cursor-pointer" onClick={() => {
-                          const updated = [...rules];
-                          updated[idx].freeOfCharge = !rule.freeOfCharge;
-                          setRules(updated);
-                        }}>
-                          {rule.freeOfCharge ? (
-                            <div className="w-5 h-5 bg-[#111111] rounded-[4px] flex items-center justify-center">
-                              <HugeiconsIcon icon={Tick01Icon} className="w-3.5 h-3.5 text-white" />
-                            </div>
-                          ) : (
-                            <div className="w-5 h-5 border-2 border-[#666666] rounded-[4px]" />
-                          )}
-                          <span className="font-inter font-normal text-xs text-black select-none">
-                            Free of charge
+                  {cancellationTiers.map((tier) => {
+                    const rule = cancellationForm[tier];
+                    const isFree = rule.mode === "FREE";
+                    return (
+                      <div key={tier} className="flex flex-col gap-3 pb-3 border-b border-neutral-100 last:border-b-0 last:pb-0">
+                        <div className="flex items-center justify-between w-full">
+                          <span className="font-inter font-normal text-xs text-black">
+                            {CANCELLATION_TIER_LABELS[tier]}
                           </span>
+
+                          <div
+                            className="flex items-center gap-2 cursor-pointer"
+                            onClick={() =>
+                              setCancellationForm((prev) => ({
+                                ...prev,
+                                [tier]: isFree
+                                  ? { mode: "PERCENTAGE", percentage: prev[tier].percentage }
+                                  : { mode: "FREE", percentage: prev[tier].percentage },
+                              }))
+                            }
+                          >
+                            {isFree ? (
+                              <div className="w-5 h-5 bg-[#111111] rounded-[4px] flex items-center justify-center">
+                                <HugeiconsIcon icon={Tick01Icon} className="w-3.5 h-3.5 text-white" />
+                              </div>
+                            ) : (
+                              <div className="w-5 h-5 border-2 border-[#666666] rounded-[4px]" />
+                            )}
+                            <span className="font-inter font-normal text-xs text-black select-none">
+                              Free of charge
+                            </span>
+                          </div>
                         </div>
+
+                        {!isFree && (
+                          <div className="flex items-center border border-[#D3D1C7] rounded-[8px] overflow-hidden h-9 px-4">
+                            <span className="font-poppins font-normal text-xs text-[#757575] mr-2">%</span>
+                            <input
+                              type="number"
+                              min={20}
+                              max={100}
+                              value={rule.percentage}
+                              onChange={(e) =>
+                                setCancellationForm((prev) => ({
+                                  ...prev,
+                                  [tier]: { mode: "PERCENTAGE", percentage: Number(e.target.value) },
+                                }))
+                              }
+                              className="flex-1 text-[13px] text-[#1A1A1A] font-poppins focus:outline-none h-full bg-transparent"
+                            />
+                          </div>
+                        )}
+
+                        {isFree && (
+                          <div className="flex items-center border border-[#D3D1C7] bg-[#FCFAF9] rounded-[8px] overflow-hidden h-9 px-4">
+                            <span className="font-poppins font-normal text-xs text-neutral-400">
+                              Free cancellation
+                            </span>
+                          </div>
+                        )}
                       </div>
-
-                      {!rule.freeOfCharge && (
-                        <div className="flex items-center border border-[#D3D1C7] rounded-[8px] overflow-hidden h-9 px-4">
-                          <span className="font-poppins font-normal text-xs text-[#757575] mr-2">%</span>
-                          <input
-                            type="number"
-                            value={rule.percentage}
-                            onChange={(e) => {
-                              const updated = [...rules];
-                              updated[idx].percentage = Number(e.target.value);
-                              setRules(updated);
-                            }}
-                            className="flex-1 text-[13px] text-[#1A1A1A] font-poppins focus:outline-none h-full bg-transparent"
-                          />
-                        </div>
-                      )}
-
-                      {rule.freeOfCharge && (
-                        <div className="flex items-center border border-[#D3D1C7] bg-[#FCFAF9] rounded-[8px] overflow-hidden h-9 px-4">
-                          <span className="font-poppins font-normal text-xs text-neutral-400">
-                            Free cancellation
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <div className="flex flex-col gap-2 mt-2">
@@ -497,6 +416,8 @@ export default function DashboardSettings() {
                     <span className="font-poppins font-normal text-xs text-[#757575] mr-2">%</span>
                     <input
                       type="number"
+                      min={20}
+                      max={100}
                       value={noShowPercent}
                       onChange={(e) => setNoShowPercent(Number(e.target.value))}
                       className="flex-1 text-[13px] text-[#1A1A1A] font-poppins focus:outline-none h-full bg-transparent"
@@ -504,12 +425,24 @@ export default function DashboardSettings() {
                   </div>
                 </div>
 
+                {cancellationFormError && (
+                  <p className="text-xs text-red-600 font-poppins">{cancellationFormError}</p>
+                )}
+
                 <div className="flex items-center justify-end gap-3 mt-4 pt-4 border-t border-neutral-100">
-                  <button className="px-4 py-2 border border-[#DEDDE3] rounded-[8px] text-xs font-semibold text-[#5B5D58] hover:bg-neutral-50 cursor-pointer">
+                  <button
+                    disabled={updateCancellationPolicyMutation.isPending}
+                    onClick={() => setCancellationFormInitialized(false)}
+                    className="px-4 py-2 border border-[#DEDDE3] rounded-[8px] text-xs font-semibold text-[#5B5D58] hover:bg-neutral-50 cursor-pointer disabled:opacity-50"
+                  >
                     Cancel
                   </button>
-                  <button className="px-4 py-2 bg-[#111111] hover:bg-black text-white rounded-[8px] text-xs font-semibold cursor-pointer">
-                    Save changes
+                  <button
+                    disabled={updateCancellationPolicyMutation.isPending}
+                    onClick={handleSaveCancellationPolicy}
+                    className="px-4 py-2 bg-[#111111] hover:bg-black text-white rounded-[8px] text-xs font-semibold cursor-pointer disabled:opacity-60"
+                  >
+                    {updateCancellationPolicyMutation.isPending ? "Saving..." : "Save changes"}
                   </button>
                 </div>
 
@@ -530,10 +463,10 @@ export default function DashboardSettings() {
                   Payout Bank Account Details (SEPA)
                 </span>
 
-                <div className="bg-[#FFF8E6] border border-[#FFEBAD] rounded-lg p-3 flex gap-2">
-                  <HugeiconsIcon icon={InformationCircleIcon} className="w-5 h-5 text-[#B28A00] shrink-0 mt-0.5" />
-                  <span className="text-xs text-[#665200] font-medium leading-[18px]">
-                    This information is used by Bookly admin to process your monthly SEPA transfer. It is stored securely and never shared.
+                <div className="bg-[#F7F5F1] border border-[#E2E8F0] rounded-lg p-3 flex gap-2">
+                  <HugeiconsIcon icon={InformationCircleIcon} className="w-5 h-5 text-[#6B7280] shrink-0 mt-0.5" />
+                  <span className="text-xs text-[#5B5D58] font-medium leading-[18px]">
+                    Bank details management isn&apos;t available yet.
                   </span>
                 </div>
 
@@ -542,42 +475,28 @@ export default function DashboardSettings() {
                     label="Account holder name/Business name"
                     value={bankHolder}
                     onChange={setBankHolder}
+                    disabled={true}
                   />
 
-                  <SettingsInput
-                    label="IBAN"
-                    value={bankIban}
-                    onChange={setBankIban}
-                  />
+                  <SettingsInput label="IBAN" value={bankIban} onChange={setBankIban} disabled={true} />
 
-                  <SettingsInput
-                    label="Bank name"
-                    value={bankName}
-                    onChange={setBankName}
-                  />
+                  <SettingsInput label="Bank name" value={bankName} onChange={setBankName} disabled={true} />
 
                   <SettingsInput
                     label="VAT no. (optional)"
                     value={bankVat}
                     onChange={setBankVat}
                     placeholder="e.g. 123"
+                    disabled={true}
                   />
                 </div>
 
-                <button className="w-full bg-[#111111] hover:bg-black text-white py-2.5 rounded-[12px] font-semibold text-sm transition-colors mt-2 cursor-pointer">
+                <button
+                  disabled={true}
+                  className="w-full bg-neutral-200 text-neutral-400 py-2.5 rounded-[12px] font-semibold text-sm mt-2 cursor-not-allowed"
+                >
                   Update bank details
                 </button>
-
-                <p className="text-[10px] text-neutral-400 text-center font-medium">
-                  Changes take effect from the next payout cycle
-                </p>
-
-                <div className="bg-[#FCFAF8] border border-[#ECE6DE] rounded-[12px] p-4 mt-2">
-                  <h4 className="text-xs font-semibold text-[#1A1A1A] mb-1">How your payout works</h4>
-                  <p className="text-[11px] text-[#666666] leading-[18px]">
-                    Bookly collects no-show and late cancellation fees from customers on your behalf via Stripe. At the end of each calendar month, 100% of these fees (minus processing fees) are transferred to your bank account via SEPA. Bookly takes zero commission on these fees.
-                  </p>
-                </div>
 
               </div>
             </div>
@@ -600,20 +519,15 @@ export default function DashboardSettings() {
                   <div className="flex items-center gap-3">
                     <Image src="/Icons/Google.svg" alt="Google" className="w-8 h-8 object-contain" width={32} height={32} />
                     <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-sm text-[#111111]">Google Calendar</span>
-                        {isGoogleConnected && (
-                          <span className="bg-[#D1F2E5] text-[#2C8561] text-[10px] font-bold px-2 py-0.5 rounded">Connected</span>
-                        )}
-                      </div>
-                      <span className="text-xs text-[#666666] mt-0.5">anna@saloncyprus.cy</span>
+                      <span className="font-semibold text-sm text-[#111111]">Google Calendar</span>
+                      <span className="text-xs text-[#666666] mt-0.5">Not connected</span>
                     </div>
                   </div>
                   <button
-                    onClick={() => setIsGoogleConnected(!isGoogleConnected)}
-                    className="px-4 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-[#5B5D58] hover:bg-neutral-50 transition-all cursor-pointer"
+                    disabled={true}
+                    className="px-4 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-neutral-400 cursor-not-allowed"
                   >
-                    {isGoogleConnected ? "Disconnect" : "Connect"}
+                    Connect
                   </button>
                 </div>
 
@@ -623,10 +537,10 @@ export default function DashboardSettings() {
                     <Image src="/Icons/instagram1.svg" alt="Instagram" className="w-8 h-8 object-contain" width={32} height={32} />
                     <div className="flex flex-col">
                       <span className="font-semibold text-sm text-[#111111]">Instagram</span>
-                      <span className="text-xs text-[#666666] mt-0.5">Add a "Connect" button directly to your Instagram profile.</span>
+                      <span className="text-xs text-[#666666] mt-0.5">Not connected</span>
                     </div>
                   </div>
-                  <button className="px-4 py-1.5 bg-[#111111] hover:bg-black text-white rounded-lg text-xs font-semibold transition-all cursor-pointer">
+                  <button disabled={true} className="px-4 py-1.5 bg-neutral-200 text-neutral-400 rounded-lg text-xs font-semibold cursor-not-allowed">
                     Connect
                   </button>
                 </div>
@@ -637,13 +551,15 @@ export default function DashboardSettings() {
                     <Image src="/Icons/Facebook.svg" alt="Facebook" className="w-8 h-8 object-contain" width={32} height={32} />
                     <div className="flex flex-col">
                       <span className="font-semibold text-sm text-[#111111]">Facebook</span>
-                      <span className="text-xs text-[#666666] mt-0.5">Add a "Connect" button directly to your Facebook profile.</span>
+                      <span className="text-xs text-[#666666] mt-0.5">Not connected</span>
                     </div>
                   </div>
-                  <button className="px-4 py-1.5 bg-[#111111] hover:bg-black text-white rounded-lg text-xs font-semibold transition-all cursor-pointer">
+                  <button disabled={true} className="px-4 py-1.5 bg-neutral-200 text-neutral-400 rounded-lg text-xs font-semibold cursor-not-allowed">
                     Connect
                   </button>
                 </div>
+
+                <p className="text-[11px] text-neutral-400">Integrations aren&apos;t available yet.</p>
 
               </div>
             </div>
@@ -662,102 +578,37 @@ export default function DashboardSettings() {
                 {/* Header title */}
                 <div className="p-5 border-b border-[#F0F0EE]">
                   <h3 className="font-poppins font-medium text-sm text-[#111111]">Notification triggers</h3>
-                  <p className="font-poppins font-normal text-xs text-neutral-400 mt-0.5">Choose which events send messages</p>
+                  <p className="font-poppins font-normal text-xs text-neutral-400 mt-0.5">Notification preferences aren&apos;t configurable yet — you&apos;ll always receive the existing booking emails.</p>
                 </div>
 
                 {/* List items */}
                 <div className="p-5 flex flex-col gap-5">
-                  
-                  {/* Row 1: New booking */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-sm text-[#111111]">New booking</span>
-                      <span className="text-xs text-neutral-400">When a client makes a new booking</span>
-                    </div>
-                    <button
-                      onClick={() => setNotifEmail(!notifEmail)}
-                      className={`w-[38px] h-[21px] rounded-full transition-colors flex items-center p-0.5 cursor-pointer ${
-                        notifEmail ? "bg-[#0F6E56]" : "bg-neutral-300"
-                      }`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${
-                        notifEmail ? "translate-x-[15px]" : ""
-                      }`} />
-                    </button>
-                  </div>
 
-                  <div className="border-t border-[#666666]/20" />
-
-                  {/* Row 2: Booking cancelled */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-sm text-[#111111]">Booking cancelled</span>
-                      <span className="text-xs text-neutral-400">When a booking is cancelled by client or staff</span>
-                    </div>
-                    <button
-                      onClick={() => setNotifSms(!notifSms)}
-                      className={`w-[38px] h-[21px] rounded-full transition-colors flex items-center p-0.5 cursor-pointer ${
-                        notifSms ? "bg-[#0F6E56]" : "bg-neutral-300"
-                      }`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${
-                        notifSms ? "translate-x-[15px]" : ""
-                      }`} />
-                    </button>
-                  </div>
-
-                  <div className="border-t border-[#666666]/20" />
-
-                  {/* Row 3: Reminder - 24h before */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-sm text-[#111111]">Reminder - 24h before</span>
-                      <span className="text-xs text-neutral-400">Sent to client the day before their appointment</span>
-                    </div>
-                    <button
-                      onClick={() => setNotifPush(!notifPush)}
-                      className={`w-[38px] h-[21px] rounded-full transition-colors flex items-center p-0.5 cursor-pointer ${
-                        notifPush ? "bg-[#0F6E56]" : "bg-neutral-300"
-                      }`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${
-                        notifPush ? "translate-x-[15px]" : ""
-                      }`} />
-                    </button>
-                  </div>
-
-                  <div className="border-t border-[#666666]/20" />
-
-                  {/* Row 4: Reminder - 1h before */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-sm text-[#111111]">Reminder - 1h before</span>
-                      <span className="text-xs text-neutral-400">Last minute reminder to reduce no-shows</span>
-                    </div>
-                    <button
-                      onClick={() => setTwoFactor(!twoFactor)}
-                      className={`w-[38px] h-[21px] rounded-full transition-colors flex items-center p-0.5 cursor-pointer ${
-                        twoFactor ? "bg-[#0F6E56]" : "bg-neutral-300"
-                      }`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${
-                        twoFactor ? "translate-x-[15px]" : ""
-                      }`} />
-                    </button>
-                  </div>
+                  {[
+                    { label: "New booking", description: "When a client makes a new booking" },
+                    { label: "Booking cancelled", description: "When a booking is cancelled by client or staff" },
+                    { label: "Reminder - 24h before", description: "Sent to client the day before their appointment" },
+                    { label: "Reminder - 1h before", description: "Last minute reminder to reduce no-shows" },
+                  ].map((row, i) => (
+                    <React.Fragment key={row.label}>
+                      {i > 0 && <div className="border-t border-[#666666]/20" />}
+                      <div className="flex items-center justify-between">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-sm text-[#111111]">{row.label}</span>
+                          <span className="text-xs text-neutral-400">{row.description}</span>
+                        </div>
+                        <div
+                          title="Not configurable yet"
+                          className="w-[38px] h-[21px] rounded-full bg-neutral-300 opacity-60 cursor-not-allowed flex items-center p-0.5"
+                        >
+                          <div className="w-4 h-4 bg-white rounded-full" />
+                        </div>
+                      </div>
+                    </React.Fragment>
+                  ))}
 
                 </div>
 
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-3 mt-4">
-                <button className="h-[34px] px-4 bg-[#EBEBEB] text-[#757575] hover:bg-neutral-200 rounded-[8px] text-xs font-semibold cursor-pointer">
-                  Cancel
-                </button>
-                <button className="h-[34px] px-4 bg-[#1C1B1C] hover:bg-black text-white rounded-[8px] text-xs font-semibold cursor-pointer">
-                  Save changes
-                </button>
               </div>
             </div>
           )}

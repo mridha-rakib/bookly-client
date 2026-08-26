@@ -24,6 +24,35 @@ export interface CatalogBusinessAddress {
   aptRoom?: string;
 }
 
+export type CatalogDayOfWeek =
+  | "MONDAY"
+  | "TUESDAY"
+  | "WEDNESDAY"
+  | "THURSDAY"
+  | "FRIDAY"
+  | "SATURDAY"
+  | "SUNDAY";
+
+export interface CatalogOpenStatus {
+  configured: boolean;
+  isOpen: boolean;
+  label: string;
+}
+
+export interface CatalogBusinessHoursDay {
+  dayOfWeek: CatalogDayOfWeek;
+  isOpen: boolean;
+  slots: { startTime: string; endTime: string }[];
+}
+
+export type CatalogMediaRole = "PROFILE" | "GALLERY";
+
+export interface CatalogMedia {
+  id: string;
+  url: string;
+  role: CatalogMediaRole;
+}
+
 export interface CatalogBusiness {
   id: string;
   name: string;
@@ -33,6 +62,9 @@ export interface CatalogBusiness {
   visitType: CatalogVisitType;
   timezone: string;
   address: CatalogBusinessAddress;
+  openStatus: CatalogOpenStatus;
+  hours: CatalogBusinessHoursDay[];
+  media: CatalogMedia[];
 }
 
 export type CatalogServicePricingMode = "FIXED" | "HOURLY" | "PER_PERSON" | "PACKAGE";
@@ -64,10 +96,14 @@ export interface CatalogService {
   assignedStaffMembershipIds: string[];
 }
 
+export type CatalogStaffRole = "SUPERVISOR" | "STAFF";
+
 export interface CatalogStaffMember {
   id: string;
   firstName: string;
   lastName?: string;
+  role: CatalogStaffRole;
+  avatarUrl?: string;
 }
 
 export interface BusinessCatalog {

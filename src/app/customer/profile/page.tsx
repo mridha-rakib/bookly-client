@@ -17,7 +17,14 @@ import { countries } from "@/components/CountryData";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
-import { useCurrentUserQuery, useUpdateMyProfileMutation } from "@/lib/auth/hooks";
+import {
+  useCurrentUserQuery,
+  useRequestEmailChangeMutation,
+  useRequestPhoneChangeMutation,
+  useUpdateMyProfileMutation,
+  useVerifyEmailChangeMutation,
+  useVerifyPhoneChangeMutation,
+} from "@/lib/auth/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
 import type { Gender } from "@/lib/api/auth";
 
@@ -65,6 +72,8 @@ function ProfilePageContent() {
   // Form State
   const [isEditing, setIsEditing] = useState(false);
   const [formError, setFormError] = useState("");
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
 
   // Avatar is a browser-only preview — no backend avatar-upload capability exists yet, so it is
   // never sent to the server and never claimed to be account data. See Navbar.tsx for the reader.
@@ -255,19 +264,37 @@ function ProfilePageContent() {
                         <span className="font-manrope font-semibold text-[12px] leading-4 tracking-[0.6px] uppercase text-[#45474B]">
                           Email address
                         </span>
-                        <span className="font-manrope font-medium text-[18px] leading-7 text-[#1C1B1C] break-words">
-                          {email}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-manrope font-medium text-[18px] leading-7 text-[#1C1B1C] break-words">
+                            {email}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsEmailModalOpen(true)}
+                            className="font-manrope font-semibold text-xs text-[#0C7C93] hover:underline cursor-pointer"
+                          >
+                            Change
+                          </button>
+                        </div>
                       </div>
 
                       <div className="flex flex-col items-start gap-1">
                         <span className="font-manrope font-semibold text-[12px] leading-4 tracking-[0.6px] uppercase text-[#45474B]">
                           Phone number
                         </span>
-                        <span className="font-manrope font-medium text-[18px] leading-7 text-[#1C1B1C] flex items-center gap-1.5">
-                          <Image src={`https://flagcdn.com/w20/${formData.countryIso}.png`} alt="Flag" className="w-4 h-3 object-cover shrink-0" width={16} height={12} />
-                          <span>{displayPhone}</span>
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-manrope font-medium text-[18px] leading-7 text-[#1C1B1C] flex items-center gap-1.5">
+                            <Image src={`https://flagcdn.com/w20/${formData.countryIso}.png`} alt="Flag" className="w-4 h-3 object-cover shrink-0" width={16} height={12} />
+                            <span>{displayPhone}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsPhoneModalOpen(true)}
+                            className="font-manrope font-semibold text-xs text-[#0C7C93] hover:underline cursor-pointer"
+                          >
+                            Change
+                          </button>
+                        </div>
                       </div>
 
                       <div className="flex flex-col items-start gap-1">
@@ -358,7 +385,7 @@ function ProfilePageContent() {
                           {email}
                         </div>
                         <span className="font-manrope text-[11px] text-[#76777B]">
-                          Email can&apos;t be changed yet.
+                          Use the &quot;Change&quot; link on your profile to update your email.
                         </span>
                       </div>
 
@@ -371,7 +398,7 @@ function ProfilePageContent() {
                           <span>{displayPhone}</span>
                         </div>
                         <span className="font-manrope text-[11px] text-[#76777B]">
-                          Phone number can&apos;t be changed yet.
+                          Use the &quot;Change&quot; link on your profile to update your phone number.
                         </span>
                       </div>
 
@@ -467,6 +494,319 @@ function ProfilePageContent() {
       <div className="h-[500px] w-full" />
 
       <Footer />
+
+      {isEmailModalOpen && (
+        <ChangeEmailModal currentEmail={email} onClose={() => setIsEmailModalOpen(false)} />
+      )}
+      {isPhoneModalOpen && (
+        <ChangePhoneModal
+          currentCountryCode={phoneCountryCode}
+          onClose={() => setIsPhoneModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+type ChangeEmailModalProps = {
+  currentEmail: string;
+  onClose: () => void;
+};
+
+function ChangeEmailModal({ currentEmail, onClose }: ChangeEmailModalProps) {
+  const requestMutation = useRequestEmailChangeMutation();
+  const verifyMutation = useVerifyEmailChangeMutation();
+
+  const [step, setStep] = useState<"form" | "otp">("form");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+
+  const handleRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    try {
+      await requestMutation.mutateAsync({ currentPassword, newEmail });
+      setStep("otp");
+    } catch (err) {
+      setError(toUserMessage(err));
+    }
+  };
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    try {
+      await verifyMutation.mutateAsync(code);
+      onClose();
+    } catch (err) {
+      setError(toUserMessage(err));
+    }
+  };
+
+  const isPending = requestMutation.isPending || verifyMutation.isPending;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[300] p-4">
+      <div className="bg-white rounded-xl shadow-2xl border border-[#C6C6CB] p-6 w-full max-w-[480px] animate-in fade-in zoom-in-95 duration-200">
+        <h3 className="font-manrope font-bold text-xl text-[#020305] mb-1">Change email</h3>
+        <p className="font-manrope text-sm text-[#4E5F78] mb-4">
+          Current email: <span className="font-medium text-[#1C1B1C]">{currentEmail}</span>
+        </p>
+
+        {step === "form" ? (
+          <form onSubmit={handleRequest} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="font-manrope font-semibold text-xs text-[#4E5F78] uppercase">
+                Current password
+              </label>
+              <input
+                type="password"
+                required
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full h-11 px-3 border border-[#C6C6CB] rounded-lg focus:outline-none focus:border-[#0CC0DF] font-manrope text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="font-manrope font-semibold text-xs text-[#4E5F78] uppercase">
+                New email
+              </label>
+              <input
+                type="email"
+                required
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full h-11 px-3 border border-[#C6C6CB] rounded-lg focus:outline-none focus:border-[#0CC0DF] font-manrope text-sm"
+              />
+            </div>
+
+            {error && <p className="text-sm text-red-600 font-manrope">{error}</p>}
+
+            <div className="flex flex-row justify-end items-center gap-3 mt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isPending}
+                className="px-4 py-2 border border-[#C6C6CB] rounded-lg hover:bg-neutral-50 font-manrope font-semibold text-sm text-[#020305] cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isPending}
+                className="px-4 py-2 bg-[#1A1A1A] hover:bg-black text-white rounded-lg font-manrope font-semibold text-sm cursor-pointer disabled:opacity-60"
+              >
+                {requestMutation.isPending ? "Sending..." : "Send code"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handleVerify} className="flex flex-col gap-4">
+            <p className="font-manrope text-sm text-[#4E5F78]">
+              Enter the 4-digit code we sent to <span className="font-medium text-[#1C1B1C]">{newEmail}</span>.
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <label className="font-manrope font-semibold text-xs text-[#4E5F78] uppercase">
+                Verification code
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                required
+                maxLength={4}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                placeholder="1234"
+                className="w-full h-11 px-3 border border-[#C6C6CB] rounded-lg focus:outline-none focus:border-[#0CC0DF] font-manrope text-sm tracking-[6px]"
+              />
+            </div>
+
+            {error && <p className="text-sm text-red-600 font-manrope">{error}</p>}
+
+            <div className="flex flex-row justify-end items-center gap-3 mt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isPending}
+                className="px-4 py-2 border border-[#C6C6CB] rounded-lg hover:bg-neutral-50 font-manrope font-semibold text-sm text-[#020305] cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isPending || code.length !== 4}
+                className="px-4 py-2 bg-[#1A1A1A] hover:bg-black text-white rounded-lg font-manrope font-semibold text-sm cursor-pointer disabled:opacity-60"
+              >
+                {verifyMutation.isPending ? "Verifying..." : "Verify"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type ChangePhoneModalProps = {
+  currentCountryCode: string;
+  onClose: () => void;
+};
+
+function ChangePhoneModal({ currentCountryCode, onClose }: ChangePhoneModalProps) {
+  const requestMutation = useRequestPhoneChangeMutation();
+  const verifyMutation = useVerifyPhoneChangeMutation();
+
+  const [step, setStep] = useState<"form" | "otp">("form");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [countryCode, setCountryCode] = useState(currentCountryCode);
+  const [nationalNumber, setNationalNumber] = useState("");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+
+  const handleRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    try {
+      await requestMutation.mutateAsync({ currentPassword, countryCode, nationalNumber });
+      setStep("otp");
+    } catch (err) {
+      setError(toUserMessage(err));
+    }
+  };
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    try {
+      await verifyMutation.mutateAsync(code);
+      onClose();
+    } catch (err) {
+      setError(toUserMessage(err));
+    }
+  };
+
+  const isPending = requestMutation.isPending || verifyMutation.isPending;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[300] p-4">
+      <div className="bg-white rounded-xl shadow-2xl border border-[#C6C6CB] p-6 w-full max-w-[480px] animate-in fade-in zoom-in-95 duration-200">
+        <h3 className="font-manrope font-bold text-xl text-[#020305] mb-4">Change phone number</h3>
+
+        {step === "form" ? (
+          <form onSubmit={handleRequest} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="font-manrope font-semibold text-xs text-[#4E5F78] uppercase">
+                Current password
+              </label>
+              <input
+                type="password"
+                required
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full h-11 px-3 border border-[#C6C6CB] rounded-lg focus:outline-none focus:border-[#0CC0DF] font-manrope text-sm"
+              />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex flex-col gap-1.5 w-24">
+                <label className="font-manrope font-semibold text-xs text-[#4E5F78] uppercase">
+                  Code
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={countryCode}
+                  onChange={(e) => setCountryCode(e.target.value)}
+                  placeholder="+357"
+                  className="w-full h-11 px-3 border border-[#C6C6CB] rounded-lg focus:outline-none focus:border-[#0CC0DF] font-manrope text-sm"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5 flex-1">
+                <label className="font-manrope font-semibold text-xs text-[#4E5F78] uppercase">
+                  New phone number
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={nationalNumber}
+                  onChange={(e) => setNationalNumber(e.target.value.replace(/\D/g, ""))}
+                  placeholder="99123456"
+                  className="w-full h-11 px-3 border border-[#C6C6CB] rounded-lg focus:outline-none focus:border-[#0CC0DF] font-manrope text-sm"
+                />
+              </div>
+            </div>
+
+            {error && <p className="text-sm text-red-600 font-manrope">{error}</p>}
+
+            <div className="flex flex-row justify-end items-center gap-3 mt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isPending}
+                className="px-4 py-2 border border-[#C6C6CB] rounded-lg hover:bg-neutral-50 font-manrope font-semibold text-sm text-[#020305] cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isPending}
+                className="px-4 py-2 bg-[#1A1A1A] hover:bg-black text-white rounded-lg font-manrope font-semibold text-sm cursor-pointer disabled:opacity-60"
+              >
+                {requestMutation.isPending ? "Sending..." : "Send code"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handleVerify} className="flex flex-col gap-4">
+            <p className="font-manrope text-sm text-[#4E5F78]">
+              Enter the 4-digit code we texted to{" "}
+              <span className="font-medium text-[#1C1B1C]">
+                {countryCode} {nationalNumber}
+              </span>
+              .
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <label className="font-manrope font-semibold text-xs text-[#4E5F78] uppercase">
+                Verification code
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                required
+                maxLength={4}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                placeholder="1234"
+                className="w-full h-11 px-3 border border-[#C6C6CB] rounded-lg focus:outline-none focus:border-[#0CC0DF] font-manrope text-sm tracking-[6px]"
+              />
+            </div>
+
+            {error && <p className="text-sm text-red-600 font-manrope">{error}</p>}
+
+            <div className="flex flex-row justify-end items-center gap-3 mt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isPending}
+                className="px-4 py-2 border border-[#C6C6CB] rounded-lg hover:bg-neutral-50 font-manrope font-semibold text-sm text-[#020305] cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isPending || code.length !== 4}
+                className="px-4 py-2 bg-[#1A1A1A] hover:bg-black text-white rounded-lg font-manrope font-semibold text-sm cursor-pointer disabled:opacity-60"
+              >
+                {verifyMutation.isPending ? "Verifying..." : "Verify"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
     </div>
   );
 }

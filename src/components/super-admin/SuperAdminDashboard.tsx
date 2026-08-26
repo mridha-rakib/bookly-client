@@ -80,10 +80,10 @@ export default function SuperAdminDashboard() {
             setSharedViewingBusinessTab={setSharedViewingBusinessTab}
           />
         ) : activeTab === "Promo Code" ? (
-          <SuperAdminPromoCode 
-            onClientClick={(clientEmail) => {
-              // Redirect to customers tab and load the details page
-              setSharedViewingCustomerId("1"); // Use matching customer ID (e.g. ID "1") for demo details
+          <SuperAdminPromoCode
+            onClientClick={(customerUserId) => {
+              // Redirect to customers tab and load the details page for the clicked redemption's customer
+              setSharedViewingCustomerId(customerUserId);
               setActiveTab("Customers");
             }}
           />

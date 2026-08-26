@@ -2,75 +2,42 @@
 
 import Image from "next/image";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   User02Icon,
   Notification01Icon,
   SecurityCheckIcon,
-  Camera01Icon,
-  ArrowDown01Icon
+  Camera01Icon
 } from "@hugeicons/core-free-icons";
 
 import { SettingsInput } from "../settings/SettingsInput";
 import { SettingsSubSidebar } from "../settings/SettingsSubSidebar";
 import { Security2FAPanel } from "../settings/Security2FAPanel";
+import { useCurrentUserQuery } from "@/lib/auth/hooks";
 
 export default function StaffSettings() {
   const [activeSubTab, setActiveSubTab] = useState<string>("Personal info");
 
-  // Personal Info States
-  const [personalName, setPersonalName] = useState("Basel");
-  const [personalEmail, setPersonalEmail] = useState("basel@msplan.com");
-  const [personalRole, setPersonalRole] = useState("Staff");
-  const [personalPhone, setPersonalPhone] = useState("1234556666");
+  // Personal Info — read-only, real (Batch 19): sourced from /auth/me. No PATCH /auth/me
+  // equivalent exists for STAFF (only CUSTOMER has one — see Batch 17/18), so editing stays
+  // honestly non-functional below instead of silently discarding changes to localStorage.
+  const meQuery = useCurrentUserQuery();
+  const personalName = meQuery.data?.profile?.fullName ?? "";
+  const personalEmail = meQuery.data?.user.email ?? "";
+  const personalRole = "Staff";
+  const personalPhone = meQuery.data?.profile?.phone
+    ? `${meQuery.data.profile.phone.countryCode} ${meQuery.data.profile.phone.nationalNumber}`
+    : "";
 
-  // Initial Unsaved tracking states
-  const [initialName, setInitialName] = useState("Basel");
-  const [initialEmail, setInitialEmail] = useState("basel@msplan.com");
-  const [initialPhone, setInitialPhone] = useState("1234556666");
-
-  const [profileImage, setProfileImage] = useState<string>("/businessDashboard/downLogo.png");
+  // Avatar is a browser-only preview — no backend avatar-upload capability exists yet for any
+  // Business role.
+  const [profileImage, setProfileImage] = useState<string>(
+    () =>
+      (typeof window !== "undefined" && localStorage.getItem("settingsProfileImage")) ||
+      "/businessDashboard/downLogo.png",
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedImage = localStorage.getItem("settingsProfileImage");
-      if (savedImage) {
-        setProfileImage(savedImage);
-      }
-      const savedName = localStorage.getItem("staff_personalName");
-      const savedEmail = localStorage.getItem("staff_personalEmail");
-      const savedPhone = localStorage.getItem("staff_personalPhone");
-      if (savedName) {
-        setPersonalName(savedName);
-        setInitialName(savedName);
-      }
-      if (savedEmail) {
-        setPersonalEmail(savedEmail);
-        setInitialEmail(savedEmail);
-      }
-      if (savedPhone) {
-        setPersonalPhone(savedPhone);
-        setInitialPhone(savedPhone);
-      }
-    }
-  }, []);
-
-  const handleSave = () => {
-    localStorage.setItem("staff_personalName", personalName);
-    localStorage.setItem("staff_personalEmail", personalEmail);
-    localStorage.setItem("staff_personalPhone", personalPhone);
-    setInitialName(personalName);
-    setInitialEmail(personalEmail);
-    setInitialPhone(personalPhone);
-  };
-
-  const handleCancel = () => {
-    setPersonalName(initialName);
-    setPersonalEmail(initialEmail);
-    setPersonalPhone(initialPhone);
-  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -85,76 +52,6 @@ export default function StaffSettings() {
       reader.readAsDataURL(file);
     }
   };
-
-  // Country Picker State
-  const [selectedCountry, setSelectedCountry] = useState({
-    code: "+357",
-    name: "Cyprus",
-    svg: (
-      <svg className="w-5 h-3.5 shrink-0 rounded-[1px] shadow-[0px_0.5px_2px_rgba(0,0,0,0.25)]" viewBox="0 0 900 600" xmlns="http://www.w3.org/2000/svg">
-        <rect width="900" height="600" fill="#fff"/>
-        <path d="M418 135c3 1 12 1 18 3 7 3 20 6 30 11 11 6 22 13 32 20 15 11 31 24 41 38 7 11 14 26 15 39 1 14-3 30-10 42-10 17-27 28-44 36-16 8-36 12-54 13-18 1-38-3-54-10-18-8-32-23-40-41-4-9-6-20-6-30s1-19 5-28c9-21 27-37 46-49 13-8 27-14 42-17 11-3 20-5 27-5 2-8 3-15 4-22-2-6-5-12-8-17-7-14-19-25-33-33-14-9-31-13-48-12-17 0-35 5-49 15-13 9-23 23-28 38-5 13-6 29-2 43 4 15 12 28 22 39 12 13 27 23 44 29 18 7 38 9 57 7 19-2 38-9 54-19s28-25 35-43c7-17 9-37 4-55-4-19-14-36-28-49-14-13-32-21-50-25-18-4-37-3-55 2-17 5-33 14-46 26-12 12-21 28-24 45-3 15-2 32 4 47 6 15 16 27 28 37s27 16 43 19c15 3 32 2 47-3 15-5 28-15 37-28 9-12 13-28 12-43" fill="#D47000"/>
-        <path d="M290 400s30 50 160 50 160-50 160-50-60 10-160 10-160-10-160-10z" fill="#006A3B"/>
-      </svg>
-    )
-  });
-  const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
-
-  const countries = [
-    {
-      code: "+880",
-      name: "Bangladesh",
-      svg: (
-        <svg className="w-5 h-3.5 shrink-0 rounded-[1px] shadow-[0px_0.5px_2px_rgba(0,0,0,0.25)]" viewBox="0 0 20 12" xmlns="http://www.w3.org/2000/svg">
-          <rect width="20" height="12" fill="#006a4e"/>
-          <circle cx="9" cy="6" r="4" fill="#f42a41"/>
-        </svg>
-      )
-    },
-    {
-      code: "+1",
-      name: "United States",
-      svg: (
-        <svg className="w-5 h-3.5 shrink-0 rounded-[1px] shadow-[0px_0.5px_2px_rgba(0,0,0,0.25)]" viewBox="0 0 20 13" xmlns="http://www.w3.org/2000/svg">
-          <rect width="20" height="13" fill="#b22234"/>
-          <path d="M0,1h20M0,3h20M0,5h20M0,7h20M0,9h20M0,11h20" stroke="#fff" strokeWidth={1}/>
-          <rect width="8" height="7" fill="#3c3b6e"/>
-          <circle cx="2" cy="2" r="0.4" fill="#fff"/>
-          <circle cx="6" cy="2" r="0.4" fill="#fff"/>
-          <circle cx="4" cy="3.5" r="0.4" fill="#fff"/>
-          <circle cx="2" cy="5" r="0.4" fill="#fff"/>
-          <circle cx="6" cy="5" r="0.4" fill="#fff"/>
-        </svg>
-      )
-    },
-    {
-      code: "+44",
-      name: "United Kingdom",
-      svg: (
-        <svg className="w-5 h-3.5 shrink-0 rounded-[1px] shadow-[0px_0.5px_2px_rgba(0,0,0,0.25)]" viewBox="0 0 60 30" xmlns="http://www.w3.org/2000/svg">
-          <rect width="60" height="30" fill="#012169"/>
-          <path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" strokeWidth="6" />
-          <path d="M0,0 L60,30 M60,0 L0,30" stroke="#012169" strokeWidth="4" />
-          <path d="M30,0 v30 M0,15 h60" stroke="#fff" strokeWidth="10" />
-          <path d="M30,0 v30 M0,15 h60" stroke="#C8102E" strokeWidth="6" />
-        </svg>
-      )
-    },
-    {
-      code: "+357",
-      name: "Cyprus",
-      svg: (
-        <svg className="w-5 h-3.5 shrink-0 rounded-[1px] shadow-[0px_0.5px_2px_rgba(0,0,0,0.25)]" viewBox="0 0 900 600" xmlns="http://www.w3.org/2000/svg">
-          <rect width="900" height="600" fill="#fff"/>
-          <path d="M418 135c3 1 12 1 18 3 7 3 20 6 30 11 11 6 22 13 32 20 15 11 31 24 41 38 7 11 14 26 15 39 1 14-3 30-10 42-10 17-27 28-44 36-16 8-36 12-54 13-18 1-38-3-54-10-18-8-32-23-40-41-4-9-6-20-6-30s1-19 5-28c9-21 27-37 46-49 13-8 27-14 42-17 11-3 20-5 27-5 2-8 3-15 4-22-2-6-5-12-8-17-7-14-19-25-33-33-14-9-31-13-48-12-17 0-35 5-49 15-13 9-23 23-28 38-5 13-6 29-2 43 4 15 12 28 22 39 12 13 27 23 44 29 18 7 38 9 57 7 19-2 38-9 54-19s28-25 35-43c7-17 9-37 4-55-4-19-14-36-28-49-14-13-32-21-50-25-18-4-37-3-55 2-17 5-33 14-46 26-12 12-21 28-24 45-3 15-2 32 4 47 6 15 16 27 28 37s27 16 43 19c15 3 32 2 47-3 15-5 28-15 37-28 9-12 13-28 12-43" fill="#D47000"/>
-          <path d="M290 400s30 50 160 50 160-50 160-50-60 10-160 10-160-10-160-10z" fill="#006A3B"/>
-        </svg>
-      )
-    }
-  ];
-
-  // Security Toggles
-  const [twoFactor, setTwoFactor] = useState(false);
 
   // Subtabs list
   const subTabs = [
@@ -199,22 +96,26 @@ export default function StaffSettings() {
                   <div className="flex items-center gap-4 mt-2">
                     <div className="relative w-20 h-20 rounded-full border border-neutral-200 overflow-hidden bg-neutral-100">
                       <Image src={profileImage} alt="Profile" className="w-full h-full object-cover" fill />
-                      <button 
+                      <button
                         type="button"
+                        onClick={() => fileInputRef.current?.click()}
                         className="absolute bottom-1 right-1 w-6 h-6 bg-white border border-neutral-300 rounded-full flex items-center justify-center hover:bg-neutral-50 shadow-sm cursor-pointer"
                       >
                         <HugeiconsIcon icon={Camera01Icon} className="w-3.5 h-3.5 text-[#111111]" />
                       </button>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleImageChange}
+                        accept="image/*"
+                        className="hidden"
+                      />
                     </div>
                   </div>
                 </div>
 
                 {/* Name */}
-                <SettingsInput
-                  label="Name"
-                  value={personalName}
-                  onChange={setPersonalName}
-                />
+                <SettingsInput label="Name" value={personalName} onChange={() => {}} disabled={true} />
 
                 {/* Email and Role Row */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -222,7 +123,7 @@ export default function StaffSettings() {
                     label="Email"
                     type="email"
                     value={personalEmail}
-                    onChange={setPersonalEmail}
+                    onChange={() => {}}
                     disabled={true}
                   />
 
@@ -237,46 +138,16 @@ export default function StaffSettings() {
                 </div>
 
                 {/* Mobile number */}
-                <div className="flex flex-col gap-1">
-                  <span className="font-poppins font-semibold text-[10px] tracking-[0.8px] uppercase text-[#6B7280]">
-                    MOBILE NUMBER
-                  </span>
-                  <div className="flex items-center border border-[#D3D1C7] rounded-[8px] h-10 relative">
-                    <div className="flex items-center gap-1.5 px-3 border-r border-[#D3D1C7] bg-neutral-50 h-full select-none">
-                      {selectedCountry.svg}
-                      <span className="text-xs font-semibold text-neutral-600">{selectedCountry.code}</span>
-                      <HugeiconsIcon icon={ArrowDown01Icon} className="w-3.5 h-3.5 text-neutral-500" strokeWidth={1.5} />
-                    </div>
-                    <input
-                      type="text"
-                      value={personalPhone}
-                      onChange={(e) => setPersonalPhone(e.target.value)}
-                      className="flex-1 px-3 text-[14px] text-[#1A1A1A] font-poppins focus:outline-none h-full bg-transparent"
-                    />
-                  </div>
-                </div>
+                <SettingsInput
+                  label="Mobile number"
+                  value={personalPhone || "Not set"}
+                  onChange={() => {}}
+                  disabled={true}
+                />
 
-                {/* Save and Cancel buttons */}
-                {(personalName !== initialName ||
-                  personalEmail !== initialEmail ||
-                  personalPhone !== initialPhone) && (
-                  <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-[#EFEFED]">
-                    <button
-                      type="button"
-                      onClick={handleCancel}
-                      className="px-4 py-2 border border-[#D5D2C9] rounded-lg text-xs font-semibold text-neutral-600 hover:bg-neutral-50 transition-colors cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSave}
-                      className="px-4 py-2 bg-[#2E9DA7] text-white rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer"
-                    >
-                      Save Changes
-                    </button>
-                  </div>
-                )}
+                <p className="font-poppins text-xs text-[#888780]">
+                  Editing personal info isn&apos;t available yet.
+                </p>
 
               </div>
             </div>

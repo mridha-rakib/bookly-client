@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Image from "next/image";
-import { mockVenueDetails } from "./mockVenue";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft01Icon, ArrowRight01Icon, Clock04Icon, Location05Icon, SquareLock01Icon, InformationCircleIcon, Cancel01Icon, FavouriteIcon } from "@hugeicons/core-free-icons";
 import ServiceCard, { Recommendation } from "@/components/ServiceCard";
@@ -31,6 +30,7 @@ import { getStripe } from "@/lib/payments/stripe-client";
 import { formatBookingMoney } from "@/lib/bookings/format";
 import { toUserMessage } from "@/lib/auth/messages";
 import { useBusinessRatingSummaryQuery, useBusinessReviewsQuery } from "@/lib/review/hooks";
+import { formatTime12Hour } from "@/lib/staff/format";
 
 function VenueDetailsContent() {
   const router = useRouter();
@@ -44,6 +44,16 @@ function VenueDetailsContent() {
 
   // Real Business + Service catalog (Batch 9) — replaces mockVenueDetails' hardcoded services.
   const catalogQuery = useBusinessCatalogQuery(venueId);
+
+  // Batch 17 — real Business profile (name/phone/address/category/about/open-status/hours/
+  // media) + real Staff team, replacing every remaining mockVenueDetails.* field on this page.
+  // `business` is undefined while catalogQuery is loading/erroring — every read below falls
+  // back to an empty/neutral value rather than fabricating a placeholder venue.
+  const business = catalogQuery.data?.business;
+  const venueLocationText = business ? `${business.address.area}, ${business.address.city}` : "";
+  const venueMedia = business?.media ?? [];
+  const heroImages = venueMedia.length > 0 ? venueMedia.map((item) => item.url) : ["/image/imgOfService.png"];
+  const teamMembers = catalogQuery.data?.staff ?? [];
 
   // Batch 14 — real Business rating summary + public Reviews list, replacing
   // mockVenueDetails.rating/reviewsCount/reviews (see this file's own history).
@@ -447,8 +457,8 @@ function VenueDetailsContent() {
       if (navigator.share) {
         try {
           await navigator.share({
-            title: mockVenueDetails.name,
-            text: `Check out ${mockVenueDetails.name} on Iron`,
+            title: business?.name ?? "Bookly",
+            text: business ? `Check out ${business.name} on Bookly` : "Check out this business on Bookly",
             url: window.location.href,
           });
         } catch (err) {
@@ -484,13 +494,6 @@ function VenueDetailsContent() {
     const { clientWidth } = heroScrollRef.current;
     heroScrollRef.current.scrollBy({ left: clientWidth, behavior: "smooth" });
   };
-
-  const heroImages = [
-    "/image/imgOfService.png",
-    "/img/authImg.png",
-    "/img/authImg2.png",
-    "/img/authImg3.png"
-  ];
 
   /** Batch 9 — a single selected Service (one at a time, matching the real booking wizard's own
    * one-service-per-booking flow shown in the Figma reference — never an accumulating
@@ -560,7 +563,7 @@ function VenueDetailsContent() {
           <HugeiconsIcon icon={ArrowRight01Icon} size={14} className="text-gray-400" />
           <span>Nad Al Sheba 1</span>
           <HugeiconsIcon icon={ArrowRight01Icon} size={14} className="text-gray-400" />
-          <span className="font-semibold">{mockVenueDetails.name}</span>
+          <span className="font-semibold">{business?.name ?? (catalogQuery.isLoading ? "Loading…" : "")}</span>
         </div>
 
         {/* 2. Hero Image Banner Section */}
@@ -581,7 +584,7 @@ function VenueDetailsContent() {
                 <div key={idx} className="w-full h-full shrink-0 snap-start relative">
                   <Image
                     src={img}
-                    alt={`${mockVenueDetails.name} ${idx + 1}`}
+                    alt={`${business?.name ?? "Business"} ${idx + 1}`}
                     fill
                     className="object-cover pointer-events-none"
                     priority={idx === 0}
@@ -629,7 +632,7 @@ function VenueDetailsContent() {
         <div className="flex flex-col sm:flex-row justify-between items-start gap-4 w-full mt-4">
           <div className="flex flex-col gap-3 max-w-[800px]">
             <h1 className="font-inter font-bold text-[36px] sm:text-[45px] leading-tight text-[#0D0D0D]">
-              {mockVenueDetails.name}
+              {business?.name ?? (catalogQuery.isLoading ? "Loading…" : "")}
             </h1>
 
             {/* Metadata row */}
@@ -648,22 +651,32 @@ function VenueDetailsContent() {
                   <span className="font-normal text-[#757575]">No reviews yet</span>
                 )}
               </div>
-              <span className="text-[#0D0D0D] font-bold">•</span>
-              <div className="flex items-center gap-1">
-                <HugeiconsIcon icon={Location05Icon} />
-                <span className="text-[#767676]">{mockVenueDetails.location}</span>
-              </div>
-              <span className="text-[#0D0D0D] font-bold">•</span>
-              <div className="flex items-center gap-1">
-                <HugeiconsIcon icon={Clock04Icon} />
-                <span className="text-[#B7570B] font-medium">{mockVenueDetails.openStatus}</span>
-              </div>
+              {venueLocationText && (
+                <>
+                  <span className="text-[#0D0D0D] font-bold">•</span>
+                  <div className="flex items-center gap-1">
+                    <HugeiconsIcon icon={Location05Icon} />
+                    <span className="text-[#767676]">{venueLocationText}</span>
+                  </div>
+                </>
+              )}
+              {business?.openStatus.configured && (
+                <>
+                  <span className="text-[#0D0D0D] font-bold">•</span>
+                  <div className="flex items-center gap-1">
+                    <HugeiconsIcon icon={Clock04Icon} />
+                    <span className="text-[#B7570B] font-medium">{business.openStatus.label}</span>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Category tag */}
-            <span className="self-start bg-[#D1D1D1] text-[#111111] rounded-xl px-4 py-1.5 text-sm font-semibold tracking-wide">
-              {mockVenueDetails.category}
-            </span>
+            {business?.category && (
+              <span className="self-start bg-[#D1D1D1] text-[#111111] rounded-xl px-4 py-1.5 text-sm font-semibold tracking-wide">
+                {business.category}
+              </span>
+            )}
           </div>
 
           {/* Share (Download) and Favorite buttons */}
@@ -916,58 +929,69 @@ function VenueDetailsContent() {
                   <div className="flex flex-col gap-8 font-poppins">
                     <div className="flex flex-col gap-4">
                       <h3 className="font-bold text-2xl text-[#0D0D0D]">About</h3>
-                      <p className="text-[#4E5F78] leading-relaxed">
-                        {mockVenueDetails.aboutText}
-                      </p>
+                      {catalogQuery.isLoading && (
+                        <p className="text-sm text-neutral-500">Loading…</p>
+                      )}
+                      {!catalogQuery.isLoading && business?.briefDescription && (
+                        <p className="text-[#4E5F78] leading-relaxed">
+                          {business.briefDescription}
+                        </p>
+                      )}
+                      {!catalogQuery.isLoading && !business?.briefDescription && !catalogQuery.isError && (
+                        <p className="text-sm text-neutral-500">No description provided yet.</p>
+                      )}
                     </div>
 
-                    {/* Static Google Maps mockup */}
-                    <div className="w-full h-[320px] bg-[#EAE8E4] rounded-xl relative overflow-hidden shadow-inner border border-neutral-200">
-                      <iframe
-                        width="100%"
-                        height="100%"
-                        frameBorder="0"
-                        style={{ border: 0 }}
-                        src="https://maps.google.com/maps?q=Sobha%20Hartland%20Dubai&t=&z=14&ie=UTF8&iwloc=&output=embed"
-                        allowFullScreen
-                      />
-                      {/* Center Pin overlay */}
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10 pointer-events-none">
-                        <div className="bg-[#1C1B1C] text-white px-3 py-1.5 rounded-lg text-xs font-semibold font-poppins shadow-md whitespace-nowrap">
-                          {mockVenueDetails.name} <span className="text-[#FFC00A] ml-1">5.0</span>
+                    {/* Google Maps embed of the real Business address */}
+                    {business && (
+                      <div className="w-full h-[320px] bg-[#EAE8E4] rounded-xl relative overflow-hidden shadow-inner border border-neutral-200">
+                        <iframe
+                          width="100%"
+                          height="100%"
+                          frameBorder="0"
+                          style={{ border: 0 }}
+                          src={`https://maps.google.com/maps?q=${encodeURIComponent(venueLocationText)}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
+                          allowFullScreen
+                        />
+                        {/* Center Pin overlay */}
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10 pointer-events-none">
+                          <div className="bg-[#1C1B1C] text-white px-3 py-1.5 rounded-lg text-xs font-semibold font-poppins shadow-md whitespace-nowrap">
+                            {business.name}
+                          </div>
+                          {/* Down arrow caret */}
+                          <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-[#1C1B1C]" />
                         </div>
-                        {/* Down arrow caret */}
-                        <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-[#1C1B1C]" />
-                      </div>
 
-                      <div className="absolute left-4 bottom-4 bg-[#FFFFFF] border border-[#ACAAB4] rounded-lg p-3 shadow-md">
-                        <span className="font-bold text-sm block">{mockVenueDetails.name}</span>
-                        <span className="text-xs text-yellow-600 block">★★★★★ 5.0 rating</span>
+                        <div className="absolute left-4 bottom-4 bg-[#FFFFFF] border border-[#ACAAB4] rounded-lg p-3 shadow-md">
+                          <span className="font-bold text-sm block">{business.name}</span>
+                          <span className="text-xs text-[#767676] block">{venueLocationText}</span>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Opening hours & Additional Info grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
 
-                      {/* Opening Times */}
+                      {/* Opening Times — real Business Hours (business-hours module), surfaced
+                          publicly via the catalog read. */}
                       <div className="flex flex-col gap-4">
                         <h4 className="font-bold text-lg text-[#0D0D0D]">Opening times</h4>
-                        <div className="flex flex-col gap-2.5 text-sm text-[#4E5F78]">
-                          {[
-                            { day: "Monday", time: "10:30 AM - 1:00 PM, 3:30 PM - 7:00 PM" },
-                            { day: "Tuesday", time: "10:30 AM - 1:00 PM, 3:30 PM - 7:00 PM" },
-                            { day: "Wednesday", time: "10:30 AM - 1:00 PM, 3:30 PM - 7:00 PM" },
-                            { day: "Thursday", time: "10:30 AM - 1:00 PM, 3:30 PM - 7:00 PM" },
-                            { day: "Friday", time: "10:30 AM - 1:00 PM, 3:30 PM - 7:00 PM" },
-                            { day: "Saturday", time: "10:30 AM - 1:00 PM, 3:30 PM - 7:00 PM" },
-                            { day: "Sunday", time: "Closed" }
-                          ].map((item, idx) => (
-                            <div key={idx} className="flex justify-between items-center py-1 border-b border-neutral-100">
-                              <span className="font-semibold text-black">{item.day}</span>
-                              <span>{item.time}</span>
-                            </div>
-                          ))}
-                        </div>
+                        {business?.hours && business.hours.length > 0 ? (
+                          <div className="flex flex-col gap-2.5 text-sm text-[#4E5F78]">
+                            {business.hours.map((day) => (
+                              <div key={day.dayOfWeek} className="flex justify-between items-center py-1 border-b border-neutral-100">
+                                <span className="font-semibold text-black capitalize">{day.dayOfWeek.charAt(0) + day.dayOfWeek.slice(1).toLowerCase()}</span>
+                                <span>
+                                  {day.isOpen && day.slots.length > 0
+                                    ? day.slots.map((slot) => `${formatTime12Hour(slot.startTime)} - ${formatTime12Hour(slot.endTime)}`).join(", ")
+                                    : "Closed"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-neutral-500">Hours not available.</p>
+                        )}
                       </div>
 
                       {/* Additional Information */}
@@ -1169,34 +1193,49 @@ function VenueDetailsContent() {
                       Team
                     </h3>
 
-                    {/* Employees scroll/flex list wrapper */}
+                    {/* Employees scroll/flex list wrapper — real Business Staff (Batch 9's
+                        catalog.staff, extended with role + avatarUrl in Batch 17). */}
                     <div className="flex flex-wrap items-start gap-8 w-full">
-                      {mockVenueDetails.team.map((member) => (
-                        <div
-                          key={member.id}
-                          className="flex flex-col items-center gap-4 w-[120px] h-[182px] relative cursor-pointer"
-                        >
-                          {/* Avatar Image circle with background border */}
-                          <div className="relative w-[120px] h-[120px] shrink-0">
-                            <div className="box-border flex flex-col justify-center items-start p-[0.0667px] w-[120px] h-[120px] bg-[#F0F0FF] border border-[#F0F0FF] rounded-full overflow-hidden">
-                              <div className="w-[117.87px] h-[117.87px] rounded-full overflow-hidden relative">
-                                <Image src={member.avatar} alt={member.name} fill className="object-cover" />
+                      {catalogQuery.isLoading && (
+                        <p className="text-sm text-neutral-500">Loading team…</p>
+                      )}
+                      {catalogQuery.isError && (
+                        <p className="text-sm text-red-600">Team could not be loaded right now.</p>
+                      )}
+                      {!catalogQuery.isLoading && !catalogQuery.isError && teamMembers.length === 0 && (
+                        <p className="text-sm text-neutral-500">This business hasn&apos;t added any team members yet.</p>
+                      )}
+
+                      {teamMembers.map((member) => {
+                        const fullName = member.lastName ? `${member.firstName} ${member.lastName}` : member.firstName;
+                        const roleLabel = member.role.charAt(0) + member.role.slice(1).toLowerCase();
+                        return (
+                          <div
+                            key={member.id}
+                            className="flex flex-col items-center gap-4 w-[120px] h-[182px] relative cursor-pointer"
+                          >
+                            {/* Avatar Image circle with background border */}
+                            <div className="relative w-[120px] h-[120px] shrink-0">
+                              <div className="box-border flex flex-col justify-center items-start p-[0.0667px] w-[120px] h-[120px] bg-[#F0F0FF] border border-[#F0F0FF] rounded-full overflow-hidden">
+                                <div className="w-[117.87px] h-[117.87px] rounded-full overflow-hidden relative">
+                                  <Image src={member.avatarUrl ?? "/image/profile.jpg"} alt={fullName} fill className="object-cover" />
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          {/* Name and Description (Role) details */}
-                          <div className="flex flex-col items-center gap-0.5 w-[120px] h-[46px] text-center mt-1">
-                            <span className="font-inter font-medium text-[17px] leading-6 text-[#0D0D0D]">
-                              {member.name}
-                            </span>
-                            <span className="font-inter font-normal text-[14.4px] leading-5 text-[#767676]">
-                              {member.role}
-                            </span>
-                          </div>
+                            {/* Name and Description (Role) details */}
+                            <div className="flex flex-col items-center gap-0.5 w-[120px] h-[46px] text-center mt-1">
+                              <span className="font-inter font-medium text-[17px] leading-6 text-[#0D0D0D]">
+                                {fullName}
+                              </span>
+                              <span className="font-inter font-normal text-[14.4px] leading-5 text-[#767676]">
+                                {roleLabel}
+                              </span>
+                            </div>
 
-                        </div>
-                      ))}
+                          </div>
+                        );
+                      })}
                     </div>
 
                   </div>
@@ -1219,27 +1258,23 @@ function VenueDetailsContent() {
                       </button>
                     </div>
 
-                    {/* Responsive grid of photo cards (2 in a row on mobile, 3 on desktop) */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-5 w-full">
-                      <div className="aspect-square w-full bg-[#D9D9D9] rounded-xl overflow-hidden relative">
-                        <Image src="/image/imgOfService.png" alt="Gallery 1" fill className="object-cover opacity-60 mix-blend-multiply" />
+                    {/* Responsive grid of photo cards (2 in a row on mobile, 3 on desktop) — real
+                        Business Media (business-media module), surfaced via the catalog read. */}
+                    {catalogQuery.isLoading && (
+                      <p className="text-sm text-neutral-500">Loading photos…</p>
+                    )}
+                    {!catalogQuery.isLoading && venueMedia.length === 0 && (
+                      <p className="text-sm text-neutral-500">This business hasn&apos;t added any photos yet.</p>
+                    )}
+                    {venueMedia.length > 0 && (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-5 w-full">
+                        {venueMedia.map((item, idx) => (
+                          <div key={item.id} className="aspect-square w-full bg-[#D9D9D9] rounded-xl overflow-hidden relative">
+                            <Image src={item.url} alt={`Gallery ${idx + 1}`} fill className="object-cover" />
+                          </div>
+                        ))}
                       </div>
-                      <div className="aspect-square w-full bg-[#D9D9D9] rounded-xl overflow-hidden relative">
-                        <Image src="/image/imgOfService.png" alt="Gallery 2" fill className="object-cover opacity-60 mix-blend-multiply" />
-                      </div>
-                      <div className="aspect-square w-full bg-[#D9D9D9] rounded-xl overflow-hidden relative">
-                        <Image src="/image/imgOfService.png" alt="Gallery 3" fill className="object-cover opacity-60 mix-blend-multiply" />
-                      </div>
-                      <div className="aspect-square w-full bg-[#D9D9D9] rounded-xl overflow-hidden relative">
-                        <Image src="/image/imgOfService.png" alt="Gallery 4" fill className="object-cover opacity-60 mix-blend-multiply" />
-                      </div>
-                      <div className="aspect-square w-full bg-[#D9D9D9] rounded-xl overflow-hidden relative">
-                        <Image src="/image/imgOfService.png" alt="Gallery 5" fill className="object-cover opacity-60 mix-blend-multiply" />
-                      </div>
-                      <div className="aspect-square w-full bg-[#D9D9D9] rounded-xl overflow-hidden relative">
-                        <Image src="/image/imgOfService.png" alt="Gallery 6" fill className="object-cover opacity-60 mix-blend-multiply" />
-                      </div>
-                    </div>
+                    )}
 
                   </div>
                 </section>
@@ -1304,14 +1339,16 @@ function VenueDetailsContent() {
                 <div className="border-t border-neutral-100 pt-6 flex flex-col gap-5 w-full mt-4">
 
                   {/* Clock status */}
-                  <div className="flex items-center gap-3 w-full h-[24px]">
-                    <div className="w-6 h-6 relative shrink-0">
-                      <HugeiconsIcon icon={Clock04Icon} className="w-6 h-6 object-contain filter opacity-60" />
+                  {business?.openStatus.configured && (
+                    <div className="flex items-center gap-3 w-full h-[24px]">
+                      <div className="w-6 h-6 relative shrink-0">
+                        <HugeiconsIcon icon={Clock04Icon} className="w-6 h-6 object-contain filter opacity-60" />
+                      </div>
+                      <span className="font-inter font-normal text-[15.9px] text-[#B7570B] whitespace-nowrap">
+                        {business.openStatus.label}
+                      </span>
                     </div>
-                    <span className="font-inter font-normal text-[15.9px] text-[#B7570B] whitespace-nowrap">
-                      {mockVenueDetails.openStatus}
-                    </span>
-                  </div>
+                  )}
 
                   {/* Address and Get Directions */}
                   <div className="flex items-center gap-2 w-full">
@@ -1320,7 +1357,7 @@ function VenueDetailsContent() {
                     </div>
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="font-inter font-normal text-[15.8px] text-[#767676] truncate shrink">
-                        {mockVenueDetails.location}
+                        {venueLocationText}
                       </span>
                       <span className="w-1.5 h-1.5 rounded-full bg-[#808080] shrink-0" />
                       <a
@@ -1333,33 +1370,6 @@ function VenueDetailsContent() {
                     </div>
                   </div>
 
-                  {/* Phone */}
-                  <div className="flex items-center gap-3 w-full h-[24px]">
-                    <div className="w-6 h-6 relative shrink-0">
-                      <Image src="/Icons/phone.svg" alt="Phone" className="w-6 h-6 object-contain filter opacity-60" width={24} height={24} />
-                    </div>
-                    <span className="font-inter font-normal text-[15.9px] text-[#767676]">
-                      {mockVenueDetails.phone}
-                    </span>
-                  </div>
-
-                  {/* Social links */}
-                  <div className="flex flex-col gap-5 pt-2">
-                    <a href={mockVenueDetails.facebookUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-85 transition-opacity">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0">
-                        <Image src="/Icons/FacebookGray.svg" alt="Facebook" className="w-4 h-4 object-contain" width={16} height={16} />
-                      </div>
-                      <span className="font-poppins font-normal text-base text-[#767676]">Facebook</span>
-                    </a>
-
-                    <a href={mockVenueDetails.instagramUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-85 transition-opacity">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0">
-                        <Image src="/Icons/instagram.svg" alt="Instagram" className="w-4 h-4 object-contain" width={16} height={16} />
-                      </div>
-                      <span className="font-poppins font-normal text-base text-[#767676]">Instagram</span>
-                    </a>
-                  </div>
-
                 </div>
 
               </div>
@@ -1369,7 +1379,7 @@ function VenueDetailsContent() {
                 {/* Salon Details Block */}
                 <div className="flex flex-col gap-5 w-full max-w-[316.89px]">
                   <h2 className="font-inter font-semibold text-[37.2px] leading-[44px] text-[#0D0D0D]">
-                    {mockVenueDetails.name}
+                    {business?.name ?? (catalogQuery.isLoading ? "Loading…" : "")}
                   </h2>
 
                   {/* Stars and rating block */}
@@ -1421,14 +1431,16 @@ function VenueDetailsContent() {
                     <div className="flex flex-col gap-5 w-full max-w-[338px]">
 
                       {/* Clock status */}
-                      <div className="flex items-center gap-3 w-full h-[24px]">
-                        <div className="w-6 h-6 relative shrink-0">
-                          <HugeiconsIcon icon={Clock04Icon} className="w-6 h-6 object-contain filter opacity-60" />
+                      {business?.openStatus.configured && (
+                        <div className="flex items-center gap-3 w-full h-[24px]">
+                          <div className="w-6 h-6 relative shrink-0">
+                            <HugeiconsIcon icon={Clock04Icon} className="w-6 h-6 object-contain filter opacity-60" />
+                          </div>
+                          <span className="font-inter font-normal text-[15.9px] text-[#B7570B] whitespace-nowrap">
+                            {business.openStatus.label}
+                          </span>
                         </div>
-                        <span className="font-inter font-normal text-[15.9px] text-[#B7570B] whitespace-nowrap">
-                          {mockVenueDetails.openStatus}
-                        </span>
-                      </div>
+                      )}
 
                       {/* Address and Get Directions */}
                       <div className="flex items-center gap-2 w-full">
@@ -1437,7 +1449,7 @@ function VenueDetailsContent() {
                         </div>
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className="font-inter font-normal text-[15.8px] text-[#767676] truncate shrink">
-                            {mockVenueDetails.location}
+                            {venueLocationText}
                           </span>
                           <span className="w-1.5 h-1.5 rounded-full bg-[#808080] shrink-0" />
                           <a
@@ -1448,33 +1460,6 @@ function VenueDetailsContent() {
                             Get Directions
                           </a>
                         </div>
-                      </div>
-
-                      {/* Phone */}
-                      <div className="flex items-center gap-3 w-full h-[24px]">
-                        <div className="w-6 h-6 relative shrink-0">
-                          <Image src="/Icons/phone.svg" alt="Phone" className="w-6 h-6 object-contain" width={24} height={24} />
-                        </div>
-                        <span className="font-inter font-normal text-[15.9px] text-[#767676]">
-                          {mockVenueDetails.phone}
-                        </span>
-                      </div>
-
-                      {/* Social links */}
-                      <div className="flex flex-col gap-5 pt-2">
-                        <a href={mockVenueDetails.facebookUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-85 transition-opacity">
-                          <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0">
-                            <Image src="/Icons/FacebookGray.svg" alt="Facebook" className="w-4 h-4 object-contain" width={16} height={16} />
-                          </div>
-                          <span className="font-poppins font-normal text-base text-[#767676]">Facebook</span>
-                        </a>
-
-                        <a href={mockVenueDetails.instagramUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-85 transition-opacity">
-                          <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0">
-                            <Image src="/Icons/instagram.svg" alt="Instagram" className="w-4 h-4 object-contain" width={16} height={16} />
-                          </div>
-                          <span className="font-poppins font-normal text-base text-[#767676]">Instagram</span>
-                        </a>
                       </div>
 
                     </div>
@@ -1500,17 +1485,19 @@ function VenueDetailsContent() {
                     <div className="flex flex-col gap-5 w-full max-w-[338px]">
 
                       {/* Clock status */}
-                      <div className="flex items-center gap-3 w-full h-[24px]">
-                        <div className="w-6 h-6 relative shrink-0">
-                          <svg className="w-full h-full text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-                            <circle cx="12" cy="12" r="10" />
-                            <polyline points="12 6 12 12 16 14" />
-                          </svg>
+                      {business?.openStatus.configured && (
+                        <div className="flex items-center gap-3 w-full h-[24px]">
+                          <div className="w-6 h-6 relative shrink-0">
+                            <svg className="w-full h-full text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                              <circle cx="12" cy="12" r="10" />
+                              <polyline points="12 6 12 12 16 14" />
+                            </svg>
+                          </div>
+                          <span className="font-inter font-normal text-[15.9px] text-[#B7570B] whitespace-nowrap">
+                            {business.openStatus.label}
+                          </span>
                         </div>
-                        <span className="font-inter font-normal text-[15.9px] text-[#B7570B] whitespace-nowrap">
-                          {mockVenueDetails.openStatus}
-                        </span>
-                      </div>
+                      )}
 
                       {/* Address and Get Directions */}
                       <div className="flex items-center gap-2 w-full">
@@ -1519,7 +1506,7 @@ function VenueDetailsContent() {
                         </div>
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className="font-inter font-normal text-[15.8px] text-[#767676] truncate shrink">
-                            {mockVenueDetails.location}
+                            {venueLocationText}
                           </span>
                           <span className="w-1.5 h-1.5 rounded-full bg-[#808080] shrink-0" />
                           <a
@@ -1540,15 +1527,6 @@ function VenueDetailsContent() {
                       <div className="flex flex-col gap-5 w-full p-4 filter blur-[5px] select-none pointer-events-none opacity-50">
                         <div className="flex items-center ">
                           <Image src="/Icons/phone.svg" alt="Phone" className="w-5 h-5 object-contain" width={20} height={20} />
-                          <span>{mockVenueDetails.phone}</span>
-                        </div>
-                        <div className="flex items-center ">
-                          <Image src="/Icons/FacebookGray.svg" alt="Facebook" className="w-5 h-5 object-contain" width={20} height={20} />
-                          <span>Facebook</span>
-                        </div>
-                        <div className="flex items-center ">
-                          <Image src="/Icons/instagram.svg" alt="Instagram" className="w-5 h-5 object-contain" width={20} height={20} />
-                          <span>Instagram</span>
                         </div>
                       </div>
 
@@ -1830,7 +1808,7 @@ function VenueDetailsContent() {
               <div className="flex justify-between items-center">
                 <div className="flex flex-col gap-1">
                   <h2 className="font-semibold text-2xl text-[#0D0D0D]">
-                    {selectedList.length > 0 ? "Book a visit" : mockVenueDetails.name}
+                    {selectedList.length > 0 ? "Book a visit" : (business?.name ?? "")}
                   </h2>
                   {selectedList.length > 0 && (
                     <span className="text-[11px] font-bold text-[#757575] uppercase tracking-wider">YOUR SERVICES</span>
@@ -1896,14 +1874,16 @@ function VenueDetailsContent() {
               {/* Business Details */}
               <div className="border-t border-neutral-100 pt-6 flex flex-col gap-5 w-full">
                 {/* Clock status */}
-                <div className="flex items-center gap-3 w-full h-[24px]">
-                  <div className="w-6 h-6 relative shrink-0">
-                    <HugeiconsIcon icon={Clock04Icon} className="w-6 h-6 object-contain filter opacity-60" />
+                {business?.openStatus.configured && (
+                  <div className="flex items-center gap-3 w-full h-[24px]">
+                    <div className="w-6 h-6 relative shrink-0">
+                      <HugeiconsIcon icon={Clock04Icon} className="w-6 h-6 object-contain filter opacity-60" />
+                    </div>
+                    <span className="font-inter font-normal text-[15.9px] text-[#B7570B] whitespace-nowrap">
+                      {business.openStatus.label}
+                    </span>
                   </div>
-                  <span className="font-inter font-normal text-[15.9px] text-[#B7570B] whitespace-nowrap">
-                    {mockVenueDetails.openStatus}
-                  </span>
-                </div>
+                )}
 
                 {/* Address and Get Directions */}
                 <div className="flex items-center gap-2 w-full">
@@ -1912,11 +1892,11 @@ function VenueDetailsContent() {
                   </div>
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="font-inter font-normal text-[15.8px] text-[#767676] truncate shrink">
-                      {mockVenueDetails.location}
+                      {venueLocationText}
                     </span>
                     <span className="w-1.5 h-1.5 rounded-full bg-[#808080] shrink-0" />
-                    <a 
-                      href="#" 
+                    <a
+                      href="#"
                       onClick={(e) => { e.preventDefault(); scrollToSection("about"); setIsMobileSummaryExpanded(false); }}
                       className="font-inter font-normal text-[15.8px] text-[#2366C5] hover:underline whitespace-nowrap shrink-0"
                     >
@@ -1925,55 +1905,6 @@ function VenueDetailsContent() {
                   </div>
                 </div>
 
-                {/* Phone */}
-                {(!isLoggedIn && selectedList.length === 0) ? (
-                  /* Blurred contacts or Lock overlay on mobile expansion when logged out and nothing selected */
-                  <div className="relative w-full h-[120px] border border-neutral-100 rounded-xl bg-white overflow-hidden mt-2">
-                    <div className="flex flex-col gap-3 p-4 filter blur-[3px] select-none pointer-events-none opacity-50">
-                      <div className="flex items-center gap-2">
-                        <Image src="/Icons/phone.svg" alt="Phone" className="w-5 h-5 object-contain" width={20} height={20} />
-                        <span>{mockVenueDetails.phone}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Image src="/Icons/FacebookGray.svg" alt="Facebook" className="w-5 h-5 object-contain" width={20} height={20} />
-                        <span>Facebook</span>
-                      </div>
-                    </div>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center bg-white/70">
-                      <p className="text-xs text-[#0D0D0D] font-inter font-semibold max-w-[180px]">
-                        Log in or create an account to contact this business
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-3 w-full h-[24px]">
-                      <div className="w-6 h-6 relative shrink-0">
-                        <Image src="/Icons/phone.svg" alt="Phone" className="w-6 h-6 object-contain filter opacity-60" width={24} height={24} />
-                      </div>
-                      <span className="font-inter font-normal text-[15.9px] text-[#767676]">
-                        {mockVenueDetails.phone}
-                      </span>
-                    </div>
-
-                    {/* Social links */}
-                    <div className="flex flex-col gap-5 pt-2">
-                      <a href={mockVenueDetails.facebookUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-85 transition-opacity">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0">
-                          <Image src="/Icons/FacebookGray.svg" alt="Facebook" className="w-4 h-4 object-contain" width={16} height={16} />
-                        </div>
-                        <span className="font-poppins font-normal text-base text-[#767676]">Facebook</span>
-                      </a>
-
-                      <a href={mockVenueDetails.instagramUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-85 transition-opacity">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0">
-                          <Image src="/Icons/instagram.svg" alt="Instagram" className="w-4 h-4 object-contain" width={16} height={16} />
-                        </div>
-                        <span className="font-poppins font-normal text-base text-[#767676]">Instagram</span>
-                      </a>
-                    </div>
-                  </>
-                )}
               </div>
             </div>
           )}

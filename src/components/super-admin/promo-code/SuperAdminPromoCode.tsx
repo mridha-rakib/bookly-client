@@ -14,7 +14,7 @@ import {
 } from "@/lib/promo/hooks";
 
 interface SuperAdminPromoCodeProps {
-  onClientClick?: (email: string) => void;
+  onClientClick?: (customerUserId: string) => void;
 }
 
 const scopeLabel: Record<PromoScope, string> = {
@@ -294,7 +294,7 @@ export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCo
                         </div>
                         <div className="flex flex-col">
                           <span
-                            onClick={() => onClientClick && onClientClick(log.customerEmail)}
+                            onClick={() => onClientClick && onClientClick(log.customerUserId)}
                             className="font-semibold text-gray-800 hover:text-[#2E9DA7] hover:underline cursor-pointer"
                           >
                             {log.customerEmail}

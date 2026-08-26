@@ -2,6 +2,7 @@
 
 import React from "react";
 import NotificationBell from "@/components/notifications/NotificationBell";
+import { buildDashboardSubtitle } from "@/utils/dashboardGreeting";
 
 interface DashboardHeaderProps {
   title: string;
@@ -10,7 +11,7 @@ interface DashboardHeaderProps {
 
 export default function DashboardHeader({
   title,
-  subtitle = "Wednesday, 27 May 2026 · Good morning, Elena"
+  subtitle = buildDashboardSubtitle(undefined)
 }: DashboardHeaderProps) {
   return (
     <div className="h-16 bg-[#FCF8F8] px-6 flex items-center justify-between shrink-0 select-none border-b border-[#C6C6CB]">

@@ -43,6 +43,21 @@ export interface ChangeMyPasswordInput {
   newPassword: string;
 }
 
+export interface RequestEmailChangeInput {
+  currentPassword: string;
+  newEmail: string;
+}
+
+export interface RequestPhoneChangeInput {
+  currentPassword: string;
+  countryCode: string;
+  nationalNumber: string;
+}
+
+export interface ChangeRequestResponse {
+  expiresAt: string;
+}
+
 export interface AuthBusiness {
   id: string;
   name: string;
@@ -198,6 +213,34 @@ export const authApi = {
       method: "PATCH",
       url: "/auth/me/password",
       data: input,
+    }),
+
+  requestEmailChange: (input: RequestEmailChangeInput) =>
+    apiRequest<ChangeRequestResponse>({
+      method: "POST",
+      url: "/auth/me/email/change-request",
+      data: input,
+    }),
+
+  verifyEmailChange: (code: string) =>
+    apiRequest<CurrentUserResponse>({
+      method: "POST",
+      url: "/auth/me/email/verify",
+      data: { code },
+    }),
+
+  requestPhoneChange: (input: RequestPhoneChangeInput) =>
+    apiRequest<ChangeRequestResponse>({
+      method: "POST",
+      url: "/auth/me/phone/change-request",
+      data: input,
+    }),
+
+  verifyPhoneChange: (code: string) =>
+    apiRequest<CurrentUserResponse>({
+      method: "POST",
+      url: "/auth/me/phone/verify",
+      data: { code },
     }),
 
   sendCustomerEmailOtp: (sessionId: string) =>
