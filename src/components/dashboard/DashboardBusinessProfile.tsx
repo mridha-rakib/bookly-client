@@ -5,7 +5,8 @@ import React, { useEffect, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   PencilEdit02Icon,
-  Location05Icon
+  Location05Icon,
+  Image01Icon
 } from "@hugeicons/core-free-icons";
 
 import AddBusinessLinkModal from "@/components/dashboard/AddBusinessLinkModal";
@@ -28,8 +29,6 @@ interface BusinessCardProps {
   onEdit?: () => void;
   onView?: () => void;
 }
-
-const FALLBACK_BUSINESS_IMAGE = "/image/profile.jpg";
 
 // Category may occasionally repeat one of the subcategory labels verbatim; dedupe so
 // the same label never renders twice, but every distinct real value is kept and shown —
@@ -63,16 +62,31 @@ export function BusinessCard({
   const isPrimary = type === "Primary";
   const displayChips = buildDisplayChips(category, subcategories);
 
+  // The image URL is a short-lived presigned object-storage URL. If it fails to load (expired,
+  // or the underlying object is missing) fall back to the same honest "No photo yet" state as a
+  // business with no media at all — never a broken-image icon, never a fabricated photo. Tracking
+  // the URL that failed (not a bare boolean) auto-resets when a fresh/different URL arrives.
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const showImage = Boolean(image) && failedImageUrl !== image;
+
   return (
     <div className="box-border flex flex-col items-start gap-5 w-[372px] min-h-[507px] rounded-xl bg-white border border-[#E8E6FF] overflow-hidden shadow-sm font-poppins">
       {/* Image Container */}
       <div className="relative w-full h-[233px] shrink-0">
-        <img
-          src={image ?? FALLBACK_BUSINESS_IMAGE}
-          alt={title}
-          className="w-full h-full rounded-t-xl object-cover"
-          draggable="false"
-        />
+        {showImage ? (
+          <img
+            src={image}
+            alt={title}
+            className="w-full h-full rounded-t-xl object-cover"
+            draggable="false"
+            onError={() => setFailedImageUrl(image ?? null)}
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-2 w-full h-full rounded-t-xl bg-neutral-100 text-neutral-400">
+            <HugeiconsIcon icon={Image01Icon} className="w-8 h-8" />
+            <span className="font-poppins text-xs">No photo yet</span>
+          </div>
+        )}
         {/* Overlay Badge */}
         <div
           className={`absolute flex flex-row justify-center items-center px-3 py-0.5 gap-2.5 h-6 left-3 top-3 rounded-full z-10 shadow-sm ${

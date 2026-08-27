@@ -8,6 +8,8 @@ import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import { toast } from "@/components/ui/sonner";
 import { toUserMessage } from "@/lib/auth/messages";
 import { useMyBusinessProfileQuery } from "@/lib/business/hooks";
+import { useCancellationPolicyQuery } from "@/lib/business/cancellation-policy-hooks";
+import { useAddonsQuery } from "@/lib/addons/hooks";
 import {
   useArchiveServiceMutation,
   useBookingSettingsQuery,
@@ -31,6 +33,10 @@ export default function ServicesListPage() {
 
   const servicesQuery = useServicesQuery(businessId || undefined, {});
   const bookingSettingsQuery = useBookingSettingsQuery(businessId || undefined);
+  const cancellationPolicyQuery = useCancellationPolicyQuery(businessId || undefined);
+  // Single business-scoped fetch of active Add-ons (each carrying its own assignedServices) —
+  // avoids issuing one Add-ons request per card.
+  const activeAddonsQuery = useAddonsQuery(businessId || undefined, { status: "ACTIVE" });
   const updateStatusMutation = useUpdateServiceStatusMutation();
   const archiveMutation = useArchiveServiceMutation();
   const updateBookingSettingsMutation = useUpdateBookingSettingsMutation();
@@ -61,6 +67,25 @@ export default function ServicesListPage() {
   const services = servicesQuery.data?.services ?? [];
   const counts = servicesQuery.data?.counts ?? { draft: 0, active: 0, inactive: 0, archived: 0 };
   const gapEliminationEnabled = bookingSettingsQuery.data?.gapEliminationEnabled ?? false;
+
+  // Business-wide policy, not a Service field — undefined (never a fabricated default) unless
+  // the policy has actually been configured and successfully loaded.
+  const noShowPercentage = cancellationPolicyQuery.data?.configured
+    ? cancellationPolicyQuery.data.noShowPercentage
+    : undefined;
+
+  // Count of currently-active Add-ons assigned to each Service — derived client-side from the
+  // one shared active-Addons fetch above, never counting archived/inactive Add-ons or rows
+  // belonging to another Service.
+  const addonCountByServiceId = new Map<string, number>();
+  for (const addon of activeAddonsQuery.data?.addons ?? []) {
+    for (const assignment of addon.assignedServices) {
+      addonCountByServiceId.set(
+        assignment.serviceId,
+        (addonCountByServiceId.get(assignment.serviceId) ?? 0) + 1
+      );
+    }
+  }
 
   const handleToggleActive = (serviceId: string, currentlyActive: boolean) => {
     updateStatusMutation.mutate(
@@ -145,6 +170,8 @@ export default function ServicesListPage() {
               <ServiceCard
                 key={service.id}
                 service={service}
+                noShowPercentage={noShowPercentage}
+                addonCount={addonCountByServiceId.get(service.id)}
                 onView={() => setView({ mode: "view", serviceId: service.id })}
                 onEdit={() => setView({ mode: "edit", serviceId: service.id })}
                 onArchive={() => handleArchive(service.id)}

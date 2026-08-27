@@ -12,9 +12,112 @@ import {
   SailboatOffshoreIcon,
   WellnessIcon,
 } from "@hugeicons/core-free-icons";
-import ServiceCard, { Recommendation } from "@/components/ServiceCard";
+import ServiceCard, { type Recommendation } from "@/components/ServiceCard";
 import Carousel from "@/components/landing-page/Carousel";
 import BookAgainSection from "@/components/landing-page/BookAgainSection";
+import { useHomeSectionsQuery } from "@/lib/discovery/hooks";
+import { discoveryCardToRecommendation } from "@/lib/discovery/card";
+import { useLocationStore } from "@/lib/location/store";
+import { useAuthStore } from "@/lib/auth/store";
+
+const CARD_WRAP = "w-[calc(50%-7.5px)] sm:w-[360px] md:w-[406px] shrink-0 snap-start";
+
+/**
+ * Batch 17 — the homepage's three discovery rows, now backed entirely by real persisted data
+ * from `GET /discovery/home-sections`:
+ *   - Recommended: quality ranking, personalized by the logged-in Customer's real booking
+ *     history (category/city affinity) when there is any.
+ *   - Services near you: the city picked in the hero search bar (`useLocationStore`); with no
+ *     city it falls back server-side to "travels to you" businesses first. No distance is ever
+ *     shown — the product stores no visitor coordinates.
+ *   - Popular: real platform activity (completed bookings + favorites + published reviews).
+ * The three are de-duplicated server-side. No mock businesses, ratings, prices or badges.
+ */
+
+interface DiscoveryRowProps {
+  title: string;
+  cards: Recommendation[];
+  isLoading: boolean;
+  isError: boolean;
+  favorites: string[];
+  onToggleFavorite: (id: string) => void;
+  onBookNow: (id: string) => void;
+  className?: string;
+}
+
+function DiscoveryRow({
+  title,
+  cards,
+  isLoading,
+  isError,
+  favorites,
+  onToggleFavorite,
+  onBookNow,
+  className = "",
+}: DiscoveryRowProps) {
+  return (
+    <section className={`w-full px-4 md:px-8 xl:px-[68px] mt-16 relative z-10 ${className}`}>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl md:text-[28px] font-medium tracking-tight text-[#1C1B1C]">{title}</h2>
+        <a
+          href="/explore"
+          className="text-sm md:text-base font-medium text-[#1C1B1C] hover:underline transition-all"
+        >
+          See all
+        </a>
+      </div>
+
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="w-full sm:w-[360px] md:w-[406px] h-[420px] rounded-2xl border border-[#E8E6FF] bg-white overflow-hidden animate-pulse"
+            >
+              <div className="w-full h-[241px] bg-neutral-100" />
+              <div className="p-5 flex flex-col gap-3">
+                <div className="h-4 w-3/4 bg-neutral-100 rounded" />
+                <div className="h-3 w-1/2 bg-neutral-100 rounded" />
+                <div className="h-3 w-2/3 bg-neutral-100 rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : isError ? (
+        <p className="text-sm text-[#757575] py-8">
+          We couldn&apos;t load this section right now. Please try again shortly.
+        </p>
+      ) : cards.length === 0 ? (
+        <p className="text-sm text-[#757575] py-8">No businesses to show here yet.</p>
+      ) : cards.length > 5 ? (
+        <Carousel>
+          {cards.map((rec) => (
+            <div key={rec.id} className={CARD_WRAP}>
+              <ServiceCard
+                rec={rec}
+                isFavorite={favorites.includes(rec.id)}
+                onToggleFavorite={onToggleFavorite}
+                onBookNow={onBookNow}
+              />
+            </div>
+          ))}
+        </Carousel>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center">
+          {cards.map((rec) => (
+            <ServiceCard
+              key={rec.id}
+              rec={rec}
+              isFavorite={favorites.includes(rec.id)}
+              onToggleFavorite={onToggleFavorite}
+              onBookNow={onBookNow}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
 
 export default function CategoryServicesSection() {
   const router = useRouter();
@@ -42,324 +145,35 @@ export default function CategoryServicesSection() {
     );
   };
 
-  // Mock Book Again services data
-  const bookAgainServices: Recommendation[] = [
-    {
-      id: "101",
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      rating: 4.9,
-      reviews: 120,
-      categories: ["Barber", "Salon"],
-      lastVisited: "Last visited 1 week ago",
-      startingPrice: 15,
-      image: "/img/service_demo.jpg",
-      travelsToYou: true,
-      travelLocations: ["Larnaca"],
-      hasDiamond: true,
-    },
-    {
-      id: "102",
-      title: "Zara Hair & Beauty | Limassol Marina",
-      rating: 4.8,
-      reviews: 85,
-      categories: ["Hair", "Salon"],
-      lastVisited: "Last visited 3 weeks ago",
-      startingPrice: 25,
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: "103",
-      title: "Gold Gym Spa & Massage | Nicosia",
-      rating: 4.7,
-      reviews: 310,
-      categories: ["Massage", "Wellness"],
-      lastVisited: "Last visited 1 month ago",
-      startingPrice: 40,
-      image: "/img/service_demo.jpg",
-      hasDiamond: true,
-    },
-    {
-      id: "104",
-      title: "Elite Car Detailing | Paphos",
-      rating: 4.9,
-      reviews: 145,
-      categories: ["Automotive"],
-      lastVisited: "Last visited 2 months ago",
-      startingPrice: 50,
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: "105",
-      title: "Precision Men's Grooming | Larnaca",
-      rating: 4.6,
-      reviews: 92,
-      categories: ["Barber"],
-      lastVisited: "Last visited 2 weeks ago",
-      startingPrice: 18,
-      image: "/img/service_demo.jpg",
-      travelsToYou: true,
-      travelLocations: ["Larnaca", "Nicosia"],
-    },
-    {
-      id: "106",
-      title: "Serenity Yoga Studio | Limassol",
-      rating: 5.0,
-      reviews: 74,
-      categories: ["Wellness"],
-      lastVisited: "Last visited 3 days ago",
-      startingPrice: 30,
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    }
-  ];
+  // NOTE (out of scope for this change): the "Book Again" row below still uses placeholder data.
+  // It is logged-in-only and needs a real "this customer's recent bookings" endpoint; the three
+  // discovery rows (Recommended / Services near you / Popular) are what this change makes real.
+  const bookAgainServices: Recommendation[] = [];
 
-  // Mock recommendations data
-  const recommendations: Recommendation[] = [
-    {
-      id: "1",
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      rating: 4.9,
-      reviews: 299,
-      categories: ["Barber", "Salon"],
-      lastVisited: "Last visited 2 months ago",
-      startingPrice: 12,
-      image: "/img/service_demo.jpg",
-      travelsToYou: true,
-      travelLocations: ["Larnaca", "Limasol", "+4 more"],
-      hasDiamond: true,
-    },
-    {
-      id: "2",
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      rating: 4.9,
-      reviews: 299,
-      categories: ["Barber", "Salon"],
-      location: "Sheikh Zayed Road, Dubai",
-      distance: "3km away",
-      lastVisited: "Last visited 2 months ago",
-      startingPrice: 12,
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: "3",
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      rating: 4.9,
-      reviews: 299,
-      categories: ["Barber", "Salon"],
-      lastVisited: "Last visited 2 months ago",
-      startingPrice: 12,
-      image: "/img/service_demo.jpg",
-      travelsToYou: true,
-      travelLocations: ["Larnaca", "Limasol", "+4 more"],
-      noDeposit: true,
-    },
-    {
-      id: "4",
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      rating: 4.9,
-      reviews: 299,
-      categories: ["Barber", "Salon"],
-      location: "Sheikh Zayed Road, Dubai",
-      distance: "3km away",
-      lastVisited: "Last visited 2 months ago",
-      startingPrice: 12,
-      image: "/img/service_demo.jpg",
-      hasDiamond: true,
-      noDeposit: true,
-    },
-    {
-      id: "5",
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      rating: 4.9,
-      reviews: 299,
-      categories: ["Barber", "Salon"],
-      location: "Sheikh Zayed Road, Dubai",
-      distance: "3km away",
-      lastVisited: "Last visited 2 months ago",
-      startingPrice: 12,
-      image: "/img/service_demo.jpg",
-    },
-    {
-      id: "6",
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      rating: 4.9,
-      reviews: 299,
-      categories: ["Barber", "Salon"],
-      location: "Sheikh Zayed Road, Dubai",
-      distance: "3km away",
-      lastVisited: "Last visited 2 months ago",
-      startingPrice: 12,
-      image: "/img/service_demo.jpg",
-      hasDiamond: true,
-      noDeposit: true,
-    },
-  ];
+  // Real discovery data. `selectedCity` (hero search bar) drives "Services near you"; the
+  // logged-in Customer's session personalizes "Recommended" server-side.
+  const selectedCity = useLocationStore((state) => state.selectedCity);
+  const authStatus = useAuthStore((state) => state.status);
+  const authUserId = useAuthStore((state) => state.user?.id);
+  const authReady = authStatus !== "unknown";
 
-  // Mock services near you data
-  const servicesNearYou: Recommendation[] = [
-    {
-      id: "11",
-      title: "Zara Hair & Beauty Salon | Nicosia Center",
-      rating: 4.7,
-      reviews: 142,
-      categories: ["Salon", "Beauty"],
-      location: "Ledra Street, Nicosia",
-      distance: "0.8km away",
-      lastVisited: "Last visited 2 months ago",
-      startingPrice: 25,
-      image: "/img/service_demo.jpg",
-      hasDiamond: true,
-    },
-    {
-      id: "12",
-      title: "Zen Spa & Massage | Limassol Marina",
-      rating: 4.9,
-      reviews: 88,
-      categories: ["Spa", "Wellness"],
-      location: "Marina Road, Limassol",
-      distance: "1.5km away",
-      lastVisited: "Last visited 3 months ago",
-      startingPrice: 60,
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: "13",
-      title: "Elite Barber Studio | Larnaca Bay",
-      rating: 4.8,
-      reviews: 210,
-      categories: ["Barber"],
-      travelsToYou: true,
-      travelLocations: ["Larnaca", "Dekhelia"],
-      lastVisited: "Last visited 2 months ago",
-      startingPrice: 18,
-      image: "/img/service_demo.jpg",
-    },
-    {
-      id: "14",
-      title: "Dynamic Fitness Coach | Paphos District",
-      rating: 5.0,
-      reviews: 45,
-      categories: ["Sports", "Fitness"],
-      travelsToYou: true,
-      travelLocations: ["Paphos", "Peyia"],
-      lastVisited: "Last visited 3 months ago",
-      startingPrice: 30,
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: "15",
-      title: "Luxury Nails & Lashes | Limassol",
-      rating: 4.6,
-      reviews: 95,
-      categories: ["Beauty", "Salon"],
-      location: "Anexartisias, Limassol",
-      distance: "2.1km away",
-      lastVisited: "Last visited 2 months ago",
-      startingPrice: 20,
-      image: "/img/service_demo.jpg",
-    },
-    {
-      id: "16",
-      title: "Pet Care & Grooming | Nicosia",
-      rating: 4.9,
-      reviews: 120,
-      categories: ["Pets"],
-      location: "Strovolos, Nicosia",
-      distance: "3.5km away",
-      lastVisited: "Last visited 2 months ago",
-      startingPrice: 40,
-      image: "/img/service_demo.jpg",
-      hasDiamond: true,
-      noDeposit: true,
-    },
-  ];
+  const homeSections = useHomeSectionsQuery(
+    { city: selectedCity ?? undefined },
+    { enabled: authReady, authScope: authUserId ?? "anon" },
+  );
 
-  // Mock popular businesses data (Service cards format)
-  const popularBusinesses: Recommendation[] = [
-    {
-      id: "31",
-      title: "Soho Vintage Barbers | Sheikh Zayed Road",
-      rating: 4.9,
-      reviews: 299,
-      categories: ["Barber", "Salon"],
-      location: "Limassol Marina",
-      distance: "1.1km away",
-      lastVisited: "Popular business",
-      startingPrice: 12,
-      image: "/img/service_demo.jpg",
-      hasDiamond: true,
-      noDeposit: true,
-    },
-    {
-      id: "32",
-      title: "Zara Hair & Beauty Salon | Nicosia Center",
-      rating: 4.7,
-      reviews: 142,
-      categories: ["Salon", "Beauty"],
-      location: "Ledra Street, Nicosia",
-      distance: "0.8km away",
-      lastVisited: "Popular business",
-      startingPrice: 25,
-      image: "/img/service_demo.jpg",
-      hasDiamond: true,
-    },
-    {
-      id: "33",
-      title: "Zen Spa & Massage | Limassol Marina",
-      rating: 4.9,
-      reviews: 88,
-      categories: ["Spa", "Wellness"],
-      location: "Marina Road, Limassol",
-      distance: "1.5km away",
-      lastVisited: "Popular business",
-      startingPrice: 60,
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    },
-    {
-      id: "34",
-      title: "Luxury Nails & Lashes | Limassol",
-      rating: 4.6,
-      reviews: 95,
-      categories: ["Beauty", "Salon"],
-      location: "Anexartisias, Limassol",
-      distance: "2.1km away",
-      lastVisited: "Popular business",
-      startingPrice: 20,
-      image: "/img/service_demo.jpg",
-    },
-    {
-      id: "35",
-      title: "Absolute Tattoo Studio | Ayia Napa",
-      rating: 4.8,
-      reviews: 320,
-      categories: ["Beauty", "Experience"],
-      location: "Nissi Avenue, Ayia Napa",
-      distance: "0.7km away",
-      lastVisited: "Popular business",
-      startingPrice: 80,
-      image: "/img/service_demo.jpg",
-      hasDiamond: true,
-    },
-    {
-      id: "36",
-      title: "Precision Men's Grooming | Larnaca",
-      rating: 4.6,
-      reviews: 92,
-      categories: ["Barber"],
-      location: "Phinikoudes, Larnaca",
-      distance: "1.2km away",
-      lastVisited: "Popular business",
-      startingPrice: 18,
-      image: "/img/service_demo.jpg",
-      noDeposit: true,
-    }
-  ];
+  const rowsLoading = !authReady || homeSections.isLoading;
+  const rowsError = homeSections.isError;
+  const recommended = (homeSections.data?.recommended ?? []).map(discoveryCardToRecommendation);
+  const nearYou = (homeSections.data?.nearYou ?? []).map(discoveryCardToRecommendation);
+  const popular = (homeSections.data?.popular ?? []).map(discoveryCardToRecommendation);
+
+  const handleBookNow = (id: string) => router.push(`/venue?id=${id}`);
+
+  // The 8 homepage category tiles are a design-driven grouping with no mapping to the free-form
+  // `Business.category` strings the backend actually stores, so selecting one only styles the
+  // tile — it does not (and must not fake) filtering the rows below. Real category filtering
+  // lives on /explore, driven by the real `/discovery/categories` list.
 
   return (
     <>
@@ -471,8 +285,9 @@ export default function CategoryServicesSection() {
         </div>
       </section>
 
-      {/* Book Again Section (Logged In Only) */}
-      {isLoggedIn && (
+      {/* Book Again Section (Logged In Only) — see note above; no placeholder businesses are
+          shipped, it simply has no data source yet. */}
+      {isLoggedIn && bookAgainServices.length > 0 && (
         <BookAgainSection
           services={bookAgainServices}
           favorites={favorites}
@@ -480,113 +295,39 @@ export default function CategoryServicesSection() {
         />
       )}
 
-      {/* 6. Recommended Section */}
-      <section className="w-full px-4 md:px-8 xl:px-[68px] mt-16 relative z-10">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl md:text-[28px] font-medium tracking-tight text-[#1C1B1C]">Recommended</h2>
-          <a href="/explore" className="text-sm md:text-base font-medium text-[#1C1B1C] hover:underline transition-all">
-            See all
-          </a>
-        </div>
-        {recommendations.length > 5 ? (
-          <Carousel>
-            {recommendations.map((rec) => (
-              <div key={rec.id} className="w-[calc(50%-7.5px)] sm:w-[360px] md:w-[406px] shrink-0 snap-start">
-                <ServiceCard
-                  rec={rec}
-                  isFavorite={favorites.includes(rec.id)}
-                  onToggleFavorite={toggleFavorite}
-                  onBookNow={(id) => router.push(`/venue?id=${id}`)}
-                />
-              </div>
-            ))}
-          </Carousel>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center">
-            {recommendations.map((rec) => (
-              <ServiceCard
-                key={rec.id}
-                rec={rec}
-                isFavorite={favorites.includes(rec.id)}
-                onToggleFavorite={toggleFavorite}
-                onBookNow={(id) => router.push(`/venue?id=${id}`)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      {/* 6. Recommended */}
+      <DiscoveryRow
+        title="Recommended"
+        cards={recommended}
+        isLoading={rowsLoading}
+        isError={rowsError}
+        favorites={favorites}
+        onToggleFavorite={toggleFavorite}
+        onBookNow={handleBookNow}
+      />
 
-      {/* 7. Services Near You Section */}
-      <section className="w-full px-4 md:px-8 xl:px-[68px] mt-16 relative z-10">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl md:text-[28px] font-medium tracking-tight text-[#1C1B1C]">Services near you</h2>
-          <a href="/explore" className="text-sm md:text-base font-medium text-[#1C1B1C] hover:underline transition-all">
-            See all
-          </a>
-        </div>
-        {servicesNearYou.length > 5 ? (
-          <Carousel>
-            {servicesNearYou.map((rec) => (
-              <div key={rec.id} className="w-[calc(50%-7.5px)] sm:w-[360px] md:w-[406px] shrink-0 snap-start">
-                <ServiceCard
-                  rec={rec}
-                  isFavorite={favorites.includes(rec.id)}
-                  onToggleFavorite={toggleFavorite}
-                  onBookNow={(id) => router.push(`/venue?id=${id}`)}
-                />
-              </div>
-            ))}
-          </Carousel>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center">
-            {servicesNearYou.map((rec) => (
-              <ServiceCard
-                key={rec.id}
-                rec={rec}
-                isFavorite={favorites.includes(rec.id)}
-                onToggleFavorite={toggleFavorite}
-                onBookNow={(id) => router.push(`/venue?id=${id}`)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      {/* 7. Services near you */}
+      <DiscoveryRow
+        title="Services near you"
+        cards={nearYou}
+        isLoading={rowsLoading}
+        isError={rowsError}
+        favorites={favorites}
+        onToggleFavorite={toggleFavorite}
+        onBookNow={handleBookNow}
+      />
 
-      {/* 8. Popular Section */}
-      <section className="w-full px-4 md:px-8 xl:px-[68px] mt-16 relative z-10 mb-12">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl md:text-[28px] font-medium tracking-tight text-[#1C1B1C]">Popular</h2>
-          <a href="/explore" className="text-sm md:text-base font-medium text-[#1C1B1C] hover:underline transition-all">
-            See all
-          </a>
-        </div>
-        {popularBusinesses.length > 5 ? (
-          <Carousel>
-            {popularBusinesses.map((rec) => (
-              <div key={rec.id} className="w-[calc(50%-7.5px)] sm:w-[360px] md:w-[406px] shrink-0 snap-start">
-                <ServiceCard
-                  rec={rec}
-                  isFavorite={favorites.includes(rec.id)}
-                  onToggleFavorite={toggleFavorite}
-                  onBookNow={(id) => router.push(`/venue?id=${id}`)}
-                />
-              </div>
-            ))}
-          </Carousel>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center">
-            {popularBusinesses.map((rec) => (
-              <ServiceCard
-                key={rec.id}
-                rec={rec}
-                isFavorite={favorites.includes(rec.id)}
-                onToggleFavorite={toggleFavorite}
-                onBookNow={(id) => router.push(`/venue?id=${id}`)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      {/* 8. Popular */}
+      <DiscoveryRow
+        title="Popular"
+        cards={popular}
+        isLoading={rowsLoading}
+        isError={rowsError}
+        favorites={favorites}
+        onToggleFavorite={toggleFavorite}
+        onBookNow={handleBookNow}
+        className="mb-12"
+      />
     </>
   );
 }

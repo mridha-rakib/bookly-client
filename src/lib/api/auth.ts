@@ -4,6 +4,7 @@ import type { BusinessCity } from "@/lib/constants/cities";
 export type UserRole = "CUSTOMER" | "BUSINESS_OWNER" | "SUPERVISOR" | "STAFF" | "SUPER_ADMIN";
 export type UserStatus = "ACTIVE" | "DORMANT" | "SUSPENDED";
 export type Gender = "male" | "female" | "other";
+export type UserLanguage = "EN" | "GR";
 export type Portal = "customer" | "professional";
 export type VisitType = "AT_BUSINESS_LOCATION" | "TRAVEL_TO_CUSTOMER";
 
@@ -19,6 +20,8 @@ export interface AuthProfile {
   lastName: string;
   fullName: string;
   gender: Gender;
+  /** Account UI language preference. Always present (legacy profiles read back as "EN"). */
+  defaultLanguage: UserLanguage;
   phone?: {
     countryCode: string;
     nationalNumber: string;
@@ -34,6 +37,8 @@ export interface UpdateMyProfileInput {
   firstName?: string;
   lastName?: string;
   gender?: Gender;
+  /** Super Admin Settings → Admin Account. */
+  defaultLanguage?: UserLanguage;
   address?: string;
   dateOfBirth?: string;
 }

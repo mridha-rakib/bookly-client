@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { useLocationStore, resolveBusinessCity } from "@/lib/location/store";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Search01Icon,
@@ -19,6 +20,11 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [locationQuery, setLocationQuery] = useState("");
+
+  // Batch 17 — the picked city is the real signal behind the homepage "Services near you" row.
+  const setSelectedCity = useLocationStore((state) => state.setSelectedCity);
+  // Resolve whatever is currently in the location field to a real BusinessCity (or clear it).
+  const syncSelectedCity = (value: string) => setSelectedCity(resolveBusinessCity(value));
 
   // Time selector states
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -202,7 +208,7 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
             type="text"
             placeholder="Anywhere in Cyprus"
             value={locationQuery}
-            onChange={(e) => setLocationQuery(e.target.value)}
+            onChange={(e) => { setLocationQuery(e.target.value); syncSelectedCity(e.target.value); }}
             onFocus={() => {
               setActiveSegment("location");
               setShowTimePicker(false);
@@ -225,6 +231,7 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
                     setCurrentLocationActive(!currentLocationActive);
                     if (!currentLocationActive) {
                       setLocationQuery("Current location");
+                      setSelectedCity(null);
                     } else {
                       setLocationQuery("");
                     }
@@ -249,6 +256,7 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
                     type="button"
                     onClick={() => {
                       setLocationQuery(loc);
+                      syncSelectedCity(loc);
                       setActiveSegment(null);
                     }}
                     className="w-[310px] flex flex-col items-start gap-[12px] group cursor-pointer border-0 bg-transparent text-left"
@@ -278,6 +286,7 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
                       type="button"
                       onClick={() => {
                         setLocationQuery(loc);
+                      syncSelectedCity(loc);
                         setActiveSegment(null);
                       }}
                       className="w-[310px] flex flex-col items-start gap-[12px] group cursor-pointer border-0 bg-transparent text-left"
@@ -703,6 +712,7 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
                     onClick={() => {
                       setSearchQuery("Hair & styling");
                       setLocationQuery("Larnaca");
+                      syncSelectedCity("Larnaca");
                       setSelectedTime("Any Time");
                       setShowSearchDropdown(false);
                       setActiveSegment(null);
@@ -756,7 +766,7 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
                     type="text"
                     placeholder="Search location"
                     value={locationQuery}
-                    onChange={(e) => setLocationQuery(e.target.value)}
+                    onChange={(e) => { setLocationQuery(e.target.value); syncSelectedCity(e.target.value); }}
                     className="w-full h-10 text-sm text-[#1C1B1C] placeholder-[#757575] bg-transparent outline-none font-medium"
                   />
                 </div>
@@ -769,6 +779,7 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
                       setCurrentLocationActive(!currentLocationActive);
                       if (!currentLocationActive) {
                         setLocationQuery("Current location");
+                      setSelectedCity(null);
                       } else {
                         setLocationQuery("");
                       }
@@ -793,6 +804,7 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
                       type="button"
                       onClick={() => {
                         setLocationQuery(loc);
+                      syncSelectedCity(loc);
                         setShowSearchDropdown(false);
                         setActiveSegment(null);
                       }}

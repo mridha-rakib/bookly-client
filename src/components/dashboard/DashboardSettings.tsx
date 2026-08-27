@@ -3,7 +3,7 @@ import Image from "next/image";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 
 
-import React, { useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   User02Icon,
@@ -21,7 +21,14 @@ import { SettingsInput } from "../settings/SettingsInput";
 import { SettingsSubSidebar } from "../settings/SettingsSubSidebar";
 import { Security2FAPanel } from "../settings/Security2FAPanel";
 import { useCurrentUserQuery } from "@/lib/auth/hooks";
-import { useMyBusinessProfileQuery } from "@/lib/business/hooks";
+import {
+  useBusinessQuery,
+  useConnectGoogleCalendarMutation,
+  useDisconnectGoogleCalendarMutation,
+  useGoogleCalendarStatusQuery,
+  useMyBusinessProfileQuery,
+  useUpdateBusinessMutation,
+} from "@/lib/business/hooks";
 import { useStaffListQuery } from "@/lib/staff/hooks";
 import {
   cancellationTiers,
@@ -51,6 +58,69 @@ export default function DashboardSettings() {
   const meQuery = useCurrentUserQuery();
   const businessProfileQuery = useMyBusinessProfileQuery();
   const businessId = businessProfileQuery.data?.primary?.id;
+  const businessDetailQuery = useBusinessQuery(businessId);
+  const updateBusinessMutation = useUpdateBusinessMutation();
+
+  const googleCalendarStatusQuery = useGoogleCalendarStatusQuery(businessId);
+  const connectGoogleCalendarMutation = useConnectGoogleCalendarMutation();
+  const disconnectGoogleCalendarMutation = useDisconnectGoogleCalendarMutation();
+  const [googleCalendarRedirectNotice, setGoogleCalendarRedirectNotice] = useState<
+    "connected" | "error" | null
+  >(null);
+  const [googleCalendarConnectError, setGoogleCalendarConnectError] = useState<string | null>(null);
+
+  // Landed back here from the Google Calendar OAuth redirect (see
+  // integration.controller.ts's frontendSettingsUrl) — show a one-time result banner and open
+  // the Integration sub-tab, then refresh the real connected status from the backend.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const googleCalendarResult = params.get("googleCalendar");
+
+    if (params.get("settingsTab") === "Integration") {
+      setActiveSubTab("Integration");
+    }
+
+    if (googleCalendarResult === "connected" || googleCalendarResult === "error") {
+      setGoogleCalendarRedirectNotice(googleCalendarResult);
+      void googleCalendarStatusQuery.refetch();
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    // Only ever needs to run once, right after the OAuth redirect lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Integration tab — Instagram/Facebook are manual link-only fields (no OAuth, no Graph API
+  // sync): the owner types their handle/Page URL and it's stored/displayed as-is.
+  const [instagramEditing, setInstagramEditing] = useState(false);
+  const [instagramDraft, setInstagramDraft] = useState("");
+  const [instagramError, setInstagramError] = useState<string | null>(null);
+  const [facebookEditing, setFacebookEditing] = useState(false);
+  const [facebookDraft, setFacebookDraft] = useState("");
+  const [facebookError, setFacebookError] = useState<string | null>(null);
+
+  const handleSaveInstagram = () => {
+    if (!businessId) return;
+    setInstagramError(null);
+    updateBusinessMutation.mutate(
+      { businessId, input: { instagramHandle: instagramDraft.trim() } },
+      {
+        onSuccess: () => setInstagramEditing(false),
+        onError: () => setInstagramError("Couldn't save your Instagram handle. Please try again."),
+      },
+    );
+  };
+
+  const handleSaveFacebook = () => {
+    if (!businessId) return;
+    setFacebookError(null);
+    updateBusinessMutation.mutate(
+      { businessId, input: { facebookPageUrl: facebookDraft.trim() } },
+      {
+        onSuccess: () => setFacebookEditing(false),
+        onError: () => setFacebookError("Couldn't save your Facebook Page link. Please try again."),
+      },
+    );
+  };
 
   // Personal Info — read-only, real (Batch 19): sourced from /auth/me. There is no PATCH /auth/me
   // equivalent for BUSINESS_OWNER (only CUSTOMER has one, see Batch 17/18), so editing stays
@@ -514,52 +584,174 @@ export default function DashboardSettings() {
                 <span className="font-semibold text-sm text-[#1A1A1A]">Connected apps</span>
                 <span className="text-[11px] text-neutral-400 -mt-4">Third-party tools that extend Bookly</span>
 
-                {/* App 1: Google Calendar */}
-                <div className="border border-neutral-100 rounded-[12px] p-4 flex flex-col items-start gap-3">
+                {/* App 1: Google Calendar — real OAuth, one-way Bookly -> Google booking sync */}
+                <div className="border border-neutral-100 rounded-[12px] p-4 flex flex-col items-start gap-3 w-full">
                   <div className="flex items-center gap-3">
                     <Image src="/Icons/Google.svg" alt="Google" className="w-8 h-8 object-contain" width={32} height={32} />
                     <div className="flex flex-col">
                       <span className="font-semibold text-sm text-[#111111]">Google Calendar</span>
-                      <span className="text-xs text-[#666666] mt-0.5">Not connected</span>
+                      <span className="text-xs text-[#666666] mt-0.5">
+                        {googleCalendarStatusQuery.data?.connected
+                          ? googleCalendarStatusQuery.data.status === "ERROR"
+                            ? `Connected · sync error (${googleCalendarStatusQuery.data.googleAccountEmail})`
+                            : `Connected · ${googleCalendarStatusQuery.data.googleAccountEmail}`
+                          : "Not connected"}
+                      </span>
                     </div>
                   </div>
-                  <button
-                    disabled={true}
-                    className="px-4 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-neutral-400 cursor-not-allowed"
-                  >
-                    Connect
-                  </button>
+
+                  {googleCalendarRedirectNotice === "connected" && (
+                    <p className="text-xs text-green-600">Google Calendar connected. New bookings will now sync.</p>
+                  )}
+                  {googleCalendarRedirectNotice === "error" && (
+                    <p className="text-xs text-red-600">Couldn&apos;t connect Google Calendar. Please try again.</p>
+                  )}
+                  {googleCalendarConnectError && (
+                    <p className="text-xs text-red-600">{googleCalendarConnectError}</p>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    {googleCalendarStatusQuery.data?.connected ? (
+                      <button
+                        disabled={disconnectGoogleCalendarMutation.isPending}
+                        onClick={() => businessId && disconnectGoogleCalendarMutation.mutate(businessId)}
+                        className="px-4 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-[#5B5D58] hover:bg-neutral-50 cursor-pointer disabled:opacity-60"
+                      >
+                        {disconnectGoogleCalendarMutation.isPending ? "Disconnecting..." : "Disconnect"}
+                      </button>
+                    ) : (
+                      <button
+                        disabled={!businessId || connectGoogleCalendarMutation.isPending}
+                        onClick={() => {
+                          if (!businessId) return;
+                          setGoogleCalendarConnectError(null);
+                          connectGoogleCalendarMutation.mutate(businessId, {
+                            onError: (error) =>
+                              setGoogleCalendarConnectError(
+                                error instanceof Error
+                                  ? error.message
+                                  : "Couldn't start the Google Calendar connection. Please try again.",
+                              ),
+                          });
+                        }}
+                        className="px-4 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-[#1A1A1A] hover:bg-neutral-50 cursor-pointer disabled:opacity-60"
+                      >
+                        {connectGoogleCalendarMutation.isPending ? "Redirecting..." : "Connect"}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                {/* App 2: Instagram */}
-                <div className="border border-neutral-100 rounded-[12px] p-4 flex flex-col items-start gap-3">
+                {/* App 2: Instagram — manual handle link, no OAuth/Graph API */}
+                <div className="border border-neutral-100 rounded-[12px] p-4 flex flex-col items-start gap-3 w-full">
                   <div className="flex items-center gap-3">
                     <Image src="/Icons/instagram1.svg" alt="Instagram" className="w-8 h-8 object-contain" width={32} height={32} />
                     <div className="flex flex-col">
                       <span className="font-semibold text-sm text-[#111111]">Instagram</span>
-                      <span className="text-xs text-[#666666] mt-0.5">Not connected</span>
+                      <span className="text-xs text-[#666666] mt-0.5">
+                        {businessDetailQuery.data?.instagramHandle
+                          ? `Connected · @${businessDetailQuery.data.instagramHandle.replace(/^@/, "")}`
+                          : "Not connected"}
+                      </span>
                     </div>
                   </div>
-                  <button disabled={true} className="px-4 py-1.5 bg-neutral-200 text-neutral-400 rounded-lg text-xs font-semibold cursor-not-allowed">
-                    Connect
-                  </button>
+
+                  {instagramEditing ? (
+                    <div className="flex flex-col gap-2 w-full">
+                      <div className="flex items-center border border-[#D3D1C7] rounded-[8px] overflow-hidden h-9 px-3">
+                        <span className="text-xs text-[#757575] mr-1">@</span>
+                        <input
+                          type="text"
+                          value={instagramDraft.replace(/^@/, "")}
+                          onChange={(e) => setInstagramDraft(e.target.value)}
+                          placeholder="yourbusiness"
+                          className="flex-1 text-[13px] text-[#1A1A1A] font-poppins focus:outline-none h-full bg-transparent"
+                        />
+                      </div>
+                      {instagramError && <p className="text-xs text-red-600">{instagramError}</p>}
+                      <div className="flex items-center gap-2">
+                        <button
+                          disabled={updateBusinessMutation.isPending || !instagramDraft.trim()}
+                          onClick={handleSaveInstagram}
+                          className="px-4 py-1.5 bg-[#111111] hover:bg-black text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-60"
+                        >
+                          {updateBusinessMutation.isPending ? "Saving..." : "Save"}
+                        </button>
+                        <button
+                          onClick={() => setInstagramEditing(false)}
+                          className="px-4 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-[#5B5D58] hover:bg-neutral-50 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setInstagramDraft(businessDetailQuery.data?.instagramHandle ?? "");
+                        setInstagramError(null);
+                        setInstagramEditing(true);
+                      }}
+                      className="px-4 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-[#1A1A1A] hover:bg-neutral-50 cursor-pointer"
+                    >
+                      {businessDetailQuery.data?.instagramHandle ? "Edit" : "Connect"}
+                    </button>
+                  )}
                 </div>
 
-                {/* App 3: Facebook */}
-                <div className="border border-neutral-100 rounded-[12px] p-4 flex flex-col items-start gap-3">
+                {/* App 3: Facebook — manual Page link, no OAuth/Graph API */}
+                <div className="border border-neutral-100 rounded-[12px] p-4 flex flex-col items-start gap-3 w-full">
                   <div className="flex items-center gap-3">
                     <Image src="/Icons/Facebook.svg" alt="Facebook" className="w-8 h-8 object-contain" width={32} height={32} />
                     <div className="flex flex-col">
                       <span className="font-semibold text-sm text-[#111111]">Facebook</span>
-                      <span className="text-xs text-[#666666] mt-0.5">Not connected</span>
+                      <span className="text-xs text-[#666666] mt-0.5">
+                        {businessDetailQuery.data?.facebookPageUrl ? "Connected" : "Not connected"}
+                      </span>
                     </div>
                   </div>
-                  <button disabled={true} className="px-4 py-1.5 bg-neutral-200 text-neutral-400 rounded-lg text-xs font-semibold cursor-not-allowed">
-                    Connect
-                  </button>
-                </div>
 
-                <p className="text-[11px] text-neutral-400">Integrations aren&apos;t available yet.</p>
+                  {facebookEditing ? (
+                    <div className="flex flex-col gap-2 w-full">
+                      <div className="flex items-center border border-[#D3D1C7] rounded-[8px] overflow-hidden h-9 px-3">
+                        <input
+                          type="text"
+                          value={facebookDraft}
+                          onChange={(e) => setFacebookDraft(e.target.value)}
+                          placeholder="https://facebook.com/yourbusiness"
+                          className="flex-1 text-[13px] text-[#1A1A1A] font-poppins focus:outline-none h-full bg-transparent"
+                        />
+                      </div>
+                      {facebookError && <p className="text-xs text-red-600">{facebookError}</p>}
+                      <div className="flex items-center gap-2">
+                        <button
+                          disabled={updateBusinessMutation.isPending || !facebookDraft.trim()}
+                          onClick={handleSaveFacebook}
+                          className="px-4 py-1.5 bg-[#111111] hover:bg-black text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-60"
+                        >
+                          {updateBusinessMutation.isPending ? "Saving..." : "Save"}
+                        </button>
+                        <button
+                          onClick={() => setFacebookEditing(false)}
+                          className="px-4 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-[#5B5D58] hover:bg-neutral-50 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setFacebookDraft(businessDetailQuery.data?.facebookPageUrl ?? "");
+                        setFacebookError(null);
+                        setFacebookEditing(true);
+                      }}
+                      className="px-4 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-[#1A1A1A] hover:bg-neutral-50 cursor-pointer"
+                    >
+                      {businessDetailQuery.data?.facebookPageUrl ? "Edit" : "Connect"}
+                    </button>
+                  )}
+                </div>
 
               </div>
             </div>

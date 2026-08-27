@@ -13,6 +13,25 @@ import { Spinner } from "@/components/ui/spinner";
 import { useCustomerLoginMutation } from "@/lib/auth/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
 
+/**
+ * Where to send the customer after a successful login. A public page (e.g. /venue) may stash a
+ * relative return path in sessionStorage before handing off to this auth flow — read it once,
+ * clear it, and only honour a same-origin relative path (never an absolute/protocol-relative
+ * URL, so this can't be turned into an open redirect). Falls back to the home page.
+ */
+const consumePostLoginRedirect = (): string => {
+  try {
+    const stored = sessionStorage.getItem("bookly:post_login_redirect");
+    sessionStorage.removeItem("bookly:post_login_redirect");
+    if (stored && stored.startsWith("/") && !stored.startsWith("//")) {
+      return stored;
+    }
+  } catch {
+    // sessionStorage unavailable — fall through to the default.
+  }
+  return "/";
+};
+
 function PasswordPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -32,7 +51,7 @@ function PasswordPageContent() {
 
     try {
       await login.mutateAsync({ email, password });
-      router.push("/");
+      router.push(consumePostLoginRedirect());
     } catch (error) {
       setPasswordError(toUserMessage(error));
     }

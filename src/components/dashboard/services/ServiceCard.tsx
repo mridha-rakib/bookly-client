@@ -6,7 +6,9 @@ import {
   Clock01Icon,
   UserGroup03Icon as UsersIcon,
   Car04Icon,
-  AlertCircleIcon
+  AlertCircleIcon,
+  UserBlock01Icon as NoShowIcon,
+  Link02Icon
 } from "@hugeicons/core-free-icons";
 
 import type { Service } from "@/lib/api/services";
@@ -29,6 +31,11 @@ const EditDotsIcon = () => (
 
 interface ServiceCardProps {
   service: Service;
+  /** Business-wide Cancellation & No-show policy percentage. Undefined while loading, on
+   * error, or when the business has not configured a policy yet — never a fabricated default. */
+  noShowPercentage?: number;
+  /** Count of currently-active Add-ons assigned to this Service. Undefined/0 hides the row. */
+  addonCount?: number;
   onView: () => void;
   onEdit: () => void;
   onArchive: () => void;
@@ -38,6 +45,8 @@ interface ServiceCardProps {
 
 export default function ServiceCard({
   service,
+  noShowPercentage,
+  addonCount,
   onView,
   onEdit,
   onArchive,
@@ -176,6 +185,18 @@ export default function ServiceCard({
             </div>
           )}
 
+          {addonCount !== undefined && addonCount > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-3 text-neutral-500">
+                <HugeiconsIcon icon={Link02Icon} className="w-4 h-4" />
+                <span>Add-ons</span>
+              </div>
+              <span className="font-medium text-[#111111]">
+                {addonCount} add-on{addonCount === 1 ? "" : "s"}
+              </span>
+            </div>
+          )}
+
           {service.sessionExpiryAlert.enabled && (
             <div className="flex items-center justify-between text-sm">
               <div className="flex items-center gap-3 text-neutral-500">
@@ -185,6 +206,16 @@ export default function ServiceCard({
               <span className="font-medium text-[#111111]">
                 {service.sessionExpiryAlert.minutesBeforeSessionEnds} min before
               </span>
+            </div>
+          )}
+
+          {noShowPercentage !== undefined && (
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-3 text-neutral-500">
+                <HugeiconsIcon icon={NoShowIcon} className="w-4 h-4" />
+                <span>No-show</span>
+              </div>
+              <span className="font-medium text-[#111111]">{noShowPercentage}%</span>
             </div>
           )}
         </div>

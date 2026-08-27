@@ -8,11 +8,9 @@ interface AdminAccountSettingsProps {
   tempName: string;
   setTempName: (val: string) => void;
   setIsEditingName: (val: boolean) => void;
+  nameError?: string;
+  savingName?: boolean;
   email: string;
-  isEditingEmail: boolean;
-  tempEmail: string;
-  setTempEmail: (val: string) => void;
-  setIsEditingEmail: (val: boolean) => void;
   isEditingPassword: boolean;
   setIsEditingPassword: (val: boolean) => void;
   currentPassword: string;
@@ -21,12 +19,13 @@ interface AdminAccountSettingsProps {
   setNewPassword: (val: string) => void;
   confirmPassword: string;
   setConfirmPassword: (val: string) => void;
+  passwordError?: string;
+  savingPassword?: boolean;
   language: "EN" | "GR";
   setLanguage: (val: "EN" | "GR") => void;
+  savingLanguage?: boolean;
   handleSaveName: () => void;
   handleCancelName: () => void;
-  handleSaveEmail: () => void;
-  handleCancelEmail: () => void;
   handleSavePassword: () => void;
   handleCancelPassword: () => void;
 }
@@ -37,11 +36,9 @@ export default function AdminAccountSettings({
   tempName,
   setTempName,
   setIsEditingName,
+  nameError,
+  savingName,
   email,
-  isEditingEmail,
-  tempEmail,
-  setTempEmail,
-  setIsEditingEmail,
   isEditingPassword,
   setIsEditingPassword,
   currentPassword,
@@ -50,12 +47,13 @@ export default function AdminAccountSettings({
   setNewPassword,
   confirmPassword,
   setConfirmPassword,
+  passwordError,
+  savingPassword,
   language,
   setLanguage,
+  savingLanguage,
   handleSaveName,
   handleCancelName,
-  handleSaveEmail,
-  handleCancelEmail,
   handleSavePassword,
   handleCancelPassword,
 }: AdminAccountSettingsProps) {
@@ -67,32 +65,37 @@ export default function AdminAccountSettings({
 
       <div className="flex flex-col">
         {/* Full Name Row */}
-        <div className="flex flex-col sm:flex-row sm:items-center py-4 border-b border-[#E5E7EB] gap-2 min-h-[64px]">
-          <div className="w-full sm:w-1/3 text-sm font-medium text-[#6B7280]">Full name</div>
+        <div className="flex flex-col sm:flex-row sm:items-start py-4 border-b border-[#E5E7EB] gap-2 min-h-[64px]">
+          <div className="w-full sm:w-1/3 text-sm font-medium text-[#6B7280] pt-1.5">Full name</div>
           <div className="w-full sm:w-1/3 text-sm text-[#111827]">
             {isEditingName ? (
-              <input
-                type="text"
-                value={tempName}
-                onChange={(e) => setTempName(e.target.value)}
-                className="w-full max-w-xs border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
-              />
+              <div className="flex flex-col gap-1 w-full max-w-xs">
+                <input
+                  type="text"
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
+                />
+                {nameError && <span className="text-xs text-red-600">{nameError}</span>}
+              </div>
             ) : (
-              fullName
+              <span className="pt-1.5 inline-block">{fullName}</span>
             )}
           </div>
           <div className="w-full sm:w-1/3 flex sm:justify-start">
             {isEditingName ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 pt-1">
                 <button
                   onClick={handleSaveName}
-                  className="text-xs font-semibold text-[#6366F1] bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-full transition-colors cursor-pointer border-none"
+                  disabled={savingName}
+                  className="text-xs font-semibold text-[#6366F1] bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-full transition-colors cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Save
+                  {savingName ? "Saving…" : "Save"}
                 </button>
                 <button
                   onClick={handleCancelName}
-                  className="text-xs font-semibold text-[#111111] bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-full transition-colors cursor-pointer border-none"
+                  disabled={savingName}
+                  className="text-xs font-semibold text-[#111111] bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-full transition-colors cursor-pointer border-none disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -100,7 +103,7 @@ export default function AdminAccountSettings({
             ) : (
               <button
                 onClick={() => setIsEditingName(true)}
-                className="text-xs font-medium text-[#6366F1] hover:underline cursor-pointer border-none bg-transparent"
+                className="text-xs font-medium text-[#6366F1] hover:underline cursor-pointer border-none bg-transparent pt-1.5"
               >
                 Edit
               </button>
@@ -108,45 +111,12 @@ export default function AdminAccountSettings({
           </div>
         </div>
 
-        {/* Email Row */}
+        {/* Email Row — read-only. A verified admin email-change flow is a separate phase. */}
         <div className="flex flex-col sm:flex-row sm:items-center py-4 border-b border-[#E5E7EB] gap-2 min-h-[64px]">
           <div className="w-full sm:w-1/3 text-sm font-medium text-[#6B7280]">Email</div>
-          <div className="w-full sm:w-1/3 text-sm text-[#111827] truncate">
-            {isEditingEmail ? (
-              <input
-                type="email"
-                value={tempEmail}
-                onChange={(e) => setTempEmail(e.target.value)}
-                className="w-full max-w-xs border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
-              />
-            ) : (
-              email
-            )}
-          </div>
+          <div className="w-full sm:w-1/3 text-sm text-[#111827] truncate">{email}</div>
           <div className="w-full sm:w-1/3 flex sm:justify-start">
-            {isEditingEmail ? (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleSaveEmail}
-                  className="text-xs font-semibold text-[#6366F1] bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-full transition-colors cursor-pointer border-none"
-                >
-                  Save
-                </button>
-                <button
-                  onClick={handleCancelEmail}
-                  className="text-xs font-semibold text-[#111111] bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-full transition-colors cursor-pointer border-none"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setIsEditingEmail(true)}
-                className="text-xs font-medium text-[#6366F1] hover:underline cursor-pointer border-none bg-transparent"
-              >
-                Edit
-              </button>
-            )}
+            <span className="text-xs text-[#9CA3AF]">Managed by Bookly</span>
           </div>
         </div>
 
@@ -177,6 +147,7 @@ export default function AdminAccountSettings({
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
                 />
+                {passwordError && <span className="text-xs text-red-600">{passwordError}</span>}
               </div>
             ) : (
               "•••••••••••"
@@ -187,13 +158,15 @@ export default function AdminAccountSettings({
               <div className="flex items-center gap-2 pt-1">
                 <button
                   onClick={handleSavePassword}
-                  className="text-xs font-semibold text-[#6366F1] bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-full transition-colors cursor-pointer border-none"
+                  disabled={savingPassword}
+                  className="text-xs font-semibold text-[#6366F1] bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-full transition-colors cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Save
+                  {savingPassword ? "Saving…" : "Save"}
                 </button>
                 <button
                   onClick={handleCancelPassword}
-                  className="text-xs font-semibold text-[#111111] bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-full transition-colors cursor-pointer border-none"
+                  disabled={savingPassword}
+                  className="text-xs font-semibold text-[#111111] bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-full transition-colors cursor-pointer border-none disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -220,7 +193,8 @@ export default function AdminAccountSettings({
               <div className="inline-flex bg-[#F9FAFB] border border-[#E5E7EB] rounded-full p-0.5">
                 <button
                   onClick={() => setLanguage("EN")}
-                  className={`px-3 py-1 text-xs font-semibold rounded-full border-none cursor-pointer transition-all ${
+                  disabled={savingLanguage}
+                  className={`px-3 py-1 text-xs font-semibold rounded-full border-none cursor-pointer transition-all disabled:cursor-not-allowed ${
                     language === "EN"
                       ? "bg-[#6366F1] text-white"
                       : "text-[#6B7280] hover:text-[#111827]"
@@ -230,7 +204,8 @@ export default function AdminAccountSettings({
                 </button>
                 <button
                   onClick={() => setLanguage("GR")}
-                  className={`px-3 py-1 text-xs font-semibold rounded-full border-none cursor-pointer transition-all ${
+                  disabled={savingLanguage}
+                  className={`px-3 py-1 text-xs font-semibold rounded-full border-none cursor-pointer transition-all disabled:cursor-not-allowed ${
                     language === "GR"
                       ? "bg-[#6366F1] text-white"
                       : "text-[#6B7280] hover:text-[#111827]"

@@ -32,6 +32,36 @@ export interface DiscoveryListResult {
   pagination: { page: number; limit: number; total: number };
 }
 
+/** Public landing "Trusted by local businesses" card — only the fields that section renders.
+ * `imageUrl` is undefined when the business has no stored cover photo. */
+export interface FoundingPartnerCard {
+  id: string;
+  name: string;
+  city: BusinessCity;
+  imageUrl?: string;
+}
+
+/** Batch 17 — the homepage's three discovery rows, all real data (see
+ * api/src/modules/discovery/discovery.types.ts for the exact ranking of each). Same card shape
+ * as Explore — deliberately no `distance` (the product stores no visitor coordinates). */
+export interface HomeSectionsResult {
+  recommended: DiscoveryBusinessCard[];
+  nearYou: DiscoveryBusinessCard[];
+  popular: DiscoveryBusinessCard[];
+  meta: {
+    personalized: boolean;
+    nearYouCity: BusinessCity | null;
+  };
+}
+
+export interface HomeSectionsParams {
+  /** The city the visitor picked in the hero search bar — drives "Services near you". */
+  city?: BusinessCity;
+  /** Optional real category strings that narrow "Recommended" for logged-out visitors. */
+  category?: string[];
+  limit?: number;
+}
+
 export interface DiscoverySearchParams {
   q?: string;
   city?: BusinessCity[];
@@ -62,6 +92,25 @@ export const discoveryApi = {
       },
     }),
 
+  homeSections: (params: HomeSectionsParams = {}) =>
+    apiRequest<HomeSectionsResult>({
+      method: "GET",
+      url: "/discovery/home-sections",
+      params: {
+        ...(params.city ? { city: params.city } : {}),
+        ...(params.category && params.category.length > 0
+          ? { category: params.category.join(",") }
+          : {}),
+        ...(params.limit ? { limit: String(params.limit) } : {}),
+      },
+    }),
+
   listCategories: () =>
     apiRequest<{ categories: string[] }>({ method: "GET", url: "/discovery/categories" }),
+
+  listFoundingPartners: () =>
+    apiRequest<{ businesses: FoundingPartnerCard[] }>({
+      method: "GET",
+      url: "/discovery/founding-partners",
+    }),
 };

@@ -1,7 +1,17 @@
 "use client";
 
 import React, { useState } from "react";
-import { BlogPost, StaticPage, FaqItem } from "./types";
+import { BlogPost, StaticPage } from "./types";
+import type { Faq } from "@/lib/api/content";
+import {
+  useCreateFaqMutation,
+  useDeleteFaqMutation,
+  useFaqsQuery,
+  useReorderFaqsMutation,
+  useUpdateFaqMutation,
+} from "@/lib/content/hooks";
+import { toast } from "@/components/ui/sonner";
+import { toUserMessage } from "@/lib/auth/messages";
 import BlogTab from "./BlogTab";
 import StaticPagesTab from "./StaticPagesTab";
 import FaqTab from "./FaqTab";
@@ -59,22 +69,23 @@ export default function SuperAdminContent() {
     { id: "3", title: "Cookie Policy", slug: "/cookies", status: "Published", lastUpdated: "15 Jan 2026" },
   ]);
 
-  const [customerFaqs, setCustomerFaqs] = useState<FaqItem[]>([
-    { id: "1", question: "What is the deposit for?", answer: "A small deposit (up to €35) is charged on your first booking to verify your card details.", status: "Published" },
-    { id: "2", question: "How do I book an appointment?", answer: "Search for a business, choose a service and time, and confirm your booking.", status: "Published" },
-    { id: "3", question: "Can I cancel a booking?", answer: "Yes, within the business's cancellation window. If cancelled in time, your deposit will be refunded.", status: "Published" },
-  ]);
-
-  const [businessFaqs, setBusinessFaqs] = useState<FaqItem[]>([
-    { id: "1", question: "How do I set my staff working hours?", answer: "Go to staff section inside your business portal dashboard to configure custom shifts.", status: "Published" },
-  ]);
+  // FAQ data is now MongoDB-backed (see api/src/modules/content). One collection, discriminated
+  // by `audience` — the active tab picks which audience we read/write.
+  const faqAudience: Faq["audience"] =
+    activeTab === "FAQ — Businesses" ? "BUSINESS" : "CUSTOMER";
+  const faqsQuery = useFaqsQuery({ audience: faqAudience });
+  const faqs = faqsQuery.data?.faqs ?? [];
+  const createFaqMutation = useCreateFaqMutation();
+  const updateFaqMutation = useUpdateFaqMutation();
+  const deleteFaqMutation = useDeleteFaqMutation();
+  const reorderFaqsMutation = useReorderFaqsMutation();
 
   // --- Modals Toggle & Editing Item state ---
   const [isEditingBlogPost, setIsEditingBlogPost] = useState(false);
   const [editingPost, setEditingPost] = useState<BlogPost | null>(null);
 
   const [showFaqModal, setShowFaqModal] = useState(false);
-  const [editingFaq, setEditingFaq] = useState<FaqItem | null>(null);
+  const [editingFaq, setEditingFaq] = useState<Faq | null>(null);
 
   const [isEditingStaticPage, setIsEditingStaticPage] = useState(false);
   const [editingPage, setEditingPage] = useState<StaticPage | null>(null);
@@ -107,29 +118,40 @@ export default function SuperAdminContent() {
     setDeleteConfirm({ isOpen: true, type: "post", id });
   };
 
-  // --- FAQ Handlers ---
-  const handleSaveFaq = (e: React.FormEvent, data: { question: string; answer: string }) => {
+  // --- FAQ Handlers (MongoDB-backed via React Query mutations) ---
+  const handleSaveFaq = async (
+    e: React.FormEvent,
+    data: { question: string; answer: string; status: Faq["status"] },
+  ) => {
     e.preventDefault();
-    const isCustomer = activeTab === "FAQ — Customers";
-    const faqSetter = isCustomer ? setCustomerFaqs : setBusinessFaqs;
-
-    if (editingFaq) {
-      faqSetter((prev) =>
-        prev.map((f) => (f.id === editingFaq.id ? { ...f, ...data } : f))
-      );
-    } else {
-      const newFaq: FaqItem = {
-        id: String(Date.now()),
-        status: "Published",
-        ...data,
-      };
-      faqSetter((prev) => [...prev, newFaq]);
+    try {
+      if (editingFaq) {
+        await updateFaqMutation.mutateAsync({ faqId: editingFaq.id, input: data });
+        toast.success("FAQ updated successfully.");
+      } else {
+        await createFaqMutation.mutateAsync({ ...data, audience: faqAudience });
+        toast.success("FAQ created successfully.");
+      }
+      setShowFaqModal(false);
+    } catch (error) {
+      // Keep the modal open so the admin can retry — nothing was persisted.
+      toast.error(toUserMessage(error));
     }
-    setShowFaqModal(false);
   };
 
   const handleDeleteFaq = (id: string) => {
     setDeleteConfirm({ isOpen: true, type: "faq", id });
+  };
+
+  const handleReorderFaqs = async (orderedIds: string[]) => {
+    try {
+      await reorderFaqsMutation.mutateAsync({ audience: faqAudience, orderedIds });
+      toast.success("FAQ order updated successfully.");
+    } catch (error) {
+      toast.error(toUserMessage(error));
+      // Restore the real server order — FaqTab's optimistic list re-syncs from this refetch.
+      void faqsQuery.refetch();
+    }
   };
 
   // --- Static Page Handlers ---
@@ -153,15 +175,22 @@ export default function SuperAdminContent() {
     setDeleteConfirm({ isOpen: true, type: "page", id });
   };
 
-  const executeDelete = () => {
+  const executeDelete = async () => {
     if (!deleteConfirm) return;
     const { type, id } = deleteConfirm;
+    if (type === "faq") {
+      try {
+        await deleteFaqMutation.mutateAsync(id);
+        toast.success("FAQ deleted successfully.");
+        setDeleteConfirm(null);
+      } catch (error) {
+        // Leave the confirmation open on failure — nothing was deleted.
+        toast.error(toUserMessage(error));
+      }
+      return;
+    }
     if (type === "post") {
       setPosts((prev) => prev.filter((p) => p.id !== id));
-    } else if (type === "faq") {
-      const isCustomer = activeTab === "FAQ — Customers";
-      const faqSetter = isCustomer ? setCustomerFaqs : setBusinessFaqs;
-      faqSetter((prev) => prev.filter((f) => f.id !== id));
     } else if (type === "page") {
       setStaticPages((prev) => prev.filter((sp) => sp.id !== id));
     }
@@ -275,7 +304,11 @@ export default function SuperAdminContent() {
 
         {(activeTab === "FAQ — Customers" || activeTab === "FAQ — Businesses") && (
           <FaqTab
-            faqs={activeTab === "FAQ — Customers" ? customerFaqs : businessFaqs}
+            faqs={faqs}
+            isLoading={faqsQuery.isLoading}
+            isError={faqsQuery.isError}
+            isReordering={reorderFaqsMutation.isPending}
+            onReorder={handleReorderFaqs}
             onEdit={(faq) => {
               setEditingFaq(faq);
               setShowFaqModal(true);
@@ -295,6 +328,7 @@ export default function SuperAdminContent() {
         onClose={() => setShowFaqModal(false)}
         onSave={handleSaveFaq}
         editingFaq={editingFaq}
+        isSaving={createFaqMutation.isPending || updateFaqMutation.isPending}
       />
 
       {deleteConfirm?.isOpen && (
@@ -326,9 +360,10 @@ export default function SuperAdminContent() {
               <button
                 type="button"
                 onClick={executeDelete}
-                className="px-4 py-2 rounded-full bg-red-600 hover:bg-red-700 text-xs font-semibold text-white border-none cursor-pointer"
+                disabled={deleteConfirm.type === "faq" && deleteFaqMutation.isPending}
+                className="px-4 py-2 rounded-full bg-red-600 hover:bg-red-700 text-xs font-semibold text-white border-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Delete
+                {deleteConfirm.type === "faq" && deleteFaqMutation.isPending ? "Deleting…" : "Delete"}
               </button>
             </div>
           </div>

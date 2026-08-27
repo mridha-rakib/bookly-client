@@ -7,7 +7,7 @@ import { ArrowLeft02Icon, CheckListIcon as ListChecksIcon } from "@hugeicons/cor
 
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import { toast } from "@/components/ui/sonner";
-import { toUserMessage } from "@/lib/auth/messages";
+import { getFieldErrors, toUserMessage } from "@/lib/auth/messages";
 import type { DayOfWeek } from "@/lib/api/staff";
 import type {
   Service,
@@ -327,6 +327,30 @@ const selectArrowStyle = {
   backgroundSize: "16px"
 };
 
+// Maps a FormState key to the serviceInputSchema error path(s) it corrects, so editing a field
+// clears only its own stale error(s) instead of the whole `errors` map.
+const FIELD_ERROR_KEYS: Partial<Record<keyof FormState, string[]>> = {
+  name: ["name"],
+  subcategory: ["subcategory"],
+  serviceCategoryId: ["serviceCategoryId"],
+  packageServicesName: ["packageServicesName"],
+  sessionExpiryMinutes: ["sessionExpiryAlert.minutesBeforeSessionEnds"],
+  packageDuration: ["packagePricing.durationMin"],
+  packageSessions: ["packagePricing.sessionsInPackage"],
+  packageBundlePrice: ["packagePricing.bundlePriceCents"],
+  packageDiscount: ["packagePricing.discountPercent"],
+  fixedPrice: ["fixedPricing.priceCents"],
+  fixedDuration: ["fixedPricing.durationMin"],
+  fixedDiscount: ["fixedPricing.discountPercent"],
+  hourlyRate: ["hourlyPricing.ratePerHourCents"],
+  hourlyMin: ["hourlyPricing.minHours"],
+  hourlyMax: ["hourlyPricing.maxHours"],
+  perPersonRate: ["perPersonPricing.ratePerPersonCents"],
+  perPersonMin: ["perPersonPricing.minPersons"],
+  perPersonMax: ["perPersonPricing.maxPersons"],
+  perPersonDuration: ["perPersonPricing.durationMin"]
+};
+
 export default function ServiceForm({ businessId, mode, serviceId, onDone }: ServiceFormProps) {
   const isReadOnly = mode === "view";
   const title = mode === "create" ? "Create Service" : mode === "edit" ? "Edit Service" : "View Service";
@@ -374,6 +398,16 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+    const errorKeys = FIELD_ERROR_KEYS[key];
+    if (errorKeys?.some((errorKey) => errors[errorKey])) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        for (const errorKey of errorKeys) {
+          delete next[errorKey];
+        }
+        return next;
+      });
+    }
   };
 
   const setManualDay = (day: DayOfWeek, patch: Partial<ManualDayState>) => {
@@ -443,6 +477,12 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
       }
       onDone();
     } catch (error) {
+      // Backend Zod validation stays authoritative — map any field-level details it returns
+      // back onto the same `errors` state the frontend check uses, so they render inline too.
+      const fieldErrors = getFieldErrors(error);
+      if (Object.keys(fieldErrors).length > 0) {
+        setErrors(fieldErrors);
+      }
       toast.error(toUserMessage(error));
     } finally {
       setIsSubmitting(false);
@@ -545,6 +585,8 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
                         onChange={(e) => setField("subcategory", e.target.value)}
                         className={selectClass}
                         style={selectArrowStyle}
+                        aria-invalid={Boolean(errors.subcategory)}
+                        aria-describedby={errors.subcategory ? "package-subcategory-error" : undefined}
                       >
                         <option value="">— Select —</option>
                         {(business?.subcategories ?? []).map((sub) => (
@@ -554,6 +596,11 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
                         ))}
                       </select>
                     </div>
+                    {errors.subcategory && (
+                      <span id="package-subcategory-error" className="text-xs text-[#D85A30]">
+                        {errors.subcategory}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -568,7 +615,14 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
                     onChange={(e) => setField("name", e.target.value)}
                     placeholder="e.g. 5-session starter pack, Monthly unlimited…"
                     className={inputClass}
+                    aria-invalid={Boolean(errors.name)}
+                    aria-describedby={errors.name ? "package-name-error" : undefined}
                   />
+                  {errors.name && (
+                    <span id="package-name-error" className="text-xs text-[#D85A30]">
+                      {errors.name}
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex flex-col gap-2 w-full">
@@ -582,7 +636,14 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
                     onChange={(e) => setField("packageServicesName", e.target.value)}
                     placeholder="e.g. Haircut, Hairstyle"
                     className={inputClass}
+                    aria-invalid={Boolean(errors.packageServicesName)}
+                    aria-describedby={errors.packageServicesName ? "package-services-name-error" : undefined}
                   />
+                  {errors.packageServicesName && (
+                    <span id="package-services-name-error" className="text-xs text-[#D85A30]">
+                      {errors.packageServicesName}
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex flex-col gap-2 w-full">
@@ -1124,6 +1185,8 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
   );
 }
 
+const toFieldErrorId = (label: string) => `${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-error`;
+
 const NumField = ({
   label,
   required,
@@ -1153,8 +1216,14 @@ const NumField = ({
       onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ""))}
       placeholder={placeholder}
       className={inputClass}
+      aria-invalid={Boolean(error)}
+      aria-describedby={error ? toFieldErrorId(label) : undefined}
     />
-    {error && <span className="text-xs text-[#D85A30]">{error}</span>}
+    {error && (
+      <span id={toFieldErrorId(label)} className="text-xs text-[#D85A30]">
+        {error}
+      </span>
+    )}
   </div>
 );
 
@@ -1187,7 +1256,13 @@ const MoneyField = ({
       onChange={(e) => onChange(e.target.value.replace(/[^\d.]/g, ""))}
       placeholder={placeholder}
       className={inputClass}
+      aria-invalid={Boolean(error)}
+      aria-describedby={error ? toFieldErrorId(label) : undefined}
     />
-    {error && <span className="text-xs text-[#D85A30]">{error}</span>}
+    {error && (
+      <span id={toFieldErrorId(label)} className="text-xs text-[#D85A30]">
+        {error}
+      </span>
+    )}
   </div>
 );

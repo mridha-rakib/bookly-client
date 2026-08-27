@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
     // this to the storage host/port, so this only unlocks fetching from that allow-listed
     // origin, not arbitrary local IPs.
     dangerouslyAllowLocalIP: true,
+    
     remotePatterns: [
       {
         protocol: "https",
@@ -23,6 +24,14 @@ const nextConfig: NextConfig = {
         protocol: "http",
         hostname: "localhost",
         port: "9000",
+      },
+      {
+        // Production business media: Hetzner S3-compatible Object Storage
+        // (S3_ENDPOINT in api/.env). Path-style presigned URLs like
+        // https://hel1.your-objectstorage.com/<bucket>/businesses/.../media/....png?X-Amz-...
+        // The X-Amz-* query params rotate on every fetch, so no `search`/`pathname` is pinned.
+        protocol: "https",
+        hostname: "hel1.your-objectstorage.com",
       },
     ],
   },

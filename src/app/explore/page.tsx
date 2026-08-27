@@ -7,16 +7,16 @@ import Navbar from "@/components/Navbar";
 import FilterSidebar from "@/components/explore/FilterSidebar";
 import MobileFilterDrawer from "@/components/explore/MobileFilterDrawer";
 import ResultsList from "@/components/explore/ResultsList";
-import type { Recommendation } from "@/components/ServiceCard";
 
 import { useAuthStore } from "@/lib/auth/store";
 import { useDiscoveryCategoriesQuery, useDiscoverySearchQuery } from "@/lib/discovery/hooks";
+import { discoveryCardToRecommendation } from "@/lib/discovery/card";
 import {
   useAddFavoriteMutation,
   useFavoriteIdsQuery,
   useRemoveFavoriteMutation,
 } from "@/lib/favorite/hooks";
-import type { DiscoveryBusinessCard, DiscoverySortOption } from "@/lib/api/discovery";
+import type { DiscoverySortOption } from "@/lib/api/discovery";
 import type { BusinessCity } from "@/lib/constants/cities";
 
 const ExploreMap = dynamic(() => import("@/components/explore/ExploreMap"), {
@@ -37,20 +37,8 @@ const SORT_LABEL_TO_OPTION: Record<string, DiscoverySortOption> = {
 
 const PAGE_SIZE = 12;
 
-const cardToRecommendation = (card: DiscoveryBusinessCard): Recommendation => ({
-  id: card.id,
-  title: card.name,
-  rating: card.averageRating,
-  reviews: card.reviewCount,
-  categories: [card.category, ...card.subcategories],
-  location: card.city,
-  startingPrice: card.startingPriceCents !== null ? Math.round(card.startingPriceCents / 100) : null,
-  startingPriceSuffix:
-    card.startingPricingMode === "HOURLY" ? "/hr" : card.startingPricingMode === "PER_PERSON" ? "/person" : "",
-  image: card.imageUrl ?? null,
-  travelsToYou: card.visitType === "TRAVEL_TO_CUSTOMER",
-  isAvailable: card.isAvailable,
-});
+// Shared with the homepage discovery rows — see lib/discovery/card.ts.
+const cardToRecommendation = discoveryCardToRecommendation;
 
 export default function ExplorePage() {
   const router = useRouter();

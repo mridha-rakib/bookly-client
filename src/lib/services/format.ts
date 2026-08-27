@@ -60,14 +60,27 @@ export const formatDiscount = (service: Service): string | undefined => {
   return percent !== undefined ? `${percent}% Discount` : undefined;
 };
 
+/** Privacy-friendly compact display: "Rakib Mahmud Mridha" -> "Rakib M." (first name + last
+ * word's initial). A single-word name is shown as-is — there's no surname to abbreviate. */
+export const formatStaffDisplayName = (fullName: string): string => {
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length < 2) {
+    return parts[0] ?? fullName;
+  }
+  const first = parts[0]!;
+  const lastInitial = parts[parts.length - 1]![0];
+  return `${first} ${lastInitial}.`;
+};
+
 export const formatAssignedStaffSummary = (
   staff: AssignedServiceStaff[],
 ): { primary: string; suffix?: string } => {
   if (staff.length === 0) {
     return { primary: "Not assigned" };
   }
-  const [first, ...rest] = staff;
-  const primary = rest.length > 0 ? `${first!.name}, ${rest[0]!.name}` : first!.name;
+  const names = staff.map((member) => formatStaffDisplayName(member.name));
+  const [first, ...rest] = names;
+  const primary = rest.length > 0 ? `${first}, ${rest[0]}` : first!;
   const shown = rest.length > 0 ? 2 : 1;
   const remaining = staff.length - shown;
   return remaining > 0 ? { primary, suffix: `+${remaining}` } : { primary };

@@ -202,7 +202,7 @@ export default function ListYourBusinessPage() {
       <ListYourBusinessAddHome />
 
       {/* 8. FAQ Section */}
-      <FaqSection />
+      <FaqSection audience="BUSINESS" />
 
       {/* 9. Footer */}
       <Footer />

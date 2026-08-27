@@ -12,7 +12,8 @@ interface RequireSuperAdminProps {
 }
 
 /** Batch 8 — the Super Admin dashboard previously had no route guard at all (confirmed by
- * investigation). Mirrors RequireBusinessOwner/RequireSupervisor exactly. */
+ * investigation). Mirrors RequireBusinessOwner/RequireSupervisor, except unauthenticated
+ * users go to the dedicated Super Admin login (the professional portal rejects this role). */
 export default function RequireSuperAdmin({ children }: RequireSuperAdminProps) {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
@@ -28,7 +29,7 @@ export default function RequireSuperAdmin({ children }: RequireSuperAdminProps) 
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.replace(authRoutes.professionalAuth);
+      router.replace(authRoutes.superAdminLogin);
       return;
     }
 

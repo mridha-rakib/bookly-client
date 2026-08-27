@@ -16,6 +16,8 @@ export const businessKeys = {
   profile: () => [...businessKeys.all, "profile"] as const,
   detail: (businessId: string) => [...businessKeys.all, "detail", businessId] as const,
   media: (businessId: string) => [...businessKeys.all, "media", businessId] as const,
+  googleCalendarStatus: (businessId: string) =>
+    [...businessKeys.all, "google-calendar-status", businessId] as const,
   travelSettings: (businessId: string) =>
     [...businessKeys.all, "travel-settings", businessId] as const,
 };
@@ -192,6 +194,34 @@ export const useManagedBusinessContext = (): ManagedBusinessContext => {
   }
 
   return { businessId: undefined, role: undefined, isLoading: currentUserQuery.isLoading };
+};
+
+export const useGoogleCalendarStatusQuery = (businessId: string | undefined) =>
+  useQuery({
+    queryKey: businessKeys.googleCalendarStatus(businessId ?? ""),
+    queryFn: () => businessApi.getGoogleCalendarStatus(businessId as string),
+    enabled: Boolean(businessId),
+  });
+
+// Fetches the real Google consent URL (authenticated request), then navigates the browser to
+// it — see businessApi.getGoogleCalendarAuthUrl's own comment on why this can't be a plain link.
+export const useConnectGoogleCalendarMutation = () =>
+  useMutation({
+    mutationFn: async (businessId: string) => {
+      const { authUrl } = await businessApi.getGoogleCalendarAuthUrl(businessId);
+      window.location.href = authUrl;
+    },
+  });
+
+export const useDisconnectGoogleCalendarMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (businessId: string) => businessApi.disconnectGoogleCalendar(businessId),
+    onSuccess: (_result, businessId) => {
+      void queryClient.invalidateQueries({ queryKey: businessKeys.googleCalendarStatus(businessId) });
+    },
+  });
 };
 
 export const useUnlinkBusinessMutation = () => {

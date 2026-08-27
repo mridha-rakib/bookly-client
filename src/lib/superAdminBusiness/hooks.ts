@@ -56,3 +56,17 @@ export const useSuspendBusinessMutation = () => {
     onSuccess: (_result, variables) => invalidate(variables.businessId),
   });
 };
+
+export const useSetFoundingPartnerMutation = () => {
+  const invalidate = useInvalidateBusinesses();
+  return useMutation({
+    mutationFn: ({
+      businessId,
+      isFoundingPartner,
+    }: {
+      businessId: string;
+      isFoundingPartner: boolean;
+    }) => superAdminBusinessApi.setFoundingPartner(businessId, isFoundingPartner),
+    onSuccess: (_result, variables) => invalidate(variables.businessId),
+  });
+};

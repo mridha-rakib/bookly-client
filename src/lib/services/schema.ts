@@ -6,8 +6,8 @@ import { BUSINESS_CITIES } from "@/lib/constants/cities";
 // Client-side mirror of api/src/modules/services/service.schema.ts's discriminated rules —
 // for immediate inline UX feedback only. The server remains the authority (see
 // service.service.ts / service.schema.ts); nothing here replaces that validation.
-const centsSchema = z.number().int("Must be a whole number of cents").min(0);
-const positiveIntSchema = z.number().int().min(1, "Must be at least 1");
+const centsSchema = z.number().int("Enter a valid amount.").min(0, "Enter a valid amount (€0 or more).");
+const positiveIntSchema = z.number().int("Must be a whole number.").min(1, "Must be at least 1.");
 const nonNegIntSchema = z.number().int().min(0);
 const discountPercentSchema = z.number().min(0).max(100, "Must be between 0 and 100");
 
@@ -77,10 +77,10 @@ export const serviceInputSchema = z
     status: z.enum(["DRAFT", "ACTIVE", "INACTIVE"]),
     isFeatured: z.boolean(),
     isPackageDeal: z.boolean(),
-    serviceCategoryId: z.string().min(1, "Select a service category").optional(),
-    subcategory: z.string().min(1, "Select a sub category").optional(),
-    name: z.string().trim().min(1, "Required").max(200),
-    packageServicesName: z.string().trim().min(1).max(200).optional(),
+    serviceCategoryId: z.string().min(1, "Please select a service category.").optional(),
+    subcategory: z.string().min(1, "Please select a sub-category.").optional(),
+    name: z.string().trim().max(200),
+    packageServicesName: z.string().trim().min(1, "Services name is required.").max(200).optional(),
     description: z.string().trim().max(2000).optional(),
     pricingMode: z.enum(["FIXED", "HOURLY", "PER_PERSON"]).optional(),
     fixedPricing: fixedPricingSchema.optional(),
@@ -97,6 +97,17 @@ export const serviceInputSchema = z
     assignedStaffMembershipIds: z.array(z.string()),
   })
   .superRefine((value, context) => {
+    // `name` doubles as "Service name" or "Package name" depending on isPackageDeal, so its
+    // required-message is decided here (where both fields are in scope) rather than in the
+    // base shape. Required even for DRAFT — see the early-return below.
+    if (!value.name.trim()) {
+      context.addIssue({
+        code: "custom",
+        path: ["name"],
+        message: value.isPackageDeal ? "Package name is required." : "Service name is required.",
+      });
+    }
+
     // DRAFT tolerates incomplete data — a Business Owner may save a Service before picking a
     // category, pricing, or schedule. Only `name` (checked above, unconditionally) is
     // required. Mirrors api/src/modules/services/service.schema.ts's status-aware validation.
@@ -105,28 +116,28 @@ export const serviceInputSchema = z
     }
 
     if (!value.serviceCategoryId) {
-      context.addIssue({ code: "custom", path: ["serviceCategoryId"], message: "Select a service category" });
+      context.addIssue({ code: "custom", path: ["serviceCategoryId"], message: "Please select a service category." });
     }
     if (!value.subcategory) {
-      context.addIssue({ code: "custom", path: ["subcategory"], message: "Select a sub category" });
+      context.addIssue({ code: "custom", path: ["subcategory"], message: "Please select a sub-category." });
     }
 
     if (value.isPackageDeal) {
       if (!value.packagePricing) {
-        context.addIssue({ code: "custom", path: ["packagePricing"], message: "Required" });
+        context.addIssue({ code: "custom", path: ["packagePricing"], message: "Package pricing details are required." });
       }
       if (!value.packageServicesName) {
-        context.addIssue({ code: "custom", path: ["packageServicesName"], message: "Required" });
+        context.addIssue({ code: "custom", path: ["packageServicesName"], message: "Services name is required." });
       }
     } else {
       if (!value.pricingMode) {
-        context.addIssue({ code: "custom", path: ["pricingMode"], message: "Select a pricing type" });
+        context.addIssue({ code: "custom", path: ["pricingMode"], message: "Please select a pricing type." });
       } else if (value.pricingMode === "FIXED" && !value.fixedPricing) {
-        context.addIssue({ code: "custom", path: ["fixedPricing"], message: "Required" });
+        context.addIssue({ code: "custom", path: ["fixedPricing"], message: "Pricing details are required." });
       } else if (value.pricingMode === "HOURLY" && !value.hourlyPricing) {
-        context.addIssue({ code: "custom", path: ["hourlyPricing"], message: "Required" });
+        context.addIssue({ code: "custom", path: ["hourlyPricing"], message: "Pricing details are required." });
       } else if (value.pricingMode === "PER_PERSON" && !value.perPersonPricing) {
-        context.addIssue({ code: "custom", path: ["perPersonPricing"], message: "Required" });
+        context.addIssue({ code: "custom", path: ["perPersonPricing"], message: "Pricing details are required." });
       }
     }
 

@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import React from "react";
+import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   DashboardSquare01Icon,
@@ -15,8 +16,12 @@ import {
   Settings01Icon,
   ArrowDown01Icon,
   DiscountIcon,
-  StarSquareIcon
+  StarSquareIcon,
+  Logout01Icon,
 } from "@hugeicons/core-free-icons";
+import { authRoutes } from "@/lib/auth/routes";
+import { useAuthStore } from "@/lib/auth/store";
+import { useCurrentUserQuery } from "@/lib/auth/hooks";
 
 interface SuperAdminSidebarProps {
   activeTab: string;
@@ -31,6 +36,20 @@ export default function SuperAdminSidebar({
   isCollapsed,
   setIsCollapsed
 }: SuperAdminSidebarProps) {
+  const router = useRouter();
+  const [showFooterMenu, setShowFooterMenu] = useState(false);
+  const logout = useAuthStore((state) => state.logout);
+  const meQuery = useCurrentUserQuery();
+  const displayName = meQuery.data?.profile?.fullName || "Super Admin";
+  const userEmail = meQuery.data?.user.email ?? "";
+
+  const handleLogout = () => {
+    setShowFooterMenu(false);
+    void logout().then(() => {
+      router.replace(authRoutes.superAdminLogin);
+    });
+  };
+
   const menuItems = [
     { name: "Dashboard", icon: DashboardSquare01Icon },
     { name: "Businesses", icon: Store01Icon },
@@ -114,11 +133,15 @@ export default function SuperAdminSidebar({
 
       {/* Bottom user profile info */}
       <div
-        className={`flex items-center h-[84px] border-t border-gray-200 transition-all duration-300 ${
+        className={`relative flex items-center h-[84px] border-t border-gray-200 transition-all duration-300 ${
           isCollapsed ? "px-2 justify-center" : "px-4 py-3 justify-between"
         }`}
       >
-        <div className={`flex items-center gap-3 w-full ${isCollapsed ? "justify-center" : ""}`}>
+        <button
+          type="button"
+          onClick={() => setShowFooterMenu(!showFooterMenu)}
+          className={`flex items-center gap-3 w-full cursor-pointer ${isCollapsed ? "justify-center" : ""}`}
+        >
           {/* Avatar frame */}
           <div
             className="w-10 h-10 rounded-full bg-cover bg-center flex-shrink-0"
@@ -126,18 +149,44 @@ export default function SuperAdminSidebar({
           />
           {!isCollapsed && (
             <>
-              <div className="flex flex-col flex-grow min-w-0">
+              <div className="flex flex-col flex-grow min-w-0 text-left">
                 <span className="font-sans font-semibold text-sm text-[#111111] leading-[26px] truncate">
-                  Georgino M.
+                  {displayName}
                 </span>
                 <span className="font-sans font-normal text-[14px] leading-[22px] text-[#4E5F78] truncate">
-                  Super Admin
+                  {userEmail || "Super Admin"}
                 </span>
               </div>
-              <HugeiconsIcon icon={ArrowDown01Icon} className="w-6 h-6 text-[#1C1B1C] cursor-pointer shrink-0" />
+              <HugeiconsIcon
+                icon={ArrowDown01Icon}
+                className={`w-6 h-6 text-[#1C1B1C] shrink-0 transition-transform duration-200 ${showFooterMenu ? "rotate-180" : ""}`}
+              />
             </>
           )}
-        </div>
+        </button>
+
+        {showFooterMenu && (
+          <>
+            <div
+              className="fixed inset-0 z-40 bg-transparent cursor-default"
+              onClick={() => setShowFooterMenu(false)}
+            />
+            <div
+              className={`absolute z-50 bg-white border border-gray-200 rounded-xl shadow-2xl flex flex-col py-2 px-2 gap-1 ${
+                isCollapsed ? "bottom-[12px] left-[76px] w-44" : "bottom-[88px] left-3 right-3"
+              }`}
+            >
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex items-center gap-3 py-2 px-2.5 hover:bg-gray-50 rounded-lg text-left transition-all cursor-pointer w-full"
+              >
+                <HugeiconsIcon icon={Logout01Icon} className="w-5 h-5 text-[#4E5F78] shrink-0" />
+                <span className="font-sans text-[13px] text-[#111111]">Log out</span>
+              </button>
+            </div>
+          </>
+        )}
       </div>
       {/* Right border line starting below the header to merge sidebar and topbar headers seamlessly */}
       <div className="absolute right-0 top-[70px] bottom-0 w-[1px] bg-gray-200 pointer-events-none" />

@@ -74,6 +74,16 @@ export const apiClient = axios.create({
   },
 });
 
+// Set once by the auth store so a permanently-failed refresh (dead/reused refresh token, not
+// just a transient network blip) can flip the app's auth state to "unauthenticated" — without
+// this, clearAccessToken() below only drops the in-memory access token, leaving the auth store
+// still reporting "authenticated" and RequireBusinessOwner/etc. never redirecting to login.
+let onSessionExpired: (() => void) | null = null;
+
+export const setOnSessionExpired = (handler: () => void): void => {
+  onSessionExpired = handler;
+};
+
 let refreshPromise: Promise<RefreshAuthResponse> | null = null;
 
 const refreshAccessToken = async (): Promise<RefreshAuthResponse> => {
@@ -117,6 +127,7 @@ apiClient.interceptors.response.use(
         return apiClient(config);
       } catch {
         clearAccessToken();
+        onSessionExpired?.();
       }
     }
 

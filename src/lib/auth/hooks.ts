@@ -26,6 +26,21 @@ export const useProfessionalLoginMutation = () => {
   });
 };
 
+// Only writes auth state when the response role actually is SUPER_ADMIN — the backend
+// (roleMatchesPortal) already guarantees this, but the store is not the security boundary,
+// so the dashboard guard must never be reachable off an unexpected role.
+export const useSuperAdminLoginMutation = () => {
+  const setAuth = useAuthStore((state) => state.setAuth);
+  return useMutation({
+    mutationFn: authApi.superAdminLogin,
+    onSuccess: (auth) => {
+      if (auth.user.role === "SUPER_ADMIN") {
+        setAuth(auth);
+      }
+    },
+  });
+};
+
 export const useSendCustomerEmailOtpMutation = () =>
   useMutation({ mutationFn: authApi.sendCustomerEmailOtp });
 

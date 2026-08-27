@@ -8,6 +8,7 @@ export const authRoutes = {
   supervisorDashboard: "/supervisor-dashboard",
   staffDashboard: "/staff-dashboard",
   superAdminDashboard: "/super-admin-dashboard",
+  superAdminLogin: "/super-admin/login",
 } as const;
 
 export const getAuthenticatedHomePath = (role: UserRole): string => {

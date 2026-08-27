@@ -1,15 +1,27 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { toast } from "@/components/ui/sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Location05Icon, Calendar01Icon, Tick01Icon, Car04Icon } from "@hugeicons/core-free-icons";
+import {
+  Location05Icon,
+  Calendar01Icon,
+  Tick01Icon,
+  Car04Icon,
+  StarIcon,
+} from "@hugeicons/core-free-icons";
 import BusinessOverviewTab from "./BusinessOverviewTab";
 import BusinessBookingsTab from "./BusinessBookingsTab";
 import BusinessFinanceTab from "./BusinessFinanceTab";
 import BusinessIssuesTab from "./BusinessIssuesTab";
 import BusinessAnalyticsTab from "./BusinessAnalyticsTab";
 import { formatBookingMoney } from "@/lib/bookings/format";
-import { useApproveBusinessMutation, useSuperAdminBusinessDetailQuery } from "@/lib/superAdminBusiness/hooks";
+import type { BusinessBookingMode } from "@/lib/api/superAdminBusiness";
+import {
+  useApproveBusinessMutation,
+  useSetFoundingPartnerMutation,
+  useSuperAdminBusinessDetailQuery,
+} from "@/lib/superAdminBusiness/hooks";
 import { useSuperAdminBusinessSummaryQuery } from "@/lib/superAdminFinance/hooks";
 
 interface SuperAdminBusinessDetailProps {
@@ -26,6 +38,28 @@ const STATUS_LABEL: Record<string, string> = {
   SUSPENDED: "Suspended",
 };
 
+/** Business-level rollup of the per-service scheduleMode — null means no ACTIVE service, so the
+ * badge is omitted rather than guessed. */
+const BOOKING_MODE_LABEL: Record<Exclude<BusinessBookingMode, null>, string> = {
+  AUTO: "Auto Booking",
+  MANUAL: "Manual Booking",
+  MIXED: "Mixed Booking",
+};
+
+/** Same relative-time buckets as the business dashboard's activity feed (utils/dashboardActivity),
+ * lower-cased here because it follows the "Last login " prefix. */
+function formatRelativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "yesterday";
+  return `${days} days ago`;
+}
+
 export default function SuperAdminBusinessDetail({
   businessId,
   onBack,
@@ -35,6 +69,18 @@ export default function SuperAdminBusinessDetail({
   const [activeSubTab, setActiveSubTab] = useState(initialTab);
   const { data: business, isLoading, isError } = useSuperAdminBusinessDetailQuery(businessId);
   const approveMutation = useApproveBusinessMutation();
+  const foundingPartnerMutation = useSetFoundingPartnerMutation();
+
+  const toggleFoundingPartner = (next: boolean) => {
+    foundingPartnerMutation.mutate(
+      { businessId, isFoundingPartner: next },
+      {
+        onSuccess: () =>
+          toast.success(next ? "Marked as Founding Partner" : "Founding Partner status removed"),
+        onError: () => toast.error("Could not update Founding Partner status"),
+      },
+    );
+  };
 
   const period = useMemo(() => {
     const now = new Date();
@@ -136,6 +182,21 @@ export default function SuperAdminBusinessDetail({
                     <span>Mobile</span>
                   </div>
                 )}
+                {business.gapEliminationEnabled && (
+                  <div className="flex items-center justify-center gap-1 border border-[#4338CA] bg-[#EEF2FF] text-[#4338CA] rounded-full text-[13px] font-semibold h-[28px] px-3 shrink-0">
+                    <span>Gap Elimination</span>
+                  </div>
+                )}
+                {business.bookingMode !== null && (
+                  <div className="flex items-center justify-center gap-1 border border-[#0F766E] bg-[#ECFDF5] text-[#0F766E] rounded-full text-[13px] font-semibold h-[28px] px-3 shrink-0">
+                    <span>{BOOKING_MODE_LABEL[business.bookingMode]}</span>
+                  </div>
+                )}
+                {business.isFoundingPartner && (
+                  <div className="flex items-center justify-center gap-1 border border-[#B45309] bg-[#FFFBEB] text-[#B45309] rounded-full text-[13px] font-semibold h-[28px] px-3 shrink-0">
+                    <span>Founding Partner</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -158,12 +219,36 @@ export default function SuperAdminBusinessDetail({
                   })}
                 </span>
               </div>
+              <span className="hidden sm:inline w-1 h-1 rounded-full bg-gray-300 shrink-0" />
+              <div className="flex items-center gap-1">
+                <HugeiconsIcon icon={StarIcon} className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  {business.reviewsCount > 0 && business.rating !== null
+                    ? `${business.rating.toFixed(1)} (${business.reviewsCount} review${
+                        business.reviewsCount === 1 ? "" : "s"
+                      })`
+                    : "No reviews yet"}
+                </span>
+              </div>
+              <span className="hidden sm:inline w-1 h-1 rounded-full bg-gray-300 shrink-0" />
+              <span>
+                {business.owner.lastLoginAt
+                  ? `Last login ${formatRelativeTime(business.owner.lastLoginAt)}`
+                  : "Never logged in"}
+              </span>
             </div>
           </div>
         </div>
 
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto mt-4 xl:mt-0 justify-start xl:justify-end">
+          <button
+            onClick={() => toggleFoundingPartner(!business.isFoundingPartner)}
+            disabled={foundingPartnerMutation.isPending}
+            className="w-full sm:w-auto flex items-center justify-center gap-1 px-4 h-[32px] border border-[#B45309] text-[#B45309] rounded-full text-xs font-semibold hover:bg-amber-50 cursor-pointer bg-white transition-colors disabled:opacity-50"
+          >
+            {business.isFoundingPartner ? "Remove Founding Partner" : "Mark as Founding Partner"}
+          </button>
           {business.status === "SUSPENDED" ? (
             <button
               onClick={() => approveMutation.mutate(businessId)}

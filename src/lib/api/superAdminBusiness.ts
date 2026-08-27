@@ -9,6 +9,9 @@ import { apiRequest } from "@/lib/api/client";
 // Matches api/src/modules/business/business.types.ts.
 export type BusinessStatus = "PENDING" | "APPROVED" | "WARNING" | "SUSPENDED";
 export type BusinessVisitType = "AT_BUSINESS_LOCATION" | "TRAVEL_TO_CUSTOMER";
+/** Business-level rollup of the per-Service `scheduleMode` (there is no business-wide mode).
+ * null when the business has no ACTIVE service — the header omits the badge, never guesses. */
+export type BusinessBookingMode = "AUTO" | "MANUAL" | "MIXED" | null;
 
 export interface SuperAdminBusinessListItem {
   id: string;
@@ -17,7 +20,9 @@ export interface SuperAdminBusinessListItem {
   visitType: BusinessVisitType;
   city: string;
   status: BusinessStatus;
-  /** No review/rating system exists anywhere in this codebase — always null, never fabricated. */
+  /** The Super Admin Business LIST intentionally does not fan out a per-row rating aggregate
+   * (N+1 on the paginated list). The real published-review aggregate is on the DETAIL DTO
+   * (SuperAdminBusinessDetail below). Always null here, never fabricated. */
   rating: null;
   reviewsCount: null;
   bookingsCount: number;
@@ -58,7 +63,17 @@ export interface SuperAdminBusinessDetail {
   briefDescription: string;
   category: string;
   subcategories: string[];
-  owner: { id: string; email: string; status: string };
+  owner: { id: string; email: string; status: string; lastLoginAt: string | null };
+  /** Published-review aggregate (backend: ReviewRepository.getAggregate). `rating` is null when
+   * `reviewsCount === 0` — never a fabricated 0.0. */
+  rating: number | null;
+  reviewsCount: number;
+  /** BusinessBookingSettings.gapEliminationEnabled — false when no settings document exists. */
+  gapEliminationEnabled: boolean;
+  /** Rollup of per-Service scheduleMode across ACTIVE services. */
+  bookingMode: BusinessBookingMode;
+  /** Explicit Super Admin-controlled flag (Business.isFoundingPartner). */
+  isFoundingPartner: boolean;
   bookingsCount: number;
   statusHistory: SuperAdminBusinessStatusHistoryEntry[];
   createdAt: string;
@@ -112,5 +127,12 @@ export const superAdminBusinessApi = {
       method: "POST",
       url: `/super-admin/businesses/${businessId}/suspend`,
       data: { reason },
+    }),
+
+  setFoundingPartner: (businessId: string, isFoundingPartner: boolean) =>
+    apiRequest<SuperAdminBusinessDetail>({
+      method: "PATCH",
+      url: `/super-admin/businesses/${businessId}/founding-partner`,
+      data: { isFoundingPartner },
     }),
 };

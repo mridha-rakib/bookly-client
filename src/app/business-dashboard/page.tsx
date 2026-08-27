@@ -70,6 +70,15 @@ function BusinessDashboardContent() {
   const [businessProfileMode, setBusinessProfileMode] = useState<"create" | "edit" | "view">("create");
   const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(null);
 
+  // Returning here from the Google Calendar OAuth redirect (see integration.controller.ts's
+  // frontendSettingsUrl) — land back on Settings so DashboardSettings itself can read the rest
+  // of the query string (settingsTab/googleCalendar) and show the right Integration sub-tab.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("settingsTab") === "Integration") {
+      setActiveTab("Settings");
+    }
+  }, []);
+
   // Clients — real Client Management data/hooks live in ClientsPage; this page only resolves
   // the Owner's businessId (same idiom DashboardStaffList already uses).
   const businessProfileQuery = useMyBusinessProfileQuery();

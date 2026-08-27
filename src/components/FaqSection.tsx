@@ -4,45 +4,30 @@ import React, { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Add01Icon, MinusSignIcon as MinusIcon } from "@hugeicons/core-free-icons";
 
-interface FaqItem {
-  question: string;
-  answer: string;
+import type { FaqAudience } from "@/lib/api/content";
+import { usePublicFaqsQuery } from "@/lib/content/hooks";
+
+/** How many FAQs are visible before "Show more" is used (matches the section's prior behavior). */
+const INITIAL_VISIBLE = 3;
+
+interface FaqSectionProps {
+  /** Which published FAQ set to show: customer-facing (homepage) or business-facing
+   * (List Your Business). Passed explicitly by the parent page — never inferred from the URL. */
+  audience: FaqAudience;
 }
 
-export default function FaqSection() {
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
+export default function FaqSection({ audience }: FaqSectionProps) {
+  const [openId, setOpenId] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
 
-  const initialFaqs: FaqItem[] = [
-    {
-      question: "Does Vesioh support custom API integrations?",
-      answer: "Yes, Vesioh supports custom API integrations. We provide comprehensive API documentation and webhooks to help you sync your data and connect with your existing tools seamlessly.",
-    },
-    {
-      question: "Can I migrate my existing WhatsApp history?",
-      answer: "Yes, you can migrate your existing WhatsApp history. Our platform offers easy-to-use migration tools that import your chat history and contact list without any data loss.",
-    },
-    {
-      question: "How does the AI sorting actually work?",
-      answer: "Our AI sorting scans incoming messages and automatically categorizes them based on intent, urgency, and customer preferences, routing them to the correct dashboard or response flow instantly.",
-    },
-  ];
+  const faqsQuery = usePublicFaqsQuery(audience);
+  const faqs = faqsQuery.data?.faqs ?? [];
 
-  const additionalFaqs: FaqItem[] = [
-    {
-      question: "Is there a limit to the number of active chats?",
-      answer: "No, there are no limits on active chats. Our system dynamically scales to handle your business volume, ensuring a smooth experience during peak hours.",
-    },
-    {
-      question: "Can we set custom business hours for auto-responses?",
-      answer: "Absolutely. You can configure custom business hours and set tailored automatic away messages to handle incoming queries outside your working hours.",
-    },
-  ];
+  const visibleFaqs = showAll ? faqs : faqs.slice(0, INITIAL_VISIBLE);
+  const canShowMore = faqs.length > INITIAL_VISIBLE;
 
-  const faqs = showAll ? [...initialFaqs, ...additionalFaqs] : initialFaqs;
-
-  const toggleFaq = (index: number) => {
-    setOpenIndex(openIndex === index ? null : index);
+  const toggleFaq = (id: string) => {
+    setOpenId(openId === id ? null : id);
   };
 
   return (
@@ -66,58 +51,89 @@ export default function FaqSection() {
 
         {/* FAQ Items List Container */}
         <div className="flex flex-col justify-center items-center p-0 gap-[16px] w-full max-w-[1280px] self-stretch shrink-0 grow-0">
-          {faqs.map((faq, index) => {
-            const isOpen = openIndex === index;
-            return (
+          {faqsQuery.isLoading &&
+            Array.from({ length: INITIAL_VISIBLE }).map((_, i) => (
               <div
-                key={index}
-                className="box-border flex flex-col items-start p-0 w-full max-w-[1280px] border-b border-[#DEDDE3] rounded-lg self-stretch shrink-0 grow-0 transition-all duration-300"
+                key={i}
+                className="box-border flex flex-col items-start w-full max-w-[1280px] border-b border-[#DEDDE3] self-stretch shrink-0 grow-0"
               >
-                {/* Slot -> Summary */}
-                <div
-                  onClick={() => toggleFaq(index)}
-                  className="flex flex-row justify-between items-center py-5 px-4 sm:p-[24px] w-full min-h-[80px] self-stretch shrink-0 grow-0 cursor-pointer select-none gap-4"
-                >
-                  <span className="font-poppins font-normal text-[18px] sm:text-[24px] leading-[26px] sm:leading-[32px] flex items-center text-[#0D0D0D] shrink grow-0 text-left">
-                    {faq.question}
-                  </span>
-                  <div className="w-6 h-6 shrink-0 grow-0 flex items-center justify-center text-[#454070]">
-                    {isOpen ? (
-                      <HugeiconsIcon icon={MinusIcon} className="w-6 h-6" />
-                    ) : (
-                      <HugeiconsIcon icon={Add01Icon} className="w-6 h-6" />
-                    )}
-                  </div>
-                </div>
-
-                {/* FAQ Answer Container */}
-                <div
-                  className={`w-full overflow-hidden transition-all duration-300 ease-in-out ${
-                    isOpen ? "max-h-[500px] opacity-100 pb-[24px] px-4 sm:px-[24px]" : "max-h-0 opacity-0 pointer-events-none"
-                  }`}
-                >
-                  <p className="font-poppins font-normal text-[15px] sm:text-[17px] leading-[24px] sm:leading-[28px] text-[#555555] text-left">
-                    {faq.answer}
-                  </p>
+                <div className="flex flex-row justify-between items-center py-5 px-4 sm:p-[24px] w-full min-h-[80px] gap-4 animate-pulse">
+                  <div className="h-5 sm:h-6 w-2/3 bg-neutral-100 rounded" />
+                  <div className="w-6 h-6 bg-neutral-100 rounded shrink-0" />
                 </div>
               </div>
-            );
-          })}
+            ))}
+
+          {!faqsQuery.isLoading && faqsQuery.isError && (
+            <p className="font-poppins font-normal text-[15px] sm:text-[17px] leading-[24px] text-[#555555] text-center py-6">
+              We couldn&apos;t load FAQs right now. Please try again later.
+            </p>
+          )}
+
+          {!faqsQuery.isLoading && !faqsQuery.isError && faqs.length === 0 && (
+            <p className="font-poppins font-normal text-[15px] sm:text-[17px] leading-[24px] text-[#555555] text-center py-6">
+              No FAQs available yet.
+            </p>
+          )}
+
+          {!faqsQuery.isLoading &&
+            !faqsQuery.isError &&
+            visibleFaqs.map((faq) => {
+              const isOpen = openId === faq.id;
+              return (
+                <div
+                  key={faq.id}
+                  className="box-border flex flex-col items-start p-0 w-full max-w-[1280px] border-b border-[#DEDDE3] rounded-lg self-stretch shrink-0 grow-0 transition-all duration-300"
+                >
+                  {/* Slot -> Summary */}
+                  <div
+                    onClick={() => toggleFaq(faq.id)}
+                    className="flex flex-row justify-between items-center py-5 px-4 sm:p-[24px] w-full min-h-[80px] self-stretch shrink-0 grow-0 cursor-pointer select-none gap-4"
+                  >
+                    <span className="font-poppins font-normal text-[18px] sm:text-[24px] leading-[26px] sm:leading-[32px] flex items-center text-[#0D0D0D] shrink grow-0 text-left">
+                      {faq.question}
+                    </span>
+                    <div className="w-6 h-6 shrink-0 grow-0 flex items-center justify-center text-[#454070]">
+                      {isOpen ? (
+                        <HugeiconsIcon icon={MinusIcon} className="w-6 h-6" />
+                      ) : (
+                        <HugeiconsIcon icon={Add01Icon} className="w-6 h-6" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* FAQ Answer Container */}
+                  <div
+                    className={`w-full overflow-hidden transition-all duration-300 ease-in-out ${
+                      isOpen
+                        ? "max-h-[500px] opacity-100 pb-[24px] px-4 sm:px-[24px]"
+                        : "max-h-0 opacity-0 pointer-events-none"
+                    }`}
+                  >
+                    <p className="font-poppins font-normal text-[15px] sm:text-[17px] leading-[24px] sm:leading-[28px] text-[#555555] text-left">
+                      {faq.answer}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
         </div>
       </div>
 
       {/* Show more button */}
-      <button
-        onClick={() => {
-          setShowAll(!showAll);
-          setOpenIndex(null);
-        }}
-        className="box-border flex flex-row justify-center items-center py-[12px] px-[40px] gap-[10px] w-[216px] h-[56px] border border-[#1C1B1C] rounded-[12px] shrink-0 grow-0 cursor-pointer hover:bg-neutral-50 active:scale-[0.98] transition-all"
-      >
-        <span className="font-poppins font-medium text-[20px] sm:text-[24px] leading-[32px] flex items-center justify-center text-[#111111] shrink-0 grow-0">
-          {showAll ? "Show less" : "Show more"}
-        </span>
-      </button>
+      {!faqsQuery.isLoading && !faqsQuery.isError && canShowMore && (
+        <button
+          onClick={() => {
+            setShowAll(!showAll);
+            setOpenId(null);
+          }}
+          className="box-border flex flex-row justify-center items-center py-[12px] px-[40px] gap-[10px] w-[216px] h-[56px] border border-[#1C1B1C] rounded-[12px] shrink-0 grow-0 cursor-pointer hover:bg-neutral-50 active:scale-[0.98] transition-all"
+        >
+          <span className="font-poppins font-medium text-[20px] sm:text-[24px] leading-[32px] flex items-center justify-center text-[#111111] shrink-0 grow-0">
+            {showAll ? "Show less" : "Show more"}
+          </span>
+        </button>
+      )}
     </section>
   );
 }

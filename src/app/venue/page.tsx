@@ -31,6 +31,11 @@ import { formatBookingMoney } from "@/lib/bookings/format";
 import { toUserMessage } from "@/lib/auth/messages";
 import { useBusinessRatingSummaryQuery, useBusinessReviewsQuery } from "@/lib/review/hooks";
 import { formatTime12Hour } from "@/lib/staff/format";
+import {
+  useAddFavoriteMutation,
+  useFavoriteIdsQuery,
+  useRemoveFavoriteMutation,
+} from "@/lib/favorite/hooks";
 
 function VenueDetailsContent() {
   const router = useRouter();
@@ -52,7 +57,7 @@ function VenueDetailsContent() {
   const business = catalogQuery.data?.business;
   const venueLocationText = business ? `${business.address.area}, ${business.address.city}` : "";
   const venueMedia = business?.media ?? [];
-  const heroImages = venueMedia.length > 0 ? venueMedia.map((item) => item.url) : ["/image/imgOfService.png"];
+  const heroImages = venueMedia.map((item) => item.url);
   const teamMembers = catalogQuery.data?.staff ?? [];
 
   // Batch 14 — real Business rating summary + public Reviews list, replacing
@@ -60,6 +65,30 @@ function VenueDetailsContent() {
   const [reviewsLimit, setReviewsLimit] = useState(5);
   const ratingSummaryQuery = useBusinessRatingSummaryQuery(venueId);
   const reviewsQuery = useBusinessReviewsQuery(venueId, { page: 1, limit: reviewsLimit });
+
+  // Real Favorites — same wiring as /explore (useFavoriteIdsQuery/useAddFavoriteMutation/
+  // useRemoveFavoriteMutation). Personalized state, so it only loads for a logged-in CUSTOMER;
+  // a logged-out visitor tapping the heart is sent to the customer auth flow (never a
+  // local-only toggle).
+  const favoriteIdsQuery = useFavoriteIdsQuery(isLoggedIn);
+  const addFavoriteMutation = useAddFavoriteMutation();
+  const removeFavoriteMutation = useRemoveFavoriteMutation();
+  const isFavorite = (favoriteIdsQuery.data?.businessIds ?? []).includes(venueId);
+
+  // A logged-out visitor may browse the whole venue page, but any action that starts a booking
+  // (or favouriting) requires a customer account. Stash where to come back to, then hand off to
+  // the existing `/customer` login/register flow — the password page reads this back on success.
+  const goToCustomerAuth = (returnTo: string) => {
+    try {
+      if (returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+        sessionStorage.setItem("bookly:post_login_redirect", returnTo);
+      }
+    } catch {
+      // sessionStorage unavailable (private mode / disabled) — the login flow simply lands the
+      // user on the home page afterwards instead of returning here. Never block the hand-off.
+    }
+    router.push("/customer");
+  };
 
   // Booking Wizard Steps States
   const [bookingStep, setBookingStep] = useState<"addons" | "professionals" | "time" | "payment" | "confirmed" | null>(null);
@@ -202,6 +231,13 @@ function VenueDetailsContent() {
   };
 
   const handleBookService = (serviceId: string) => {
+    // Booking requires a customer account. Send a logged-out visitor to login/register first,
+    // preserving the exact business + service they were about to book so the wizard re-opens
+    // here on return (the page's own `?serviceId=` pre-select below handles that).
+    if (!isLoggedIn) {
+      goToCustomerAuth(`/venue?id=${venueId}&serviceId=${serviceId}`);
+      return;
+    }
     setSelectedServiceId(serviceId);
     setSelectedAddonIds([]);
     setSelectedProfessional(null);
@@ -223,7 +259,7 @@ function VenueDetailsContent() {
   if (!hasAppliedServicePreselect && catalogQuery.data) {
     setHasAppliedServicePreselect(true);
     const requestedServiceId = searchParams.get("serviceId");
-    if (requestedServiceId) {
+    if (requestedServiceId && isLoggedIn) {
       const exists = catalogQuery.data.services.some((s) => s.id === requestedServiceId);
       if (exists) handleBookService(requestedServiceId);
     }
@@ -413,8 +449,19 @@ function VenueDetailsContent() {
     };
   }, [isMobile]);
 
-  const [isFavorite, setIsFavorite] = useState(false);
   const [showCopiedToast, setShowCopiedToast] = useState(false);
+
+  const handleToggleFavorite = () => {
+    if (!isLoggedIn) {
+      goToCustomerAuth(`/venue?id=${venueId}`);
+      return;
+    }
+    if (isFavorite) {
+      removeFavoriteMutation.mutate(venueId);
+    } else {
+      addFavoriteMutation.mutate(venueId);
+    }
+  };
   const [sortBy, setSortBy] = useState<"Latest" | "Highest Rated" | "Lowest Rated">("Latest");
   const [showSortDropdown, setShowSortDropdown] = useState(false);
 
@@ -580,17 +627,24 @@ function VenueDetailsContent() {
               className={`w-full h-full flex flex-nowrap overflow-x-auto scrollbar-hide select-none ${isDragActive ? "cursor-grabbing" : "cursor-grab snap-x snap-mandatory scroll-smooth"
                 }`}
             >
-              {heroImages.map((img, idx) => (
-                <div key={idx} className="w-full h-full shrink-0 snap-start relative">
-                  <Image
-                    src={img}
-                    alt={`${business?.name ?? "Business"} ${idx + 1}`}
-                    fill
-                    className="object-cover pointer-events-none"
-                    priority={idx === 0}
-                  />
+              {heroImages.length > 0 ? (
+                heroImages.map((img, idx) => (
+                  <div key={idx} className="w-full h-full shrink-0 snap-start relative">
+                    <Image
+                      src={img}
+                      alt={`${business?.name ?? "Business"} ${idx + 1}`}
+                      fill
+                      className="object-cover pointer-events-none"
+                      priority={idx === 0}
+                    />
+                  </div>
+                ))
+              ) : (
+                <div className="w-full h-full shrink-0 snap-start flex flex-col items-center justify-center gap-2 bg-neutral-100 text-neutral-400">
+                  <HugeiconsIcon icon={InformationCircleIcon} size={28} />
+                  <span className="text-sm font-medium">No photos yet</span>
                 </div>
-              ))}
+              )}
             </div>
             {/* See all images button */}
             <button
@@ -689,7 +743,7 @@ function VenueDetailsContent() {
               <Image src="/Icons/downloadIcon.svg" alt="Download/Share" className="w-5 h-5 object-contain" width={20} height={20} />
             </button>
             <button
-              onClick={() => setIsFavorite(!isFavorite)}
+              onClick={handleToggleFavorite}
               className={`w-12 h-12 rounded-full border flex items-center justify-center shadow-sm transition-all cursor-pointer ${isFavorite
                 ? "bg-[#FFEBEB] border-[#FFC1C1] text-[#DE350B]"
                 : "bg-white border-[#D3D3D3] text-[#1C1B1C] hover:bg-neutral-50"
@@ -1468,13 +1522,7 @@ function VenueDetailsContent() {
                   /* SS 2: User Not Logged In Card State (With blurred footer & Lock icon overlay) */
                   <>
                     <button
-                      onClick={() => {
-                        if (selectedList.length === 0) {
-                          scrollToSection("services");
-                        } else {
-                          setBookingStep("addons");
-                        }
-                      }}
+                      onClick={() => goToCustomerAuth(`/venue?id=${venueId}`)}
                       className="w-full h-12 bg-[#0D0D0D] border border-[#0D0D0D] text-white font-poppins font-medium text-base rounded-[12px] hover:opacity-95 transition-opacity cursor-pointer flex items-center justify-center gap-2 shadow-sm"
                     >
                       <Image src="/image/smallBlacklogo.svg" alt="Bookly" className="w-5 h-5 object-contain invert brightness-0" width={20} height={20} />
@@ -1939,6 +1987,10 @@ function VenueDetailsContent() {
 
             <button
               onClick={() => {
+                if (!isLoggedIn) {
+                  goToCustomerAuth(`/venue?id=${venueId}`);
+                  return;
+                }
                 if (selectedList.length === 0) {
                   scrollToSection("services");
                   setIsMobileSummaryExpanded(false);

@@ -3,6 +3,7 @@
 import { create } from "zustand";
 
 import { authApi, type AuthResponse, type AuthUser } from "@/lib/api/auth";
+import { setOnSessionExpired } from "@/lib/api/client";
 import { clearAccessToken, setAccessToken } from "@/lib/auth/token-memory";
 import { queryClient } from "@/lib/query-client";
 
@@ -80,3 +81,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 }));
+
+// The apiClient interceptor calls this when a 401-triggered refresh permanently fails (dead or
+// reused refresh token) — it only owns the raw in-memory access token, not this store's
+// "authenticated" status, so without this wiring the app would keep rendering as logged in while
+// every request silently 401s. Reuses the existing clearAuth() so the existing Require*
+// guards' status==="unauthenticated" redirect handles the rest.
+setOnSessionExpired(() => useAuthStore.getState().clearAuth());

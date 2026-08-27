@@ -93,6 +93,8 @@ export interface BusinessDetail {
   briefDescription: string;
   category: string;
   subcategories: string[];
+  instagramHandle?: string;
+  facebookPageUrl?: string;
   relationship: BusinessRelationship;
   createdAt: string;
   updatedAt: string;
@@ -116,6 +118,16 @@ export interface UpdateBusinessInput {
   subcategories?: string[];
   coordinates?: { lat: number; lng: number };
   searchQuery?: string;
+  instagramHandle?: string;
+  facebookPageUrl?: string;
+}
+
+// Response of GET /businesses/:businessId/integrations/google-calendar/status.
+export interface GoogleCalendarStatus {
+  connected: boolean;
+  googleAccountEmail?: string;
+  status?: "CONNECTED" | "ERROR";
+  connectedAt?: string;
 }
 
 // Response of POST /businesses/links/verification and .../:verificationId/resend.
@@ -203,4 +215,25 @@ export const businessApi = {
 
   unlinkBusiness: (businessId: string) =>
     apiRequest<undefined>({ method: "DELETE", url: `/businesses/links/${businessId}` }),
+
+  getGoogleCalendarStatus: (businessId: string) =>
+    apiRequest<GoogleCalendarStatus>({
+      method: "GET",
+      url: `/businesses/${businessId}/integrations/google-calendar/status`,
+    }),
+
+  // Returns the real Google consent URL — the frontend navigates the browser to it itself
+  // (this API only accepts a Bearer token, which a plain window.location navigation can't
+  // carry, so the URL has to be fetched via an authenticated request first).
+  getGoogleCalendarAuthUrl: (businessId: string) =>
+    apiRequest<{ authUrl: string }>({
+      method: "GET",
+      url: `/businesses/${businessId}/integrations/google-calendar/connect`,
+    }),
+
+  disconnectGoogleCalendar: (businessId: string) =>
+    apiRequest<undefined>({
+      method: "DELETE",
+      url: `/businesses/${businessId}/integrations/google-calendar`,
+    }),
 };

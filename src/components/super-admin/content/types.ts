@@ -17,9 +17,3 @@ export interface StaticPage {
   lastUpdated: string;
 }
 
-export interface FaqItem {
-  id: string;
-  question: string;
-  answer: string;
-  status: "Published" | "Draft";
-}

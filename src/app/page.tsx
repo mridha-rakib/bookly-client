@@ -3,8 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Search01Icon, SquareLock01Icon } from "@hugeicons/core-free-icons";
-import Carousel from "@/components/landing-page/Carousel";
-import TrustedBusinessCard, { TrustedBusiness } from "@/components/TrustedBusinessCard";
+import FoundingPartnersSection from "@/components/landing-page/FoundingPartnersSection";
 import WhyChooseUs from "@/components/landing-page/WhyChooseUs";
 import AddToHomeScreenButton from "@/components/landing-page/AddToHomeScreenButton";
 import BusinessMockup from "@/components/landing-page/BusinessMockup";
@@ -18,22 +17,6 @@ import CategoryServicesSection from "@/components/landing-page/CategoryServicesS
 import LandingStepCard from "@/components/landing-page/LandingStepCard";
 
 export default function LandingPage() {
-  // Mock trusted businesses data
-  const trustedBusinesses: TrustedBusiness[] = [
-    { id: 1, name: "PhysioPlus", location: "Larnaca", role: "Founding Partners", image: "/Icons/trustedOne.svg" },
-    { id: 2, name: "PhysioPlus", location: "Larnaca", role: "Founding Partners", image: "/Icons/trustedOne.svg" },
-    { id: 3, name: "PhysioPlus", location: "Larnaca", role: "Founding Partners", image: "/Icons/trustedOne.svg" },
-    { id: 4, name: "PhysioPlus", location: "Larnaca", role: "Founding Partners", image: "/Icons/trustedTwo.svg" },
-    { id: 5, name: "PhysioPlus", location: "Larnaca", role: "Founding Partners", image: "/Icons/trustedTwo.svg" },
-    { id: 6, name: "PhysioPlus", location: "Larnaca", role: "Founding Partners", image: "/Icons/trustedTwo.svg" },
-    { id: 7, name: "PhysioPlus", location: "Larnaca", role: "Founding Partners", image: "/Icons/trustedTwo.svg" },
-    { id: 8, name: "PhysioPlus", location: "Larnaca", role: "Founding Partners", image: "/Icons/trustedOne.svg" },
-    { id: 9, name: "PhysioPlus", location: "Larnaca", role: "Founding Partners", image: "/Icons/trustedOne.svg" },
-    { id: 10, name: "PhysioPlus", location: "Larnaca", role: "Founding Partners", image: "/Icons/trustedTwo.svg" },
-    { id: 11, name: "PhysioPlus", location: "Larnaca", role: "Founding Partners", image: "/Icons/trustedTwo.svg" },
-    { id: 12, name: "PhysioPlus", location: "Larnaca", role: "Founding Partners", image: "/Icons/trustedOne.svg" },
-  ];
-
   return (
     <div className="min-h-screen font-poppins relative overflow-x-hidden text-[#1C1B1C]">
       {/* Root Solid Background Layer */}
@@ -78,37 +61,8 @@ export default function LandingPage() {
       {/* 5. Interactive Categories and Services Sections */}
       <CategoryServicesSection />
 
-      {/* 9. Trusted Businesses Section */}
-      <section className="w-full bg-[#FCFCFD] py-12 md:py-[72px] border-y border-neutral-100 mt-[24px]">
-        <div className="w-full px-4 md:px-8 xl:px-[68px] flex flex-col items-center justify-center gap-10 md:gap-[80px]">
-          {/* Container */}
-          <div className="flex flex-col items-center gap-4 text-center max-w-[1312px] w-full">
-            <h2 className="text-3xl md:text-[36px] font-medium leading-[36px] md:leading-[48px] text-[#1F2937] tracking-tight">
-              Trusted by local businesses across Cyprus
-            </h2>
-            <p className="text-lg md:text-[24px] font-normal leading-[24px] text-[#757575]">
-              Join the businesses already growing with Bookly.
-            </p>
-          </div>
-
-          {/* Carousel / Grid Container */}
-          <div className="w-full">
-            {trustedBusinesses.length > 5 ? (
-              <Carousel gapClass="gap-[40px] md:gap-[80px]">
-                {trustedBusinesses.map((biz, idx) => (
-                  <TrustedBusinessCard key={`${biz.id}-${idx}`} business={biz} />
-                ))}
-              </Carousel>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 justify-items-center">
-                {trustedBusinesses.map((biz, idx) => (
-                  <TrustedBusinessCard key={`${biz.id}-${idx}`} business={biz} />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
+      {/* 9. Trusted Businesses Section — real founding partners only (hidden when there are none) */}
+      <FoundingPartnersSection />
 
       {/* 10. Book in 3 Simple Steps Section */}
       <section id="how-it-works" className="w-full px-4 md:px-8 xl:px-[68px] mt-[72px] scroll-mt-36">
@@ -265,7 +219,7 @@ export default function LandingPage() {
       <BusinessMockup />
 
       {/* 13. FAQ Section */}
-      <FaqSection />
+      <FaqSection audience="CUSTOMER" />
 
       {/* 14. Footer */}
       <Footer />

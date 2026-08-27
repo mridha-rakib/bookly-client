@@ -5,12 +5,29 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Search01Icon } from "@hugeicons/core-free-icons";
 
 import NotificationBell from "@/components/notifications/NotificationBell";
+import { useCurrentUserQuery } from "@/lib/auth/hooks";
 
 interface SuperAdminHeaderProps {
   isCollapsed: boolean;
 }
 
+const initialsFrom = (fullName: string, email: string): string => {
+  const nameParts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (nameParts.length >= 2) {
+    return `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`.toUpperCase();
+  }
+  if (nameParts.length === 1) {
+    return nameParts[0].slice(0, 2).toUpperCase();
+  }
+  return (email.slice(0, 2) || "AD").toUpperCase();
+};
+
 export default function SuperAdminHeader({ isCollapsed }: SuperAdminHeaderProps) {
+  const meQuery = useCurrentUserQuery();
+  const initials = initialsFrom(
+    meQuery.data?.profile?.fullName ?? "",
+    meQuery.data?.user.email ?? "",
+  );
   return (
     <header
       className={`fixed top-0 h-[70px] bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-20 transition-all duration-300 ${
@@ -36,7 +53,7 @@ export default function SuperAdminHeader({ isCollapsed }: SuperAdminHeaderProps)
 
         {/* User Initials Avatar */}
         <div className="w-8 h-8 rounded-full bg-[#EEF2FF] flex items-center justify-center text-[#4338CA] text-xs font-bold font-sans">
-          GM
+          {initials}
         </div>
       </div>
     </header>
