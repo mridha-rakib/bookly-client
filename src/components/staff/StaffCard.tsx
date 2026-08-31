@@ -10,10 +10,27 @@ interface StaffCardProps {
   staff: Staff;
   onToggleStatus: (id: number | string) => void;
   onEdit: (id: number | string) => void;
+  /** Opens the dedicated two-step role-change confirmation flow. */
+  onChangeRole?: (id: number | string) => void;
   canEdit?: boolean;
 }
 
-export default function StaffCard({ staff, onToggleStatus, onEdit, canEdit = true }: StaffCardProps) {
+export default function StaffCard({
+  staff,
+  onToggleStatus,
+  onEdit,
+  onChangeRole,
+  canEdit = true,
+}: StaffCardProps) {
+  const roleText = staff.cardRoleText || staff.role;
+  const roleBadgeClass = `flex flex-row justify-center items-center px-2.5 py-1 h-6 rounded-full text-[11px] font-medium ${
+    roleText === "Owner"
+      ? "bg-[#E0F3F5] text-[#2E9DA7]"
+      : roleText === "Supervisor"
+      ? "bg-[#E6F1FB] text-[#3760B7]"
+      : "bg-[#F5F4EE] text-[#5F5E5A]"
+  }`;
+  const roleChangeable = canEdit && staff.role !== "Owner" && Boolean(onChangeRole);
   return (
     <div
       className="box-sizing-border-box bg-white border border-[#E2E8F0] rounded-[14px] p-6 flex flex-col items-center text-center shadow-[0px_1px_3px_rgba(0,0,0,0.1),_0px_1px_2px_-1px_rgba(0,0,0,0.1)] w-full max-w-[352.33px] min-h-[251.5px] relative"
@@ -102,14 +119,21 @@ export default function StaffCard({ staff, onToggleStatus, onEdit, canEdit = tru
           <span>{staff.status}</span>
         </div>
 
-        {/* Role badge */}
-        <div className={`flex flex-row justify-center items-center px-2.5 py-1 h-6 rounded-full text-[11px] font-medium ${
-          (staff.cardRoleText || staff.role) === "Owner" ? "bg-[#E0F3F5] text-[#2E9DA7]" :
-          (staff.cardRoleText || staff.role) === "Supervisor" ? "bg-[#E6F1FB] text-[#3760B7]" :
-          "bg-[#F5F4EE] text-[#5F5E5A]"
-        }`}>
-          <span>{staff.cardRoleText || staff.role}</span>
-        </div>
+        {/* Role badge — a button when the owner may change this member's role */}
+        {roleChangeable ? (
+          <button
+            type="button"
+            title="Change role"
+            onClick={() => onChangeRole?.(staff.id)}
+            className={`${roleBadgeClass} cursor-pointer transition-opacity hover:opacity-80`}
+          >
+            <span>{roleText}</span>
+          </button>
+        ) : (
+          <div className={roleBadgeClass}>
+            <span>{roleText}</span>
+          </div>
+        )}
 
         {/* Edit button */}
         {canEdit && (

@@ -119,6 +119,17 @@ export interface BookingDetail {
    * countdown display (never a client-side-only timer; see the backend DTO's own comment). */
   noShowStartedAt?: string;
   noShowDeadlineAt?: string;
+  /** Batch 21 — the category no-show eligibility window captured at creation time, plus the
+   * absolute open/close instants (derived from `schedule.startAt`). Drives whether the
+   * business "Start No-show" action is offered; the backend re-checks it authoritatively.
+   * Absent for legacy bookings (no window restriction applies). */
+  noShowEligibilitySnapshot?: {
+    categoryKey: string;
+    opensAfterMinutes: number;
+    closesAfterMinutes: number;
+    opensAt: string;
+    closesAt: string;
+  };
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -158,6 +169,14 @@ export interface BookingCalendarEntry {
   customerName: string;
   totalCents: number;
   currency: string;
+  /** Batch 21 — drives whether the calendar "Start No-show" action is offered; the backend
+   * re-checks authoritatively. Absent for legacy bookings (no window restriction). */
+  noShowEligibilitySnapshot?: {
+    opensAfterMinutes: number;
+    closesAfterMinutes: number;
+    opensAt: string;
+    closesAt: string;
+  };
 }
 
 export interface BookingListResponse {
@@ -261,6 +280,12 @@ export interface FinalizeRequiresAction {
 }
 export type FinalizeBookingResult = BookingDetail | FinalizeRequiresAction;
 
+/** Complete-booking venue settlement — explicit 3-state discriminator (Batch 21). */
+export type CompleteVenuePaymentInput =
+  | { settlement: "FULL"; note?: string }
+  | { settlement: "PARTIAL"; amountCents: number; note?: string }
+  | { settlement: "NOT_PAID"; note?: string };
+
 export interface ListBookingsParams {
   status?: BookingStatus[];
   staffMembershipId?: string;
@@ -301,24 +326,33 @@ export const bookingsApi = {
       params: { fromDate, toDate },
     }),
 
-  /** `venuePayment` (Batch 5) — the Business's own attestation of whether the customer paid the
-   * remaining `financials.balanceDueCents` at the venue (see CompleteModal). Omit entirely when
-   * the flow has no venue-payment question to ask (e.g. nothing was ever due). */
+  /** `venuePayment` (Batch 21) — the Business's own attestation of how much of the remaining
+   * `financials.balanceDueCents` the customer paid at the venue. Explicit 3-state
+   * discriminator (FULL / PARTIAL / NOT_PAID); PARTIAL requires an `amountCents` strictly
+   * between 0 and the balance. Bookkeeping only — never charges the saved card. Omit entirely
+   * when the flow has no venue-payment question to ask (e.g. nothing was ever due). */
   completeBooking: (
     businessId: string,
     bookingId: string,
-    venuePayment?: { paid: boolean; amountCents?: number; note?: string },
+    venuePayment?: CompleteVenuePaymentInput,
   ) =>
     apiRequest<BookingDetail>({
       method: "POST",
       url: `/businesses/${businessId}/bookings/${bookingId}/complete`,
-      data: { venuePayment },
+      data: venuePayment ? { venuePayment } : {},
     }),
 
-  markNoShow: (businessId: string, bookingId: string) =>
+  /** `reason` / `internalNote` (Batch 21) — optional, internal-only mark-no-show audit
+   * metadata. SEPARATE from the waive-fee reason taxonomy. */
+  markNoShow: (
+    businessId: string,
+    bookingId: string,
+    body?: { reason?: string; internalNote?: string },
+  ) =>
     apiRequest<BookingDetail>({
       method: "POST",
       url: `/businesses/${businessId}/bookings/${bookingId}/no-show`,
+      data: body ?? {},
     }),
 
   /** Batch 5 — the generic Waive Fee flow (applies to whichever fee is currently outstanding:

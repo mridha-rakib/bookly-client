@@ -23,6 +23,7 @@ import { clientInputSchema, flattenClientErrors } from "@/lib/clients/schema";
 import type { BusinessClientDto, CreateClientInput } from "@/lib/api/clients";
 import { CLIENT_TAGS, type ClientTag } from "@/lib/api/clients";
 import { useCreateManualBookingMutation } from "@/lib/bookings/hooks";
+import { usePublicBookingConfigQuery } from "@/lib/superAdminSettings/hooks";
 import type { CreateManualBookingInput } from "@/lib/api/bookings";
 import { useAvailabilityQuery } from "@/lib/availability/hooks";
 import type { AvailabilitySlot } from "@/lib/api/availability";
@@ -148,8 +149,15 @@ export default function DashboardBookingForm({
   const addonsQuery = useAddonsForServiceQuery(businessId, primaryServiceId);
   const activeAddons = (addonsQuery.data ?? []).filter((a) => a.status === "ACTIVE");
 
+  // Server-authoritative product limit on service lines per booking (Batch 21). The backend
+  // re-validates on create regardless; this only stops the UI going over.
+  const bookingConfigQuery = usePublicBookingConfigQuery();
+  const maxServicesPerBooking = bookingConfigQuery.data?.maxServicesPerBooking ?? 5;
+  const atServiceLimit = selectedServiceIds.length >= maxServicesPerBooking;
+
   const addService = (serviceId: string) => {
     if (!serviceId || selectedServiceIds.includes(serviceId)) return;
+    if (selectedServiceIds.length >= maxServicesPerBooking) return;
     const service = bookableServices.find((s) => s.id === serviceId);
     setSelectedServiceIds((prev) => [...prev, serviceId]);
     if (service?.pricingMode === "HOURLY" && service.hourlyPricing) {
@@ -701,10 +709,16 @@ export default function DashboardBookingForm({
                     e.target.value = "";
                   }}
                   defaultValue=""
-                  disabled={servicesQuery.isLoading}
+                  disabled={servicesQuery.isLoading || atServiceLimit}
                   className="w-full h-full px-3 pr-8 appearance-none bg-white border border-[#E8E8E4] rounded-lg text-xs font-poppins focus:outline-none focus:border-neutral-800 cursor-pointer text-[#ABAAA6] font-medium disabled:opacity-50"
                 >
-                  <option value="">{servicesQuery.isLoading ? "Loading services…" : "Choose a service..."}</option>
+                  <option value="">
+                    {servicesQuery.isLoading
+                      ? "Loading services…"
+                      : atServiceLimit
+                        ? `Limit reached (max ${maxServicesPerBooking} services)`
+                        : "Choose a service..."}
+                  </option>
                   {bookableServices
                     .filter((s) => !selectedServiceIds.includes(s.id))
                     .map((s) => {

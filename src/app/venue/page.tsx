@@ -45,6 +45,7 @@ function VenueDetailsContent() {
   // Real customer auth identity — no local demo toggle.
   const authUser = useAuthStore((state) => state.user);
   const authStatus = useAuthStore((state) => state.status);
+  const logout = useAuthStore((state) => state.logout);
   const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
 
   // Real Business + Service catalog (Batch 9) — replaces mockVenueDetails' hardcoded services.
@@ -581,7 +582,9 @@ function VenueDetailsContent() {
       {/* Navbar */}
       <Navbar
         isLoggedIn={isLoggedIn}
-        setIsLoggedIn={() => {}}
+        setIsLoggedIn={(val) => {
+          if (!val) void logout();
+        }}
         selectedLanguage={selectedLanguage}
         setSelectedLanguage={setSelectedLanguage}
       />

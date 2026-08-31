@@ -4,7 +4,7 @@ import NotificationBell from "@/components/notifications/NotificationBell";
 import WaiveChargeModal from "./WaiveChargeModal";
 import { NoShowModal, CompleteModal, CancelBookingModal } from "./CalendarActionModals";
 
-import React, { useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Calendar03Icon,
@@ -26,6 +26,8 @@ import {
 } from "@/lib/bookings/hooks";
 import type { BookingCalendarEntry } from "@/lib/api/bookings";
 import { BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingMoney, formatBookingTime } from "@/lib/bookings/format";
+import { toast } from "@/components/ui/sonner";
+import { toUserMessage } from "@/lib/auth/messages";
 
 interface DashboardCalendarProps {
   /** Undefined means this actor has no manageable business right now (e.g. STAFF — no product
@@ -89,6 +91,13 @@ export default function DashboardCalendar({
   staffName = "Basel"
 }: DashboardCalendarProps) {
   const [openDropdownCardId, setOpenDropdownCardId] = useState<string | null>(null);
+  // A coarse ticking clock so the no-show eligibility hint (below) stays fresh without calling
+  // an impure time function during render.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const [viewMode, setViewMode] = useState("Weekly");
   const [isViewDropdownOpen, setIsViewDropdownOpen] = useState(false);
@@ -199,19 +208,58 @@ export default function DashboardCalendar({
     setOpenDropdownCardId(null);
   };
 
+  /**
+   * The category no-show eligibility window (Batch 21). The backend is authoritative and
+   * re-checks on submit; this is a truthful client-side hint only. Legacy bookings (no
+   * snapshot) are always "open".
+   */
+  const noShowWindowState = (
+    booking: ReturnType<typeof findBooking>,
+  ): { state: "open" | "before" | "after"; opensAt?: Date; closesAt?: Date } => {
+    const snap = booking?.noShowEligibilitySnapshot;
+    if (!snap) return { state: "open" };
+    const opensAt = new Date(snap.opensAt);
+    const closesAt = new Date(snap.closesAt);
+    if (nowMs < opensAt.getTime()) return { state: "before", opensAt, closesAt };
+    if (nowMs >= closesAt.getTime()) return { state: "after", opensAt, closesAt };
+    return { state: "open", opensAt, closesAt };
+  };
+
   const renderDropdown = (cardId: string) => {
     if (openDropdownCardId !== cardId) return null;
     const booking = findBooking(cardId);
     const isUpcoming = booking?.status === "UPCOMING";
+    const noShow = noShowWindowState(booking);
     return (
       <div
         onClick={(e) => e.stopPropagation()}
         className="absolute right-6 top-[25px] z-50 w-[160px] bg-white rounded-xl shadow-2xl border border-[#C6C6CB] flex flex-col py-1 text-xs select-none animate-fadeIn"
       >
         {isUpcoming && (
-          <button className="px-4 py-2 hover:bg-neutral-50 text-left flex items-center gap-2 text-[#BA1A1A] font-medium cursor-pointer" onClick={() => handleMarkNoShow(cardId)}>
+          <button
+            disabled={noShow.state !== "open"}
+            title={
+              noShow.state === "before"
+                ? `No-show opens ${noShow.opensAt?.toLocaleString()}`
+                : noShow.state === "after"
+                  ? `No-show window closed ${noShow.closesAt?.toLocaleString()}`
+                  : undefined
+            }
+            className={`px-4 py-2 text-left flex items-center gap-2 font-medium ${
+              noShow.state === "open"
+                ? "hover:bg-neutral-50 text-[#BA1A1A] cursor-pointer"
+                : "text-neutral-400 cursor-not-allowed"
+            }`}
+            onClick={() => noShow.state === "open" && handleMarkNoShow(cardId)}
+          >
             <Image src="/calederions/userCross.svg" alt="No-show" className="w-3.5 h-3.5 shrink-0" width={12} height={12} />
-            <span>No-show</span>
+            <span>
+              {noShow.state === "before"
+                ? "No-show (not open yet)"
+                : noShow.state === "after"
+                  ? "No-show (window closed)"
+                  : "No-show"}
+            </span>
           </button>
         )}
         {booking?.status === "PENDING" && (
@@ -856,9 +904,20 @@ export default function DashboardCalendar({
       <NoShowModal
         isOpen={!!noShowBookingId}
         onClose={() => setNoShowBookingId(null)}
-        onConfirm={() => {
+        onConfirm={(payload) => {
           if (businessId && noShowBookingId) {
-            markNoShowMutation.mutate({ businessId, bookingId: noShowBookingId });
+            markNoShowMutation.mutate(
+              {
+                businessId,
+                bookingId: noShowBookingId,
+                reason: payload?.reason,
+                internalNote: payload?.internalNote,
+              },
+              {
+                onSuccess: () => toast.success("No-show timer started."),
+                onError: (error) => toast.error(toUserMessage(error)),
+              },
+            );
           }
           setNoShowBookingId(null);
         }}
@@ -870,7 +929,13 @@ export default function DashboardCalendar({
         onClose={() => setCompleteBookingId(null)}
         onConfirm={(venuePayment) => {
           if (businessId && completeBookingId) {
-            completeBookingMutation.mutate({ businessId, bookingId: completeBookingId, venuePayment });
+            completeBookingMutation.mutate(
+              { businessId, bookingId: completeBookingId, venuePayment },
+              {
+                onSuccess: () => toast.success("Booking completed."),
+                onError: (error) => toast.error(toUserMessage(error)),
+              },
+            );
           }
           setCompleteBookingId(null);
         }}

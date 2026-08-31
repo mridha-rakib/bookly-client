@@ -17,13 +17,23 @@ type RankBy = "bookings" | "newCustomers" | "revenue";
 
 export default function SuperAdminBusinessesAnalytics({ period }: SuperAdminBusinessesAnalyticsProps) {
   const [rankBy, setRankBy] = useState<RankBy>("bookings");
-  const { data, isLoading, isError } = useSuperAdminBusinessAnalyticsQuery(period);
+  const { data, isLoading, isError, refetch } = useSuperAdminBusinessAnalyticsQuery(period);
 
+  if (isError) {
+    return (
+      <div className="py-8 text-center flex flex-col items-center gap-3">
+        <p className="text-sm text-rose-500">Failed to load business analytics.</p>
+        <button
+          onClick={() => void refetch()}
+          className="border border-[#111111] text-[#111111] hover:bg-gray-50 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
   if (isLoading || !data) {
     return <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>;
-  }
-  if (isError) {
-    return <p className="text-sm text-rose-500 py-8 text-center">Failed to load business analytics.</p>;
   }
 
   const rows =

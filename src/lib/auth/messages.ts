@@ -42,6 +42,9 @@ const codeMessages: Record<string, string> = {
   PHONE_ALREADY_REGISTERED: "That phone number is already registered to another account.",
   CONTACT_UNCHANGED: "That's already your current email or phone number.",
   CONTACT_CHANGE_NOT_FOUND: "That code has expired or was already used. Please request a new one.",
+  CUSTOMER_AVATAR_FILE_REQUIRED: "Please choose an image file.",
+  CUSTOMER_AVATAR_INVALID_TYPE: "Please choose a JPG, PNG or WebP image.",
+  CUSTOMER_AVATAR_TOO_LARGE: "That image is too large. Please choose one under 5 MB.",
 };
 
 export const toUserMessage = (error: unknown): string => {

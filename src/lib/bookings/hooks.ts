@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bookingsApi,
   type BookingDetail,
+  type CompleteVenuePaymentInput,
   type CreateBookingInput,
   type CreateManualBookingInput,
   type FinalizeBookingResult,
@@ -118,7 +119,7 @@ export const useCompleteBookingMutation = () => {
     }: {
       businessId: string;
       bookingId: string;
-      venuePayment?: { paid: boolean; amountCents?: number; note?: string };
+      venuePayment?: CompleteVenuePaymentInput;
     }) => bookingsApi.completeBooking(businessId, bookingId, venuePayment),
     onSuccess: (booking, variables) => onBookingMutated(queryClient, variables.businessId, booking),
   });
@@ -162,8 +163,17 @@ export const useMarkNoShowMutation = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ businessId, bookingId }: { businessId: string; bookingId: string }) =>
-      bookingsApi.markNoShow(businessId, bookingId),
+    mutationFn: ({
+      businessId,
+      bookingId,
+      reason,
+      internalNote,
+    }: {
+      businessId: string;
+      bookingId: string;
+      reason?: string;
+      internalNote?: string;
+    }) => bookingsApi.markNoShow(businessId, bookingId, { reason, internalNote }),
     onSuccess: (booking, variables) => onBookingMutated(queryClient, variables.businessId, booking),
   });
 };

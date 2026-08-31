@@ -3,7 +3,7 @@ import Image from "next/image";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 
 
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Plus as PlusIcon,
@@ -13,6 +13,11 @@ import {
 } from "@hugeicons/core-free-icons";
 import { Staff } from "@/data/staffMockData";
 import StaffCard from "../staff/StaffCard";
+import StaffAccessChangeModal, {
+  StaffAccessChangeMode,
+} from "../staff/StaffAccessChangeModal";
+import StaffPhotoCropModal from "../staff/StaffPhotoCropModal";
+import { Spinner } from "@/components/ui/spinner";
 import StaffAvailabilityTable, { StaffAvailabilityRow } from "../staff/StaffAvailabilityTable";
 import StaffRolePermissions from "../staff/StaffRolePermissions";
 import { useMyBusinessProfileQuery } from "@/lib/business/hooks";
@@ -48,6 +53,18 @@ import {
   summarizeTimeOffForTable
 } from "@/lib/staff/format";
 import { toUserMessage } from "@/lib/auth/messages";
+
+// Mirror of the staff-avatar backend contract so an obviously-wrong file is rejected before
+// we ever open the crop modal — see api/src/modules/staff-avatar/staff-avatar.service.ts
+// (allowedImageMimeTypes) and STAFF_AVATAR_MAX_UPLOAD_BYTES in api/.env (5 MB). The backend
+// still re-validates (incl. magic bytes); this is just a friendlier first line.
+const ACCEPTED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+const AVATAR_REJECT_MESSAGE = "Please choose a JPG, PNG, WebP or GIF image under 5 MB.";
+
+const revokeIfBlob = (url: string | null | undefined): void => {
+  if (url && url.startsWith("blob:")) URL.revokeObjectURL(url);
+};
 
 const displayRole = (role: StaffMember["role"]): Staff["role"] =>
   role === "BUSINESS_OWNER" ? "Owner" : role === "SUPERVISOR" ? "Supervisor" : "Staff";
@@ -118,6 +135,11 @@ export default function DashboardStaffList() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  // Photo picking now goes through a crop step: a valid pick opens the crop modal
+  // (cropSource = the raw object URL); only "Use photo" stages a cropped File.
+  const [cropSource, setCropSource] = useState<string | null>(null);
+  const [cropBaseName, setCropBaseName] = useState<string | undefined>(undefined);
+  const [photoError, setPhotoError] = useState("");
 
   // Form states for adding new staff
   const [staffName, setStaffName] = useState("");
@@ -155,6 +177,13 @@ export default function DashboardStaffList() {
   const [formError, setFormError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Dedicated two-step confirmation flow for role / deactivate / reactivate.
+  const [accessChange, setAccessChange] = useState<{
+    mode: StaffAccessChangeMode;
+    member: StaffMember;
+  } | null>(null);
+  const [accessChangeError, setAccessChangeError] = useState("");
+
   // Staff management always targets the authenticated Business Owner's own Business — a
   // linked/Secondary Business grants no Staff-management rights (server-enforced too, see
   // api/src/modules/staff/staff.service.ts requireOwnedStaffBusiness), so there is no
@@ -166,6 +195,13 @@ export default function DashboardStaffList() {
   const staffMembers = useMemo(() => staffListQuery.data?.members ?? [], [staffListQuery.data]);
   const displayStaffMembers = useMemo(() => staffMembers.map(toDisplayStaff), [staffMembers]);
   const availabilityRows = useMemo(() => staffMembers.map(toAvailabilityRow), [staffMembers]);
+  // The staff member currently open in the big edit form. Derived from the live list so the
+  // form's read-only role display refetches itself after a confirmed role change.
+  const editingMember = useMemo(
+    () =>
+      editingStaffId ? staffMembers.find((m) => m.membershipId === editingStaffId) : undefined,
+    [editingStaffId, staffMembers],
+  );
 
   const createStaffMutation = useCreateStaffMutation();
   const updateStaffMutation = useUpdateStaffMutation();
@@ -174,6 +210,7 @@ export default function DashboardStaffList() {
   const createTimeOffMutation = useCreateStaffTimeOffMutation();
   const removeTimeOffMutation = useRemoveStaffTimeOffMutation();
   const uploadAvatarMutation = useUploadStaffAvatarMutation();
+  const avatarUploadPending = uploadAvatarMutation.isPending;
 
   const [actionError, setActionError] = useState("");
 
@@ -370,8 +407,15 @@ export default function DashboardStaffList() {
     setStaffRole(member.role === "SUPERVISOR" ? "SUPERVISOR" : "STAFF");
     setStaffPhone(member.phone ? `${member.phone.countryCode} ${member.phone.nationalNumber}` : "");
     setStaffEmploymentActive(member.employmentActive);
-    setPhotoPreview(member.avatarUrl ?? null);
+    setPhotoPreview((prev) => {
+      revokeIfBlob(prev);
+      return member.avatarUrl ?? null;
+    });
     setPendingAvatarFile(null);
+    setPhotoError("");
+    revokeIfBlob(cropSource);
+    setCropSource(null);
+    setCropBaseName(undefined);
 
     const nextSchedule: DayScheduleState = {};
     for (const day of member.schedule) {
@@ -389,19 +433,56 @@ export default function DashboardStaffList() {
     setNewLeaveEndDate("");
   };
 
-  const toggleStaffStatus = (id: number | string) => {
+  // The card's status toggle no longer mutates directly — it opens the two-step
+  // deactivate / reactivate confirmation. Only the final "Confirm" there calls the API.
+  const requestStatusChange = (id: number | string) => {
     const member = staffMembers.find((m) => (m.membershipId ?? m.userId) === id);
-    if (!member || member.isOwner || !effectiveBusinessId) return;
-    const nextActive = !member.employmentActive;
+    if (!member || member.isOwner || !member.membershipId || !effectiveBusinessId) return;
     setActionError("");
-    updateStaffMutation.mutate(
-      {
+    setAccessChangeError("");
+    setAccessChange({
+      mode: member.employmentActive ? "deactivate" : "reactivate",
+      member,
+    });
+  };
+
+  const requestRoleChange = (id: number | string) => {
+    const member = staffMembers.find((m) => (m.membershipId ?? m.userId) === id);
+    if (!member || member.isOwner || !member.membershipId || !effectiveBusinessId) return;
+    setActionError("");
+    setAccessChangeError("");
+    setAccessChange({ mode: "role", member });
+  };
+
+  const closeAccessChange = () => {
+    if (updateStaffMutation.isPending) return;
+    setAccessChange(null);
+    setAccessChangeError("");
+  };
+
+  const confirmAccessChange = async (newRole?: StaffCreatableRole) => {
+    if (updateStaffMutation.isPending) return;
+    if (!accessChange || !effectiveBusinessId || !accessChange.member.membershipId) return;
+    const { mode, member } = accessChange;
+    const input =
+      mode === "role"
+        ? { role: newRole }
+        : { employmentActive: mode === "reactivate" };
+    if (mode === "role" && (!newRole || newRole === member.role)) {
+      setAccessChange(null);
+      return;
+    }
+    setAccessChangeError("");
+    try {
+      await updateStaffMutation.mutateAsync({
         businessId: effectiveBusinessId,
         staffId: String(member.membershipId),
-        input: { employmentActive: nextActive }
-      },
-      { onError: (error) => setActionError(toUserMessage(error)) }
-    );
+        input,
+      });
+      setAccessChange(null);
+    } catch (error) {
+      setAccessChangeError(toUserMessage(error));
+    }
   };
 
   const handleEditStaff = (id: number | string) => {
@@ -420,13 +501,67 @@ export default function DashboardStaffList() {
     setStaffPhone("");
     setStaffEmploymentActive(true);
     setEditingStaffId(null);
+    revokeIfBlob(photoPreview);
     setPhotoPreview(null);
     setPendingAvatarFile(null);
+    revokeIfBlob(cropSource);
+    setCropSource(null);
+    setCropBaseName(undefined);
+    setPhotoError("");
     setFormError("");
     resetScheduleForm();
     resetTimeOffForm();
     setIsAdding(false);
   };
+
+  // Called from the hidden <input type="file">. A valid pick opens the crop modal; it does
+  // NOT stage anything yet. An invalid pick shows an inline message and changes nothing.
+  const handlePhotoFileSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Allow re-picking the same file later (onChange won't fire otherwise).
+    event.target.value = "";
+    if (!file) return;
+
+    if (!ACCEPTED_AVATAR_TYPES.includes(file.type) || file.size > MAX_AVATAR_BYTES) {
+      setPhotoError(AVATAR_REJECT_MESSAGE);
+      return;
+    }
+
+    setPhotoError("");
+    revokeIfBlob(cropSource);
+    setCropSource(URL.createObjectURL(file));
+    setCropBaseName(file.name);
+  };
+
+  const closeCrop = () => {
+    revokeIfBlob(cropSource);
+    setCropSource(null);
+    setCropBaseName(undefined);
+  };
+
+  // The crop modal handed back a square JPEG File. Stage it exactly the way the old direct
+  // pick used to — the real upload still happens on Save changes (handleAddStaff).
+  const handleCroppedAvatar = (file: File) => {
+    setPhotoPreview((prev) => {
+      revokeIfBlob(prev);
+      return URL.createObjectURL(file);
+    });
+    setPendingAvatarFile(file);
+    setPhotoError("");
+    revokeIfBlob(cropSource);
+    setCropSource(null);
+    setCropBaseName(undefined);
+  };
+
+  // Revoke any object URLs still held when the component unmounts.
+  useEffect(
+    () => () => {
+      revokeIfBlob(photoPreview);
+      revokeIfBlob(cropSource);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   const handleDeleteStaff = async () => {
     if (editingStaffId === null || !effectiveBusinessId) return;
@@ -474,13 +609,17 @@ export default function DashboardStaffList() {
       if (editingStaffId !== null) {
         // Edit Mode — Business is intentionally not sent: a Staff membership cannot be
         // transferred between businesses in this phase.
+        //
+        // `role` is intentionally EXCLUDED from this payload. STAFF <-> SUPERVISOR changes go
+        // ONLY through the dedicated two-step StaffAccessChangeModal ("Change role" action
+        // below), so a normal Save Changes can never silently move a role — and a role changed
+        // via the modal can never be reverted by a now-stale local form value.
         await updateStaffMutation.mutateAsync({
           businessId: effectiveBusinessId,
           staffId: editingStaffId,
           input: {
             name: staffName,
             email: staffEmail,
-            role: staffRole,
             phone: staffPhone || undefined,
             employmentActive: staffEmploymentActive
           }
@@ -581,6 +720,23 @@ export default function DashboardStaffList() {
     }
   };
 
+  // Rendered in BOTH the list view and the edit-staff view so the "Change role" action works
+  // from either entry point. It is a no-op overlay while `accessChange` is null.
+  const accessChangeModal = (
+    <StaffAccessChangeModal
+      key={accessChange ? `${accessChange.mode}:${accessChange.member.membershipId}` : "closed"}
+      mode={accessChange?.mode ?? null}
+      staffName={accessChange?.member.name ?? ""}
+      businessName={businessProfileQuery.data?.primary?.name ?? "your business"}
+      currentRole={accessChange?.member.role === "SUPERVISOR" ? "SUPERVISOR" : "STAFF"}
+      currentStatus={accessChange?.member.employmentActive ? "Active" : "Inactive"}
+      pending={updateStaffMutation.isPending}
+      errorMessage={accessChangeError}
+      onClose={closeAccessChange}
+      onConfirm={confirmAccessChange}
+    />
+  );
+
   if (isAdding) {
     return (
       <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] md: select-none font-poppins relative">
@@ -626,30 +782,45 @@ export default function DashboardStaffList() {
               <input
                 type="file"
                 ref={fileInputRef}
-                accept="image/*"
+                accept={ACCEPTED_AVATAR_TYPES.join(",")}
                 className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    setPhotoPreview(URL.createObjectURL(file));
-                    setPendingAvatarFile(file);
-                  }
-                }}
+                onChange={handlePhotoFileSelected}
               />
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="w-[80px] h-[80px] rounded-full bg-[#E1E0E6] flex items-center justify-center overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
-              >
-                <Image src={photoPreview || "/img/dumyUser.jpeg"} alt="Avatar Preview" className="w-full h-full object-cover" fill />
-              </div>
+              {/* Mouse affordance only — keyboard users reach the labelled camera button below,
+                  which is the single tab stop (matches the pre-existing behaviour). */}
               <button
                 type="button"
+                tabIndex={-1}
+                aria-hidden="true"
+                disabled={avatarUploadPending || isSubmitting}
                 onClick={() => fileInputRef.current?.click()}
-                className="absolute right-0 bottom-0 w-[32px] h-[32px] bg-white border border-[#C6C6CB] rounded-full flex items-center justify-center shadow-sm cursor-pointer hover:bg-neutral-50 transition-colors"
+                className="w-[80px] h-[80px] rounded-full bg-[#E1E0E6] flex items-center justify-center overflow-hidden cursor-pointer hover:opacity-90 transition-opacity disabled:cursor-not-allowed"
+              >
+                <Image src={photoPreview || "/img/dumyUser.jpeg"} alt="Avatar Preview" className="w-full h-full object-cover" fill />
+              </button>
+              {avatarUploadPending && (
+                <div className="absolute inset-0 rounded-full bg-black/45 flex items-center justify-center">
+                  <Spinner className="size-5 text-white" />
+                  <span className="sr-only" role="status" aria-live="polite">
+                    Uploading photo…
+                  </span>
+                </div>
+              )}
+              <button
+                type="button"
+                aria-label="Change staff photo"
+                disabled={avatarUploadPending || isSubmitting}
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute right-0 bottom-0 w-[32px] h-[32px] bg-white border border-[#C6C6CB] rounded-full flex items-center justify-center shadow-sm cursor-pointer hover:bg-neutral-50 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <HugeiconsIcon icon={Camera01Icon} className="w-4 h-4 text-[#141B34]" />
               </button>
             </div>
+            {photoError && (
+              <div className="w-full px-3 py-2 rounded-[8px] bg-[#FFF5F5] border border-[#FCDDEC] text-[#DE350B] text-[12px] font-poppins font-medium">
+                {photoError}
+              </div>
+            )}
           </div>
 
           {/* Name Field */}
@@ -687,25 +858,50 @@ export default function DashboardStaffList() {
               <span className="font-poppins font-medium text-[12px] leading-[20px] tracking-[1.5px] uppercase text-[#111111]">
                 role
               </span>
-              <div className="relative w-full">
-                <select
-                  value={staffRole}
-                  onChange={(e) => setStaffRole(e.target.value as StaffCreatableRole)}
-                  className="appearance-none h-[44px] w-full bg-white border border-[#C6C6CB] rounded-[8px] px-4 font-poppins text-sm text-[#1C1B1C] focus:outline-none shadow-[0px_1px_2px_rgba(0,0,0,0.05)] pr-10 cursor-pointer"
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23141B34' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 16px center',
-                    backgroundSize: '16px'
-                  }}
-                >
-                  {/* Business Owner is intentionally not a selectable option here — a
-                      Business Owner may only create SUPERVISOR/STAFF accounts (enforced
-                      server-side too, see api/src/modules/staff/staff.schema.ts). */}
-                  <option value="SUPERVISOR">Supervisor</option>
-                  <option value="STAFF">Staff</option>
-                </select>
-              </div>
+              {editingStaffId !== null ? (
+                // Edit Mode — role is DISPLAY-ONLY here. STAFF <-> SUPERVISOR changes go only
+                // through the dedicated two-step confirmation modal (same one the StaffCard
+                // role badge opens), never through this form's Save Changes.
+                <div className="flex items-center gap-3 w-full">
+                  <div className="h-[44px] flex-1 flex items-center bg-[#F5F5F5] border border-[#C6C6CB] rounded-[8px] px-4 font-poppins text-sm text-[#1C1B1C]">
+                    {displayRole((editingMember?.role ?? staffRole) as StaffMember["role"])}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!editingMember}
+                    onClick={() => {
+                      if (editingMember) {
+                        setActionError("");
+                        setAccessChangeError("");
+                        setAccessChange({ mode: "role", member: editingMember });
+                      }
+                    }}
+                    className="h-[44px] px-4 shrink-0 bg-[#1C1B1C] hover:bg-black text-white font-poppins font-medium text-xs rounded-[8px] transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    Change role
+                  </button>
+                </div>
+              ) : (
+                <div className="relative w-full">
+                  <select
+                    value={staffRole}
+                    onChange={(e) => setStaffRole(e.target.value as StaffCreatableRole)}
+                    className="appearance-none h-[44px] w-full bg-white border border-[#C6C6CB] rounded-[8px] px-4 font-poppins text-sm text-[#1C1B1C] focus:outline-none shadow-[0px_1px_2px_rgba(0,0,0,0.05)] pr-10 cursor-pointer"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23141B34' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 16px center',
+                      backgroundSize: '16px'
+                    }}
+                  >
+                    {/* Business Owner is intentionally not a selectable option here — a
+                        Business Owner may only create SUPERVISOR/STAFF accounts (enforced
+                        server-side too, see api/src/modules/staff/staff.schema.ts). */}
+                    <option value="SUPERVISOR">Supervisor</option>
+                    <option value="STAFF">Staff</option>
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1019,7 +1215,17 @@ export default function DashboardStaffList() {
 
         </div>
 
-      </div></main>
+      </div>
+      {accessChangeModal}
+      <StaffPhotoCropModal
+        key={cropSource ?? "closed"}
+        open={cropSource !== null}
+        imageSrc={cropSource}
+        baseName={cropBaseName}
+        onCancel={closeCrop}
+        onConfirm={handleCroppedAvatar}
+      />
+      </main>
     );
   }
 
@@ -1067,8 +1273,9 @@ export default function DashboardStaffList() {
             <StaffCard
               key={staff.id}
               staff={staff}
-              onToggleStatus={toggleStaffStatus}
+              onToggleStatus={requestStatusChange}
               onEdit={handleEditStaff}
+              onChangeRole={requestRoleChange}
               canEdit={staff.role !== "Owner"}
             />
           ))}
@@ -1087,7 +1294,10 @@ export default function DashboardStaffList() {
       {/* Role Permissions Section */}
       <StaffRolePermissions />
 
-      </div></main>
+      </div>
+
+      {accessChangeModal}
+      </main>
   );
 }
 

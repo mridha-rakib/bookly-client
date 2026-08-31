@@ -15,6 +15,16 @@ export interface AuthUser {
   status: UserStatus;
 }
 
+/**
+ * Optional 24h appointment-reminder channels. GET /auth/me always returns this fully populated
+ * (an absent stored value resolves to the product default server-side). Governs ONLY reminders —
+ * never booking confirmations, cancellations, invoices, no-show notices, or security mail.
+ */
+export interface NotificationPreferences {
+  appointmentReminderEmail: boolean;
+  appointmentReminderSms: boolean;
+}
+
 export interface AuthProfile {
   firstName: string;
   lastName: string;
@@ -22,6 +32,8 @@ export interface AuthProfile {
   gender: Gender;
   /** Account UI language preference. Always present (legacy profiles read back as "EN"). */
   defaultLanguage: UserLanguage;
+  /** Optional reminder channels — always fully populated by the server. */
+  notifications: NotificationPreferences;
   phone?: {
     countryCode: string;
     nationalNumber: string;
@@ -31,6 +43,12 @@ export interface AuthProfile {
   address?: string;
   /** CUSTOMER only, "YYYY-MM-DD" — undefined until the customer sets it via profile edit. */
   dateOfBirth?: string;
+  /**
+   * CUSTOMER only — ready-to-render URL for the uploaded avatar (PUT /auth/me/avatar).
+   * Undefined until the customer uploads one; the frontend falls back to a placeholder image.
+   * The backend (storage) is the source of truth — this is refreshed via the ["auth","me"] query.
+   */
+  avatarUrl?: string;
 }
 
 export interface UpdateMyProfileInput {
@@ -41,6 +59,9 @@ export interface UpdateMyProfileInput {
   defaultLanguage?: UserLanguage;
   address?: string;
   dateOfBirth?: string;
+  /** Partial nested update — send only the channel(s) being changed; the server writes them via
+   * dot-path `$set`, so the sibling channel is never overwritten. */
+  notifications?: Partial<NotificationPreferences>;
 }
 
 export interface ChangeMyPasswordInput {
@@ -219,6 +240,21 @@ export const authApi = {
       url: "/auth/me/password",
       data: input,
     }),
+
+  /**
+   * Customer avatar upload/replace. Single multipart `file` field (matches the Staff avatar
+   * contract). Returns the full current-user payload so the caller can refresh ["auth","me"]
+   * without a second request. axios sets the multipart boundary from the FormData.
+   */
+  updateMyAvatar: (file: File) => {
+    const data = new FormData();
+    data.append("file", file);
+    return apiRequest<CurrentUserResponse>({
+      method: "PUT",
+      url: "/auth/me/avatar",
+      data,
+    });
+  },
 
   requestEmailChange: (input: RequestEmailChangeInput) =>
     apiRequest<ChangeRequestResponse>({

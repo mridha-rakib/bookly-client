@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useRef, useState, useEffect, Suspense } from "react";
+import React, { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 // Components
 import AuthLayout from "@/components/auth/AuthLayout";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/sonner";
+import { useOtpInput } from "@/hooks/useOtpInput";
 import type { VisitType } from "@/lib/api/auth";
 import {
   useResendProfessionalEmailOtpMutation,
@@ -29,9 +30,7 @@ function ProfessionalVerifyContent() {
   const sessionIdParam = searchParams.get("sessionId") || "";
   const flow = searchParams.get("flow") || "";
 
-  const [otp, setOtp] = useState<string[]>(["", "", "", ""]);
-  const [activeBox, setActiveBox] = useState<number>(0);
-  const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
+  const otp = useOtpInput(4);
   const verifyEmailOtp = useVerifyProfessionalEmailOtpMutation();
   const resendEmailOtp = useResendProfessionalEmailOtpMutation();
   const isSubmitting = verifyEmailOtp.isPending;
@@ -40,42 +39,9 @@ function ProfessionalVerifyContent() {
   const getSessionId = () =>
     sessionIdParam || getRegistrationSession("professional", email)?.sessionId || "";
 
-  useEffect(() => {
-    inputsRef.current[0]?.focus();
-  }, []);
-
-  const handleChange = (value: string, index: number) => {
-    if (value && !/^\d+$/.test(value)) return;
-
-    const newOtp = [...otp];
-    newOtp[index] = value.substring(value.length - 1);
-    setOtp(newOtp);
-
-    if (value && index < 3) {
-      inputsRef.current[index + 1]?.focus();
-      setActiveBox(index + 1);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
-    if (e.key === "Backspace") {
-      if (!otp[index] && index > 0) {
-        const newOtp = [...otp];
-        newOtp[index - 1] = "";
-        setOtp(newOtp);
-        inputsRef.current[index - 1]?.focus();
-        setActiveBox(index - 1);
-      } else {
-        const newOtp = [...otp];
-        newOtp[index] = "";
-        setOtp(newOtp);
-      }
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const otpValue = otp.join("");
+    const otpValue = otp.value;
     if (otpValue.length === 4) {
       if (flow === "reset") {
         router.push(`/professional/new-password?email=${encodeURIComponent(email)}&type=${visitType}`);
@@ -144,22 +110,21 @@ function ProfessionalVerifyContent() {
 
           {/* OTP Box Wrapper */}
           <div className="flex gap-4 mb-8">
-            {otp.map((digit, idx) => {
-              const isActive = activeBox === idx;
+            {otp.values.map((digit, idx) => {
+              const isActive = otp.activeBox === idx;
               return (
                 <input
                   key={idx}
-                  ref={(el) => {
-                    inputsRef.current[idx] = el;
-                  }}
+                  ref={otp.registerRef(idx)}
                   type="text"
                   pattern="\d*"
                   inputMode="numeric"
                   maxLength={1}
                   value={digit}
-                  onFocus={() => setActiveBox(idx)}
-                  onKeyDown={(e) => handleKeyDown(e, idx)}
-                  onChange={(e) => handleChange(e.target.value, idx)}
+                  onFocus={() => otp.setActiveBox(idx)}
+                  onKeyDown={(e) => otp.handleKeyDown(e, idx)}
+                  onChange={(e) => otp.handleChange(e.target.value, idx)}
+                  onPaste={otp.handlePaste}
                   className={`w-14 h-16 sm:w-16 sm:h-20 text-center text-2xl font-semibold rounded-2xl border-2 bg-[#FCFCFD] text-[#1A1A1A] focus:outline-none transition-all duration-200 ${
                     isActive
                       ? "border-[#240183] bg-white shadow-sm ring-2 ring-[#240183]/10"
@@ -173,7 +138,7 @@ function ProfessionalVerifyContent() {
           {/* Verify Button */}
           <button
             type="submit"
-            disabled={otp.join("").length < 4 || isSubmitting}
+            disabled={otp.value.length < 4 || isSubmitting}
             className="w-full max-w-[520px] h-12 bg-[#1A1A1A] hover:bg-black text-white font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSubmitting ? <Spinner className="text-white" /> : "Verify"}

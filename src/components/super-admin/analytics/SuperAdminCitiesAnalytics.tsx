@@ -11,13 +11,23 @@ interface SuperAdminCitiesAnalyticsProps {
  * has no real aggregate built yet — reported here rather than fabricated, matching the mock's
  * old "Booking volume by city" section which had no backend equivalent. */
 export default function SuperAdminCitiesAnalytics({ setActiveTab }: SuperAdminCitiesAnalyticsProps) {
-  const { data, isLoading, isError } = useSuperAdminCityCoverageQuery();
+  const { data, isLoading, isError, refetch } = useSuperAdminCityCoverageQuery();
 
+  if (isError) {
+    return (
+      <div className="py-8 text-center flex flex-col items-center gap-3">
+        <p className="text-sm text-rose-500">Failed to load city coverage.</p>
+        <button
+          onClick={() => void refetch()}
+          className="border border-[#111111] text-[#111111] hover:bg-gray-50 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
   if (isLoading || !data) {
     return <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>;
-  }
-  if (isError) {
-    return <p className="text-sm text-rose-500 py-8 text-center">Failed to load city coverage.</p>;
   }
 
   const maxTotal = Math.max(1, ...data.cities.map((c) => c.premisesCount + c.mobileCount));

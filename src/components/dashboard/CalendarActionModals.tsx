@@ -10,7 +10,9 @@ import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 interface NoShowModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  /** `reason` / `internalNote` are optional, internal-only mark-no-show audit metadata
+   * (SEPARATE from the waive-fee reason taxonomy). Empty strings are normalised to undefined. */
+  onConfirm: (payload?: { reason?: string; internalNote?: string }) => void;
 }
 
 export function NoShowModal({ isOpen, onClose, onConfirm }: NoShowModalProps) {
@@ -26,6 +28,13 @@ export function NoShowModal({ isOpen, onClose, onConfirm }: NoShowModalProps) {
     "Customer arrived but refused service",
     "Other"
   ];
+
+  const handleConfirm = () => {
+    onConfirm({
+      reason: reason.trim() || undefined,
+      internalNote: internalNote.trim() || undefined,
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 select-none font-poppins">
@@ -117,7 +126,7 @@ export function NoShowModal({ isOpen, onClose, onConfirm }: NoShowModalProps) {
           
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={handleConfirm}
             className="flex flex-row justify-center items-center px-6 py-3.5 gap-2 w-[74px] h-11 bg-[#26C08F] hover:bg-[#1fa379] rounded-[12px] font-poppins font-medium text-sm text-white tracking-[0.03em] cursor-pointer transition-all duration-200"
           >
             Yes
@@ -132,12 +141,13 @@ export function NoShowModal({ isOpen, onClose, onConfirm }: NoShowModalProps) {
 // 2. Complete Modal Component
 // ----------------------------------------------------
 /** The confirmed outcome of the "did the customer pay the remaining balance at venue" question
- * — server-authoritative fields only (never a display string) so the caller can call the real
- * completeBooking API directly. `amountCents` is present only when the Business is attesting a
- * SPECIFIC amount was collected; when omitted with `paid: true`, the backend defaults to the
- * booking's own snapshotted `balanceDueCents` (see api/.../booking-lifecycle.service.ts
- * completeBooking's own doc comment). */
-export type CompleteModalVenuePayment = { paid: boolean; amountCents?: number; note?: string };
+ * — an explicit 3-state discriminator matching the backend contract (Batch 21). FULL settles
+ * the whole snapshotted balance; PARTIAL carries a whole-cent amount strictly between 0 and
+ * the balance; NOT_PAID records nothing. Bookkeeping only — never charges the saved card. */
+export type CompleteModalVenuePayment =
+  | { settlement: "FULL"; note?: string }
+  | { settlement: "PARTIAL"; amountCents: number; note?: string }
+  | { settlement: "NOT_PAID"; note?: string };
 
 interface CompleteModalProps {
   isOpen: boolean;
@@ -170,6 +180,7 @@ export function CompleteModal({
   const [showPayDropdown, setShowPayDropdown] = useState(false);
   const [internalNote, setInternalNote] = useState("");
   const [otherAmount, setOtherAmount] = useState("");
+  const [amountError, setAmountError] = useState<string | undefined>(undefined);
 
   if (!isOpen) return null;
 
@@ -178,16 +189,27 @@ export function CompleteModal({
   const handleConfirm = () => {
     const note = internalNote.trim() || undefined;
     if (payValue === "No - customer has not paid remaining balance") {
-      onConfirm({ paid: false, note });
+      onConfirm({ settlement: "NOT_PAID", note });
       return;
     }
     if (isOtherAmount) {
       const parsed = Math.round(Number.parseFloat(otherAmount) * 100);
-      onConfirm({ paid: true, amountCents: Number.isFinite(parsed) && parsed > 0 ? parsed : 0, note });
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        setAmountError("Enter an amount greater than 0.");
+        return;
+      }
+      if (defaultBalanceDueCents !== undefined && parsed >= defaultBalanceDueCents) {
+        setAmountError(
+          `A partial amount must be less than the ${currencySymbol}${formattedDefault} balance — choose the full-payment option instead.`,
+        );
+        return;
+      }
+      setAmountError(undefined);
+      onConfirm({ settlement: "PARTIAL", amountCents: parsed, note });
       return;
     }
-    // The default-balance option — let the backend apply the server-snapshotted amount.
-    onConfirm({ paid: true, note });
+    // The default-balance option — the backend settles the full snapshotted balance.
+    onConfirm({ settlement: "FULL", note });
   };
 
   return (
@@ -264,10 +286,16 @@ export function CompleteModal({
                 min="0"
                 step="0.01"
                 value={otherAmount}
-                onChange={(e) => setOtherAmount(e.target.value)}
+                onChange={(e) => {
+                  setOtherAmount(e.target.value);
+                  if (amountError) setAmountError(undefined);
+                }}
                 placeholder="0.00"
                 className="box-border w-[329px] h-[46px] border border-[#111111]/60 rounded-xl p-3 gap-2.5 font-poppins font-normal text-sm text-[#111111] placeholder-[#111111]/40 focus:outline-none focus:border-green-500"
               />
+              {amountError && (
+                <span className="text-xs text-red-600 w-[329px]">{amountError}</span>
+              )}
             </div>
           )}
 

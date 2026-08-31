@@ -22,6 +22,8 @@ import {
   Setting07Icon
 } from "@hugeicons/core-free-icons";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
+import { useCurrentUserQuery } from "@/lib/auth/hooks";
+import { useAuthStore } from "@/lib/auth/store";
 
 interface NavbarProps {
   isLoggedIn: boolean;
@@ -59,36 +61,16 @@ export default function Navbar({
   const [showLangDropdown, setShowLangDropdown] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [avatar, setAvatar] = useState("/img/authImg.png");
   const userDropdownRef = useRef<HTMLDivElement>(null);
   const mobileModalRef = useRef<HTMLDivElement>(null);
 
-  // Sync avatar with localStorage and custom profileUpdate events. This is a
-  // browser-only preview (never sent to or read from the backend — no avatar
-  // upload capability exists yet), so it intentionally lives outside the auth store.
-  useEffect(() => {
-    const loadAvatar = () => {
-      if (typeof window !== "undefined") {
-        const saved = localStorage.getItem("customerAvatarUrl");
-        if (saved) {
-          setAvatar(saved);
-        }
-      }
-    };
-
-    loadAvatar();
-
-    if (typeof window !== "undefined") {
-      window.addEventListener("storage", loadAvatar);
-      window.addEventListener("profileUpdate", loadAvatar);
-    }
-    return () => {
-      if (typeof window !== "undefined") {
-        window.removeEventListener("storage", loadAvatar);
-        window.removeEventListener("profileUpdate", loadAvatar);
-      }
-    };
-  }, [isLoggedIn]);
+  // The authenticated customer's avatar comes from the shared ["auth","me"] cache — the same
+  // entry the Profile page updates after an upload — so Profile, the top bar and the dropdown
+  // always show one server-persisted image with no per-surface state. Gated on the auth store
+  // status so GET /auth/me is never fired for an anonymous visitor on a public page.
+  const authStatus = useAuthStore((state) => state.status);
+  const meQuery = useCurrentUserQuery({ enabled: authStatus === "authenticated" });
+  const avatar = meQuery.data?.profile?.avatarUrl || "/img/authImg.png";
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent | TouchEvent) {

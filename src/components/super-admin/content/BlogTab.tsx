@@ -1,24 +1,36 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { StarIcon, Facebook02Icon, InstagramIcon } from "@hugeicons/core-free-icons";
-import { BlogPost } from "./types";
+
+import type { BlogAdminPost, BlogCategory, BlogStatus } from "@/lib/api/content";
+import { BLOG_CATEGORIES, blogCategoryLabel, formatBlogDate } from "@/lib/content/blog";
+
+type CategoryFilter = "All" | BlogCategory;
+type StatusFilter = "All" | BlogStatus;
 
 interface BlogTabProps {
-  posts: BlogPost[];
-  blogFilter: "All" | "Founding Partner" | "Bookly News" | "For Business" | "Customer Tips";
-  setBlogFilter: (val: "All" | "Founding Partner" | "Bookly News" | "For Business" | "Customer Tips") => void;
-  statusFilter: "All" | "Published" | "Draft";
-  setStatusFilter: (val: "All" | "Published" | "Draft") => void;
-  onEdit: (post: BlogPost) => void;
-  onDelete: (id: string) => void;
+  posts: BlogAdminPost[];
+  total: number;
+  isLoading: boolean;
+  isError: boolean;
+  blogFilter: CategoryFilter;
+  setBlogFilter: (val: CategoryFilter) => void;
+  statusFilter: StatusFilter;
+  setStatusFilter: (val: StatusFilter) => void;
+  onEdit: (post: BlogAdminPost) => void;
+  onDelete: (post: BlogAdminPost) => void;
   onNewPost: () => void;
-  onView: (post: BlogPost) => void;
+  onView: (post: BlogAdminPost) => void;
 }
 
 export default function BlogTab({
   posts,
+  total,
+  isLoading,
+  isError,
   blogFilter,
   setBlogFilter,
   statusFilter,
@@ -28,12 +40,7 @@ export default function BlogTab({
   onNewPost,
   onView,
 }: BlogTabProps) {
-  // Filter logic
-  const filteredPosts = posts.filter((p) => {
-    if (blogFilter !== "All" && p.category !== blogFilter) return false;
-    if (statusFilter !== "All" && p.status !== statusFilter) return false;
-    return true;
-  });
+  const categoryOptions: CategoryFilter[] = ["All", ...BLOG_CATEGORIES];
 
   return (
     <div className="flex flex-col gap-5">
@@ -43,21 +50,22 @@ export default function BlogTab({
           className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 shrink-0 max-w-full sm:max-w-none"
           style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
         >
-          {(["All", "Founding Partner", "Bookly News", "For Business", "Customer Tips"] as const).map((filterVal) => {
+          {categoryOptions.map((filterVal) => {
             const isActive = blogFilter === filterVal;
             return (
               <button
                 key={filterVal}
                 onClick={() => setBlogFilter(filterVal)}
-                className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 shrink-0 ${isActive
+                className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 shrink-0 ${
+                  isActive
                     ? "bg-[#6366F1]/10 border-[#6366F1] text-[#6366F1]"
                     : "bg-white border-[#E5E7EB] text-[#374151] hover:bg-gray-55"
-                  }`}
+                }`}
               >
-                {filterVal === "Founding Partner" && (
+                {filterVal === "FOUNDING_PARTNER" && (
                   <HugeiconsIcon icon={StarIcon} className="w-3.5 h-3.5 text-amber-500" />
                 )}
-                {filterVal === "All" ? "All Posts" : filterVal}
+                {filterVal === "All" ? "All Posts" : blogCategoryLabel(filterVal)}
               </button>
             );
           })}
@@ -70,12 +78,12 @@ export default function BlogTab({
             <div className="relative">
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
+                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
                 className="appearance-none bg-white border border-gray-200 rounded-xl px-2.5 py-1 pr-7 text-xs font-medium text-gray-600 focus:outline-none focus:ring-1 focus:ring-[#6366F1] cursor-pointer"
               >
                 <option value="All">All</option>
-                <option value="Published">Published</option>
-                <option value="Draft">Draft</option>
+                <option value="PUBLISHED">Published</option>
+                <option value="DRAFT">Draft</option>
               </select>
               <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -93,65 +101,112 @@ export default function BlogTab({
         </div>
       </div>
 
-      {/* Cards List Grid */}
+      {/* Cards List */}
       <div className="flex flex-col gap-4">
-        {filteredPosts.length > 0 ? (
-          filteredPosts.map((post) => (
+        {isLoading && (
+          <div className="text-center py-10 bg-white border border-[#E5E7EB] rounded-xl text-gray-400 text-sm">
+            Loading blog posts…
+          </div>
+        )}
+
+        {!isLoading && isError && (
+          <div className="text-center py-10 bg-white border border-red-100 rounded-xl text-red-500 text-sm">
+            Could not load blog posts. Please try again.
+          </div>
+        )}
+
+        {!isLoading && !isError && posts.length === 0 && (
+          <div className="text-center py-10 bg-white border border-[#E5E7EB] rounded-xl text-gray-400 text-sm">
+            {blogFilter === "All" && statusFilter === "All"
+              ? "No blog posts yet. Click “+ New Post” to create the first one."
+              : "No blog posts match the selected filters."}
+          </div>
+        )}
+
+        {!isLoading &&
+          !isError &&
+          posts.map((post) => (
             <div
               key={post.id}
               className="bg-white border border-[#E5E7EB] rounded-xl p-5 shadow-[0px_1px_2px_rgba(0,0,0,0.05)] flex flex-col lg:flex-row gap-5 items-stretch lg:items-start w-full min-w-0"
             >
-              {/* Left image container */}
-              <div className="relative w-24 h-20 bg-gradient-to-br from-[#E0E7FF] to-[#C7D2FE] rounded-lg shrink-0 overflow-hidden flex items-center justify-center font-bold text-indigo-400 select-none">
-                Image
-                <div className="absolute bottom-1 right-1 bg-black/60 text-white font-medium text-[9px] px-1.5 py-0.5 rounded">
-                  +2
-                </div>
+              {/* Cover image or honest placeholder */}
+              <div className="relative w-24 h-20 rounded-lg shrink-0 overflow-hidden border border-gray-100">
+                {post.coverImage ? (
+                  <Image
+                    src={post.coverImage.url}
+                    alt={post.title}
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gray-50 flex items-center justify-center text-[10px] font-medium text-gray-400 select-none">
+                    No image
+                  </div>
+                )}
+                {post.galleryCount > 0 && (
+                  <div className="absolute bottom-1 right-1 bg-black/60 text-white font-medium text-[9px] px-1.5 py-0.5 rounded">
+                    +{post.galleryCount}
+                  </div>
+                )}
               </div>
 
-              {/* Middle content wrapper */}
+              {/* Middle content */}
               <div className="flex-grow flex flex-col gap-2 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span
-                    className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${post.category === "Founding Partner"
+                    className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                      post.category === "FOUNDING_PARTNER"
                         ? "bg-amber-100/60 text-[#92400E]"
                         : "bg-blue-100/60 text-[#1D4ED8]"
-                      }`}
+                    }`}
                   >
-                    {post.category}
+                    {blogCategoryLabel(post.category)}
                   </span>
                   <span
-                    className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] ${post.status === "Published"
+                    className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] ${
+                      post.status === "PUBLISHED"
                         ? "bg-green-100/60 text-[#16A34A]"
                         : "bg-gray-100 text-gray-500 border border-gray-200"
-                      }`}
+                    }`}
                   >
-                    {post.status}
+                    {post.status === "PUBLISHED" ? "Published" : "Draft"}
                   </span>
-                  <span className="text-[#6B7280]">{post.date}</span>
+                  <span className="text-[#6B7280]">
+                    {formatBlogDate(post.publishedAt ?? post.updatedAt)}
+                  </span>
                 </div>
 
-                <h3 className="font-semibold text-[#111827] text-base leading-5 truncate" title={post.title}>
+                <h3
+                  className="font-semibold text-[#111827] text-base leading-5 truncate"
+                  title={post.title}
+                >
                   {post.title}
                 </h3>
                 <p className="text-xs sm:text-sm text-[#6B7280] leading-5 line-clamp-2">
-                  {post.description}
+                  {post.excerpt}
                 </p>
 
-                {/* Social Handles */}
-                <div className="flex items-center gap-4 text-xs text-[#6B7280] mt-1 flex-wrap">
-                  <div className="flex items-center gap-1">
-                    <HugeiconsIcon icon={Facebook02Icon} className="w-3.5 h-3.5 text-gray-400" />
-                    <span>{post.fbLink}</span>
+                {(post.facebookUrl || post.instagramUrl) && (
+                  <div className="flex items-center gap-4 text-xs text-[#6B7280] mt-1 flex-wrap">
+                    {post.facebookUrl && (
+                      <div className="flex items-center gap-1 min-w-0">
+                        <HugeiconsIcon icon={Facebook02Icon} className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                        <span className="truncate">{post.facebookUrl}</span>
+                      </div>
+                    )}
+                    {post.instagramUrl && (
+                      <div className="flex items-center gap-1 min-w-0">
+                        <HugeiconsIcon icon={InstagramIcon} className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                        <span className="truncate">{post.instagramUrl}</span>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <HugeiconsIcon icon={InstagramIcon} className="w-3.5 h-3.5 text-gray-400" />
-                    <span>{post.igLink}</span>
-                  </div>
-                </div>
+                )}
               </div>
 
-              {/* Actions column */}
+              {/* Actions */}
               <div className="flex flex-row lg:flex-col items-center justify-end gap-3 shrink-0 w-full lg:w-auto mt-2 lg:mt-0 border-t border-gray-100 pt-3 lg:border-t-0 lg:pt-0">
                 <button
                   onClick={() => onView(post)}
@@ -166,20 +221,21 @@ export default function BlogTab({
                   Edit
                 </button>
                 <button
-                  onClick={() => onDelete(post.id)}
+                  onClick={() => onDelete(post)}
                   className="text-xs font-semibold text-[#DC2626] bg-transparent border-none hover:underline cursor-pointer px-3 py-1"
                 >
                   Delete
                 </button>
               </div>
             </div>
-          ))
-        ) : (
-          <div className="text-center py-10 bg-white border border-[#E5E7EB] rounded-xl text-gray-400 text-sm">
-            No blog posts found matching the filters.
-          </div>
-        )}
+          ))}
       </div>
+
+      {!isLoading && !isError && posts.length > 0 && (
+        <p className="text-xs text-gray-400 text-right">
+          {posts.length} of {total} post{total === 1 ? "" : "s"}
+        </p>
+      )}
     </div>
   );
 }

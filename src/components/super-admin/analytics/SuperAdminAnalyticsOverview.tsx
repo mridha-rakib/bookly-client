@@ -32,9 +32,28 @@ const MONTH_LABELS = [
 export default function SuperAdminAnalyticsOverview({ period }: SuperAdminAnalyticsOverviewProps) {
   const [selectedMonthIndex, setSelectedMonthIndex] = useState<number | null>(null);
 
-  const { data: bookingAnalytics, isLoading: bookingsLoading } = useSuperAdminBookingAnalyticsQuery(period);
+  const {
+    data: bookingAnalytics,
+    isLoading: bookingsLoading,
+    isError: bookingsError,
+    refetch: refetchBookings,
+  } = useSuperAdminBookingAnalyticsQuery(period);
   const { data: businessAnalytics } = useSuperAdminBusinessAnalyticsQuery(period);
   const { data: customerAnalytics } = useSuperAdminCustomerAnalyticsQuery(period);
+
+  if (bookingsError) {
+    return (
+      <div className="py-8 text-center flex flex-col items-center gap-3">
+        <p className="text-sm text-rose-500">Failed to load analytics for this period.</p>
+        <button
+          onClick={() => void refetchBookings()}
+          className="border border-[#111111] text-[#111111] hover:bg-gray-50 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   if (bookingsLoading || !bookingAnalytics) {
     return <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>;

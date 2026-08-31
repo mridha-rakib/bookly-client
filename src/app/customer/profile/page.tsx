@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import React, { useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Calendar02Icon, ArrowDown01Icon } from "@hugeicons/core-free-icons";
@@ -15,12 +15,14 @@ import { Spinner } from "@/components/ui/spinner";
 
 import { countries } from "@/components/CountryData";
 import ProfileAvatar from "@/components/ProfileAvatar";
+import AvatarCropModal from "@/components/media/AvatarCropModal";
 import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
 import {
   useCurrentUserQuery,
   useRequestEmailChangeMutation,
   useRequestPhoneChangeMutation,
+  useUpdateMyAvatarMutation,
   useUpdateMyProfileMutation,
   useVerifyEmailChangeMutation,
   useVerifyPhoneChangeMutation,
@@ -68,6 +70,7 @@ function ProfilePageContent() {
 
   const meQuery = useCurrentUserQuery();
   const updateMutation = useUpdateMyProfileMutation();
+  const avatarMutation = useUpdateMyAvatarMutation();
 
   // Form State
   const [isEditing, setIsEditing] = useState(false);
@@ -75,20 +78,61 @@ function ProfilePageContent() {
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
 
-  // Avatar is a browser-only preview — no backend avatar-upload capability exists yet, so it is
-  // never sent to the server and never claimed to be account data. See Navbar.tsx for the reader.
-  const [avatar, setAvatar] = useState(
-    () =>
-      (typeof window !== "undefined" && localStorage.getItem("customerAvatarUrl")) ||
-      "/img/authImg.png",
-  );
-  const persistAvatar = (newAvatar: string) => {
-    setAvatar(newAvatar);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("customerAvatarUrl", newAvatar);
-      window.dispatchEvent(new Event("profileUpdate"));
+  // Avatar: the backend (GET /auth/me -> profile.avatarUrl) is the source of truth. The only
+  // local state here is a transient object URL for the crop preview and a surfaced error.
+  const [cropSource, setCropSource] = useState<string | null>(null);
+  const [cropBaseName, setCropBaseName] = useState<string | undefined>(undefined);
+  const [avatarError, setAvatarError] = useState("");
+  const cropSourceRef = useRef<string | null>(null);
+
+  const setCropSourceTracked = (next: string | null) => {
+    if (cropSourceRef.current) URL.revokeObjectURL(cropSourceRef.current);
+    cropSourceRef.current = next;
+    setCropSource(next);
+  };
+
+  const openCropWithFile = (file: File) => {
+    setAvatarError("");
+    setCropSourceTracked(URL.createObjectURL(file));
+    setCropBaseName(file.name);
+  };
+
+  const closeCrop = () => {
+    setCropSourceTracked(null);
+    setCropBaseName(undefined);
+  };
+
+  // Crop confirmed -> dedicated upload immediately (avatar persistence is intentionally NOT
+  // tied to the text-profile "Save" button — the previous implementation also committed the
+  // photo on its own, and email/phone likewise have their own commit paths). Success is only
+  // shown once the server has persisted it (mutation resolved + ["auth","me"] cache updated).
+  const handleCroppedAvatar = async (file: File) => {
+    closeCrop();
+    setAvatarError("");
+    try {
+      await avatarMutation.mutateAsync(file);
+    } catch (error) {
+      setAvatarError(toUserMessage(error));
     }
   };
+
+  // Revoke a lingering crop object URL on unmount (e.g. navigating away with the modal open).
+  useEffect(
+    () => () => {
+      if (cropSourceRef.current) URL.revokeObjectURL(cropSourceRef.current);
+    },
+    [],
+  );
+
+  // One-time cleanup of the deprecated browser-only avatar key (now that the backend is the
+  // source of truth). Touches only this key; unrelated stored data is left untouched.
+  useEffect(() => {
+    try {
+      localStorage.removeItem("customerAvatarUrl");
+    } catch {
+      /* ignore storage access errors */
+    }
+  }, []);
 
   const profile = meQuery.data?.profile;
   const email = meQuery.data?.user.email ?? "";
@@ -245,7 +289,13 @@ function ProfilePageContent() {
 
           {!meQuery.isLoading && !meQuery.isError && profile && (
             <div className="w-full box-border flex flex-col md:flex-row items-start p-6 md:p-8 gap-8 bg-white border border-[#C6C6CB] rounded-xl shadow-[0px_2px_4px_rgba(0,0,0,0.05)]">
-              <ProfileAvatar avatarUrl={avatar} onAvatarChange={persistAvatar} />
+              <ProfileAvatar
+                avatarUrl={profile.avatarUrl}
+                onSelectFile={openCropWithFile}
+                onValidationError={setAvatarError}
+                uploading={avatarMutation.isPending}
+                error={avatarError}
+              />
 
               <div className="flex-1 flex flex-col gap-8 w-full">
                 {!isEditing ? (
@@ -504,6 +554,18 @@ function ProfilePageContent() {
           onClose={() => setIsPhoneModalOpen(false)}
         />
       )}
+
+      {/* key={cropSource} remounts so each new pick starts centred at 1x. */}
+      <AvatarCropModal
+        key={cropSource}
+        open={cropSource !== null}
+        imageSrc={cropSource}
+        baseName={cropBaseName}
+        title="Adjust your photo"
+        confirmLabel="Use photo"
+        onCancel={closeCrop}
+        onConfirm={handleCroppedAvatar}
+      />
     </div>
   );
 }

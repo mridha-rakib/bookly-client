@@ -1,21 +1,66 @@
 "use client";
 
 import Image from "next/image";
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
+import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 
 // Components
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import EdgeSoftOrbsTop from "@/components/EdgeSoftOrbsTop";
-import { countries, Country } from "@/components/CountryData";
 import RequireCustomer from "@/components/auth/RequireCustomer";
 
 import { useAuthStore } from "@/lib/auth/store";
-import { useChangeMyPasswordMutation } from "@/lib/auth/hooks";
+import {
+  useChangeMyPasswordMutation,
+  useCurrentUserQuery,
+  useUpdateMyProfileMutation,
+} from "@/lib/auth/hooks";
+import type { NotificationPreferences } from "@/lib/api/auth";
 import { toUserMessage } from "@/lib/auth/messages";
+
+/** The two customer-configurable optional reminder channels. */
+type ReminderChannel = keyof NotificationPreferences;
+
+/** Accessible on/off switch reused by both appointment-reminder rows. Reflects server state
+ * only — never local optimistic CSS. Disabled while the current-user query is still loading or
+ * a mutation for this row is in flight. */
+function ReminderToggle({
+  checked,
+  disabled,
+  busy,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  busy: boolean;
+  label: string;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      aria-busy={busy}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${
+        disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+      } ${checked ? "bg-[#2E9DA7]" : "bg-[#C6C6CB]"}`}
+    >
+      <span
+        className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all ${
+          checked ? "left-[22px]" : "left-0.5"
+        }`}
+      />
+    </button>
+  );
+}
 
 export default function SettingsPage() {
   return (
@@ -27,8 +72,6 @@ export default function SettingsPage() {
 
 function SettingsPageContent() {
   const router = useRouter();
-  const langDropdownRef = useRef<HTMLDivElement>(null);
-  const timezoneDropdownRef = useRef<HTMLDivElement>(null);
 
   const logout = useAuthStore((state) => state.logout);
   const isLoggedIn = true;
@@ -37,30 +80,13 @@ function SettingsPageContent() {
   const [showBanner, setShowBanner] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
 
-  // General Preferences — session-only display state. No backend field exists for a customer's
-  // language/timezone preference, so this is deliberately never persisted (localStorage or
-  // otherwise) to avoid implying it is saved to the account.
-  const [showLangDropdown, setShowLangDropdown] = useState(false);
-  const [selectedLang, setSelectedLang] = useState<Country>({
-    name: "United States",
-    code: "+1",
-    iso: "us",
-  });
-  const [langSearch, setLangSearch] = useState("");
-
-  const [showTimezoneDropdown, setShowTimezoneDropdown] = useState(false);
-  const [selectedTimezone, setSelectedTimezone] = useState("(UTC+02:00) Athens, Cyprus");
-  const timezones = [
-    "(UTC+02:00) Athens, Cyprus",
-    "(UTC+00:00) London, United Kingdom",
-    "(UTC+01:00) Berlin, Germany",
-    "(UTC+05:30) New Delhi, India",
-    "(UTC-05:00) New York, United States",
-  ];
+  // General Preferences — neither control here is a configurable customer preference. Language is
+  // English-only (no localization layer). Timezone is not a customer-owned setting at all: every
+  // appointment is shown in its venue's local timezone (the authoritative Booking.schedule
+  // timezone), so this row only explains that rule — it is not persisted anywhere.
 
   // Modals
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [showToast, setShowToast] = useState(false);
 
@@ -68,6 +94,31 @@ function SettingsPageContent() {
     setToastMessage(message);
     setShowToast(true);
     setTimeout(() => setShowToast(false), 3500);
+  };
+
+  // Appointment reminder preferences — the ONLY notification controls with a real backend.
+  // Authoritative state is profile.notifications from ["auth","me"]; a toggle performs a real
+  // PATCH /auth/me and the mutation writes the full server payload back into that same cache.
+  // These govern only the 24h reminder — they can never suppress booking confirmations,
+  // cancellations, invoices, no-show notices, or security mail.
+  const meQuery = useCurrentUserQuery();
+  const updateProfileMutation = useUpdateMyProfileMutation();
+  const [pendingChannel, setPendingChannel] = useState<ReminderChannel | null>(null);
+  const reminderPrefs = meQuery.data?.profile?.notifications;
+
+  const handleReminderToggle = (channel: ReminderChannel, next: boolean) => {
+    if (updateProfileMutation.isPending) {
+      return;
+    }
+    setPendingChannel(channel);
+    updateProfileMutation.mutate(
+      { notifications: { [channel]: next } },
+      {
+        onSuccess: () => showSuccessToast("Your reminder preferences have been updated."),
+        onError: (error) => showSuccessToast(toUserMessage(error)),
+        onSettled: () => setPendingChannel(null),
+      },
+    );
   };
 
   // Password change — the only Security & Data control with a real backend endpoint.
@@ -103,14 +154,6 @@ function SettingsPageContent() {
     }
   };
 
-  // Delete Account — no backend lifecycle exists yet (bookings/payments/reviews/audit retention
-  // implications are unresolved), so this is deliberately non-functional rather than faking a
-  // real deletion and clearing the session.
-  const handleDeleteAccountSubmit = () => {
-    setIsDeleteModalOpen(false);
-    showSuccessToast("Account deletion isn't available yet. Please contact support.");
-  };
-
   return (
     <div className="min-h-screen bg-[#FDFBF9] flex flex-col relative overflow-x-hidden font-poppins">
       {/* Background Soft Orbs */}
@@ -125,7 +168,7 @@ function SettingsPageContent() {
         <div className="w-full bg-[#96C3CD] text-[#111111] px-3 sm:px-[16px] py-2.5 sm:py-[16px] flex items-center justify-between transition-all duration-300 relative z-50 text-[10px] sm:text-xs md:text-sm font-medium">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <div className="w-[17px] h-[20px] flex items-center justify-center shrink-0">
-              <Image src="/img/smallBLogo.svg" alt="B" className="w-full h-full object-contain" fill />
+              <Image src="/img/smallBLogo.svg" alt="B" className="w-full h-full object-contain" width={17} height={20} />
             </div>
             <span className="truncate">Book local services in Cyprus — instantly, any time</span>
           </div>
@@ -194,7 +237,7 @@ function SettingsPageContent() {
           <section className="bg-white border border-[#C6C6CB] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-xl flex flex-col items-start overflow-hidden">
             <div className="w-full box-border border-b border-[#C6C6CB] px-6 py-4 flex flex-row items-center gap-2">
               <div className="w-5 h-5 flex items-center justify-center">
-                <Image src="/settingsIcons/link.svg" alt="Link" className="w-full h-full object-contain" fill />
+                <Image src="/settingsIcons/link.svg" alt="Link" className="w-full h-full object-contain" width={20} height={20} />
               </div>
               <h2 className="font-manrope font-bold text-lg leading-[28px] text-[#020305]">
                 Linked Accounts
@@ -232,12 +275,13 @@ function SettingsPageContent() {
             </div>
           </section>
 
-          {/* Notification Preferences Section — not available yet: no backend preference field
-              exists, and nothing on the notification-sending side would consume it. */}
+          {/* Notification Preferences Section — the Appointment reminder rows are real, server-
+              backed toggles (PATCH /auth/me → profile.notifications). Marketing stays a
+              placeholder (no consent model — separate future phase). */}
           <section className="bg-white border border-[#C6C6CB] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-xl flex flex-col items-start overflow-hidden">
             <div className="w-full box-border border-b border-[#C6C6CB] px-6 py-4 flex flex-row items-center gap-2">
               <div className="w-5 h-5 flex items-center justify-center">
-                <Image src="/settingsIcons/notification.svg" alt="Notification" className="w-full h-full object-contain" fill />
+                <Image src="/settingsIcons/notification.svg" alt="Notification" className="w-full h-full object-contain" width={20} height={20} />
               </div>
               <h2 className="font-manrope font-bold text-lg leading-[28px] text-[#020305]">
                 Notification Preferences
@@ -246,36 +290,53 @@ function SettingsPageContent() {
 
             <div className="w-full p-6 flex flex-col gap-6">
               <p className="font-manrope font-normal text-sm text-[#4E5F78]">
-                Notification preferences aren&apos;t configurable yet — you&apos;ll always receive booking confirmations and reminders by email.
+                Choose how you&apos;d like to receive appointment reminders. Booking confirmations and important account messages are always sent.
               </p>
 
               <div className="w-full flex flex-col gap-4">
                 <div className="w-full border-b border-[#C6C6CB] pb-2">
                   <h3 className="font-manrope font-bold text-base text-[#020305]">
-                    Appointment Notifications
+                    Appointment Reminders
                   </h3>
                 </div>
 
-                {[
-                  { label: "Email", description: "Receive booking confirmations and reminders via email." },
-                  { label: "Text message", description: "Get real-time updates directly to your phone." },
-                ].map((item, i) => (
-                  <div
-                    key={item.label}
-                    className={`flex flex-row justify-between items-center py-4 ${i > 0 ? "border-t border-[#C6C6CB]" : ""}`}
-                  >
-                    <div className="flex flex-col">
-                      <span className="font-manrope font-bold text-base text-[#020305]">{item.label}</span>
-                      <span className="font-manrope font-normal text-sm text-[#4E5F78]">{item.description}</span>
-                    </div>
-                    <div
-                      title="Not configurable yet"
-                      className="relative w-11 h-6 rounded-full bg-[#76777B] opacity-50 cursor-not-allowed"
-                    >
-                      <span className="absolute top-0.5 left-[22px] w-5 h-5 bg-white rounded-full" />
-                    </div>
+                {meQuery.isError && (
+                  <p className="font-manrope font-normal text-sm text-[#BA1A1A]">
+                    We couldn&apos;t load your reminder preferences. Refresh to try again.
+                  </p>
+                )}
+
+                <div className="flex flex-row justify-between items-center py-4">
+                  <div className="flex flex-col">
+                    <span className="font-manrope font-bold text-base text-[#020305]">Email</span>
+                    <span className="font-manrope font-normal text-sm text-[#4E5F78]">
+                      A reminder email 24 hours before your appointment.
+                    </span>
                   </div>
-                ))}
+                  <ReminderToggle
+                    label="Appointment reminder email"
+                    checked={reminderPrefs?.appointmentReminderEmail ?? false}
+                    disabled={!meQuery.isSuccess || updateProfileMutation.isPending}
+                    busy={pendingChannel === "appointmentReminderEmail"}
+                    onChange={(next) => handleReminderToggle("appointmentReminderEmail", next)}
+                  />
+                </div>
+
+                <div className="flex flex-row justify-between items-center py-4 border-t border-[#C6C6CB]">
+                  <div className="flex flex-col">
+                    <span className="font-manrope font-bold text-base text-[#020305]">Text message</span>
+                    <span className="font-manrope font-normal text-sm text-[#4E5F78]">
+                      A reminder text 24 hours before your appointment. Coming soon.
+                    </span>
+                  </div>
+                  <ReminderToggle
+                    label="Appointment reminder text message"
+                    checked={reminderPrefs?.appointmentReminderSms ?? false}
+                    disabled
+                    busy={false}
+                    onChange={() => undefined}
+                  />
+                </div>
               </div>
 
               <div className="w-full flex flex-col gap-4 mt-4">
@@ -303,12 +364,13 @@ function SettingsPageContent() {
             </div>
           </section>
 
-          {/* General Preferences Section — display-only for this session; no backend field to
-              persist to, so nothing is written to storage. */}
+          {/* General Preferences Section — both rows are disabled, read-only explanatory fields,
+              not configurable customer preferences: Language (English-only) and Timezone
+              (appointments always shown in the venue's local timezone). Nothing here persists. */}
           <section className="bg-white border border-[#C6C6CB] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-xl flex flex-col items-start relative z-20">
             <div className="w-full box-border border-b border-[#C6C6CB] px-6 py-4 flex flex-row items-center gap-2">
               <div className="w-5 h-5 flex items-center justify-center">
-                <Image src="/settingsIcons/preferences.svg" alt="Preferences" className="w-full h-full object-contain" fill />
+                <Image src="/settingsIcons/preferences.svg" alt="Preferences" className="w-full h-full object-contain" width={20} height={20} />
               </div>
               <h2 className="font-manrope font-bold text-lg leading-[28px] text-[#020305]">
                 General Preferences
@@ -317,90 +379,44 @@ function SettingsPageContent() {
 
             <div className="w-full p-6 flex flex-col sm:flex-row gap-6">
 
-              {/* Language Dropdown Container */}
-              <div className="flex-1 flex flex-col gap-2 relative" ref={langDropdownRef}>
+              {/* Language — not a configurable control: the customer experience is English-only
+                  and nothing consumes a stored language preference, so this is a read-only,
+                  disabled field rather than a picker (mirrors the Notification Preferences
+                  "not configurable yet" treatment). */}
+              <div className="flex-1 flex flex-col gap-2">
                 <span className="font-manrope font-bold text-sm text-[#020305]">Language</span>
-                <button
-                  type="button"
-                  onClick={() => setShowLangDropdown(!showLangDropdown)}
-                  className="w-full box-border flex flex-row justify-between items-center p-3 bg-white border border-[#C6C6CB] rounded-lg text-left cursor-pointer"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Image src={`https://flagcdn.com/w20/${selectedLang.iso}.png`} alt={selectedLang.name} className="w-5 h-3.5 object-cover shrink-0" width={20} height={12} />
-                    <span className="font-manrope font-normal text-base text-[#1C1B1C] truncate">
-                      {selectedLang.name}
-                    </span>
-                  </div>
-                  <HugeiconsIcon icon={ArrowDown01Icon} className="w-4 h-4 text-neutral-500" />
-                </button>
-
-                {showLangDropdown && (
-                  <div className="absolute top-[80px] left-0 w-full max-h-[220px] bg-white border border-[#C6C6CB] rounded-xl shadow-lg z-50 overflow-hidden flex flex-col">
-                    <div className="p-2 border-b border-[#C6C6CB]">
-                      <input
-                        type="text"
-                        placeholder="Search language..."
-                        value={langSearch}
-                        onChange={(e) => setLangSearch(e.target.value)}
-                        className="w-full h-8 px-2 border border-neutral-200 rounded text-xs focus:outline-none font-manrope"
-                      />
-                    </div>
-                    <div className="overflow-y-auto flex-1">
-                      {countries
-                        .filter(c => c.name.toLowerCase().includes(langSearch.toLowerCase()))
-                        .map((c, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => {
-                              setSelectedLang(c);
-                              setShowLangDropdown(false);
-                              setLangSearch("");
-                            }}
-                            className="flex items-center gap-2 px-3 py-2 hover:bg-neutral-50 text-left w-full transition-colors cursor-pointer"
-                          >
-                            <Image src={`https://flagcdn.com/w20/${c.iso}.png`} alt={c.name} className="w-5 h-3.5 object-cover shrink-0" width={20} height={12} />
-                            <span className="font-manrope font-normal text-sm text-[#1C1B1C]">
-                              {c.name}
-                            </span>
-                          </button>
-                        ))}
-                    </div>
-                  </div>
-                )}
+                <input
+                  type="text"
+                  value="English"
+                  readOnly
+                  disabled
+                  aria-label="Language"
+                  title="Not configurable yet"
+                  className="w-full box-border p-3 bg-neutral-50 border border-[#C6C6CB] rounded-lg font-manrope font-normal text-base text-[#4E5F78] cursor-not-allowed"
+                />
+                <span className="font-manrope font-normal text-xs text-[#4E5F78]">
+                  Language selection isn&apos;t available yet — the customer experience is currently in English.
+                </span>
               </div>
 
-              {/* Timezone Dropdown Container */}
-              <div className="flex-1 flex flex-col gap-2 relative" ref={timezoneDropdownRef}>
+              {/* Timezone — not a configurable control: appointment times are always shown in the
+                  venue's local timezone (Booking.schedule.timezone), so this is a read-only,
+                  disabled field that states the rule rather than a picker (mirrors the Language
+                  treatment above). Nothing here is persisted. */}
+              <div className="flex-1 flex flex-col gap-2">
                 <span className="font-manrope font-bold text-sm text-[#020305]">Timezone</span>
-                <button
-                  type="button"
-                  onClick={() => setShowTimezoneDropdown(!showTimezoneDropdown)}
-                  className="w-full box-border flex flex-row justify-between items-center p-3 bg-white border border-[#C6C6CB] rounded-lg text-left cursor-pointer"
-                >
-                  <span className="font-manrope font-normal text-base text-[#1C1B1C] truncate">
-                    {selectedTimezone}
-                  </span>
-                  <HugeiconsIcon icon={ArrowDown01Icon} className="w-4 h-4 text-neutral-500" />
-                </button>
-
-                {showTimezoneDropdown && (
-                  <div className="absolute top-[80px] left-0 w-full bg-white border border-[#C6C6CB] rounded-xl shadow-lg z-50 overflow-hidden py-1">
-                    {timezones.map((tz, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => {
-                          setSelectedTimezone(tz);
-                          setShowTimezoneDropdown(false);
-                        }}
-                        className="px-4 py-2 hover:bg-neutral-50 text-left w-full transition-colors cursor-pointer font-manrope font-normal text-sm text-[#1C1B1C]"
-                      >
-                        {tz}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <input
+                  type="text"
+                  value="Venue local timezone"
+                  readOnly
+                  disabled
+                  aria-label="Timezone"
+                  title="Not configurable"
+                  className="w-full box-border p-3 bg-neutral-50 border border-[#C6C6CB] rounded-lg font-manrope font-normal text-base text-[#4E5F78] cursor-not-allowed"
+                />
+                <span className="font-manrope font-normal text-xs text-[#4E5F78]">
+                  Appointment times are shown in the venue&apos;s local timezone.
+                </span>
               </div>
 
             </div>
@@ -410,7 +426,7 @@ function SettingsPageContent() {
           <section className="bg-white border border-[#C6C6CB] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-xl flex flex-col items-start overflow-hidden">
             <div className="w-full box-border border-b border-[#C6C6CB] px-6 py-4 flex flex-row items-center gap-2">
               <div className="w-4 h-5 flex items-center justify-center">
-                <Image src="/settingsIcons/security.svg" alt="Security" className="w-full h-full object-contain" fill />
+                <Image src="/settingsIcons/security.svg" alt="Security" className="w-full h-full object-contain" width={16} height={20} />
               </div>
               <h2 className="font-manrope font-bold text-lg leading-[28px] text-[#020305]">
                 Security & Data
@@ -435,19 +451,22 @@ function SettingsPageContent() {
                 </button>
               </div>
 
-              {/* Delete Account */}
+              {/* Delete Account — no self-service deletion/closure backend exists (bookings,
+                  payments, reviews and audit-retention implications are unresolved), so this
+                  routes to the support team instead of implying a live, permanent delete. */}
               <div className="flex flex-row justify-between items-center gap-4 border-t border-[#C6C6CB] pt-6">
                 <div className="flex-grow flex flex-col">
-                  <span className="font-manrope font-bold text-sm text-[#BA1A1A]">Delete Account</span>
+                  <span className="font-manrope font-bold text-sm text-[#020305]">Delete Account</span>
                   <span className="font-manrope font-normal text-sm text-[#4E5F78]">
-                    Permanently delete your account and all of its associated data. This action cannot be undone.
+                    Account deletion isn&apos;t available yet. To close your account, contact our support team.
                   </span>
                 </div>
                 <button
-                  onClick={() => setIsDeleteModalOpen(true)}
-                  className="flex flex-row justify-center items-center px-4 py-2 bg-[#BA1A1A] hover:bg-red-700 shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-lg font-manrope font-semibold text-sm text-white whitespace-nowrap cursor-pointer"
+                  type="button"
+                  onClick={() => router.push("/contact-support")}
+                  className="box-border flex flex-row justify-center items-center px-4 py-2 bg-white border border-[#C6C6CB] hover:bg-neutral-50 shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-lg font-manrope font-semibold text-sm text-[#020305] whitespace-nowrap cursor-pointer"
                 >
-                  Delete account
+                  Contact support
                 </button>
               </div>
 
@@ -529,36 +548,6 @@ function SettingsPageContent() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Account Confirmation Dialog Modal */}
-      {isDeleteModalOpen && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[300] p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#C6C6CB] p-6 w-full max-w-[480px] animate-in fade-in zoom-in-95 duration-200">
-            <h3 className="font-manrope font-bold text-xl text-[#BA1A1A] mb-2">
-              Delete Account
-            </h3>
-            <p className="font-manrope font-normal text-sm text-[#4E5F78] mb-6">
-              Are you sure you want to delete your account? This action is permanent and cannot be undone. All of your appointments, profile data, and settings will be lost.
-            </p>
-            <div className="flex flex-row justify-end items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setIsDeleteModalOpen(false)}
-                className="px-4 py-2 border border-[#C6C6CB] rounded-lg hover:bg-neutral-50 font-manrope font-semibold text-sm text-[#020305] cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteAccountSubmit}
-                className="px-4 py-2 bg-[#BA1A1A] hover:bg-red-700 text-white rounded-lg font-manrope font-semibold text-sm cursor-pointer"
-              >
-                Yes, delete my account
-              </button>
-            </div>
           </div>
         </div>
       )}

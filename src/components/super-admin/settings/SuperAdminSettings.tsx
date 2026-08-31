@@ -3,9 +3,13 @@
 import React, { useState } from "react";
 import AdminAccountSettings from "./AdminAccountSettings";
 import PlatformConfigurationSettings from "./PlatformConfigurationSettings";
-import { NoShowWindow, INITIAL_NO_SHOW_WINDOWS } from "./types";
 import { useCurrentUserQuery, useChangeMyPasswordMutation, useUpdateMyProfileMutation } from "@/lib/auth/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
+import type { NoShowCategoryWindow } from "@/lib/api/platform-settings";
+import {
+  usePlatformSettingsQuery,
+  useUpdatePlatformSettingsMutation,
+} from "@/lib/superAdminSettings/hooks";
 
 const MIN_PASSWORD_LENGTH = 6;
 
@@ -38,15 +42,19 @@ export default function SuperAdminSettings() {
   const [savingLanguage, setSavingLanguage] = useState(false);
   const [alertModal, setAlertModal] = useState<{ isOpen: boolean; message: string } | null>(null);
 
-  // --- Platform Configuration State (OUT OF SCOPE — untouched local mock, separate phase) ---
-  const [maxServices, setMaxServices] = useState(5);
+  // --- Platform Configuration (Batch 21 — real, backend-persisted) ---
+  const platformSettingsQuery = usePlatformSettingsQuery();
+  const updatePlatformSettings = useUpdatePlatformSettingsMutation();
+  const platformSettings = platformSettingsQuery.data;
+  const noShowWindows: NoShowCategoryWindow[] =
+    platformSettings?.editable.noShowCategoryWindows ?? [];
+
   const [isEditingMaxServices, setIsEditingMaxServices] = useState(false);
-  const [tempMaxServices, setTempMaxServices] = useState(maxServices);
-  const [noShowWindows, setNoShowWindows] = useState<NoShowWindow[]>(INITIAL_NO_SHOW_WINDOWS);
+  const [tempMaxServices, setTempMaxServices] = useState(0);
   const [editingRowIndex, setEditingRowIndex] = useState<number>(-1);
   const [tempOpens, setTempOpens] = useState(15);
   const [tempCloses, setTempCloses] = useState(120);
-  const [tempReversal, setTempReversal] = useState(90);
+  const [platformError, setPlatformError] = useState<string | undefined>(undefined);
 
   // --- Admin Account Actions ---
   const startEditingName = () => {
@@ -132,36 +140,78 @@ export default function SuperAdminSettings() {
     );
   };
 
-  // --- Platform Configuration Actions (unchanged) ---
+  // --- Platform Configuration Actions (Batch 21 — real PATCH /super-admin/settings/platform) ---
+  const startEditingMaxServices = () => {
+    setTempMaxServices(platformSettings?.editable.maxServicesPerBooking ?? 0);
+    setPlatformError(undefined);
+    setIsEditingMaxServices(true);
+  };
+
   const handleSaveMaxServices = () => {
-    setMaxServices(tempMaxServices);
-    setIsEditingMaxServices(false);
+    const value = Number(tempMaxServices);
+    const ceiling = platformSettings?.editable.structuralMaxServicesPerBooking ?? 20;
+    if (!Number.isInteger(value) || value < 1 || value > ceiling) {
+      setPlatformError(`Enter a whole number between 1 and ${ceiling}.`);
+      return;
+    }
+    setPlatformError(undefined);
+    updatePlatformSettings.mutate(
+      { maxServicesPerBooking: value },
+      {
+        onSuccess: () => {
+          setIsEditingMaxServices(false);
+          setAlertModal({ isOpen: true, message: "Platform setting updated successfully." });
+        },
+        onError: (error) => setPlatformError(toUserMessage(error)),
+      },
+    );
   };
 
   const handleCancelMaxServices = () => {
-    setTempMaxServices(maxServices);
+    setPlatformError(undefined);
     setIsEditingMaxServices(false);
   };
 
-  const startEditingRow = (index: number, row: NoShowWindow) => {
+  const startEditingRow = (index: number, row: NoShowCategoryWindow) => {
     setEditingRowIndex(index);
-    setTempOpens(row.opens);
-    setTempCloses(row.closes);
-    setTempReversal(row.reversal);
+    setTempOpens(row.opensAfterMinutes);
+    setTempCloses(row.closesAfterMinutes);
+    setPlatformError(undefined);
   };
 
   const handleSaveRow = (index: number) => {
-    setNoShowWindows((prev) =>
-      prev.map((row, idx) =>
-        idx === index
-          ? { ...row, opens: tempOpens, closes: tempCloses, reversal: tempReversal }
-          : row
-      )
+    if (!platformSettings) return;
+    const opens = Number(tempOpens);
+    const closes = Number(tempCloses);
+    if (
+      !Number.isInteger(opens) ||
+      !Number.isInteger(closes) ||
+      opens < 0 ||
+      opens >= closes
+    ) {
+      setPlatformError("Opens must be a whole number ≥ 0 and strictly less than Closes.");
+      return;
+    }
+    setPlatformError(undefined);
+    const next = platformSettings.editable.noShowCategoryWindows.map((row, idx) =>
+      idx === index
+        ? { ...row, opensAfterMinutes: opens, closesAfterMinutes: closes }
+        : row,
     );
-    setEditingRowIndex(-1);
+    updatePlatformSettings.mutate(
+      { noShowCategoryWindows: next },
+      {
+        onSuccess: () => {
+          setEditingRowIndex(-1);
+          setAlertModal({ isOpen: true, message: "No-show window updated successfully." });
+        },
+        onError: (error) => setPlatformError(toUserMessage(error)),
+      },
+    );
   };
 
   const handleCancelRow = () => {
+    setPlatformError(undefined);
     setEditingRowIndex(-1);
   };
 
@@ -235,19 +285,22 @@ export default function SuperAdminSettings() {
 
       {/* Platform Configuration Section */}
       <PlatformConfigurationSettings
-        maxServices={maxServices}
+        settings={platformSettings}
+        isLoading={platformSettingsQuery.isLoading}
+        isError={platformSettingsQuery.isError}
+        onRetry={() => platformSettingsQuery.refetch()}
+        saving={updatePlatformSettings.isPending}
+        errorMessage={platformError}
+        noShowWindows={noShowWindows}
         isEditingMaxServices={isEditingMaxServices}
         tempMaxServices={tempMaxServices}
         setTempMaxServices={setTempMaxServices}
-        setIsEditingMaxServices={setIsEditingMaxServices}
-        noShowWindows={noShowWindows}
+        startEditingMaxServices={startEditingMaxServices}
         editingRowIndex={editingRowIndex}
         tempOpens={tempOpens}
         setTempOpens={setTempOpens}
         tempCloses={tempCloses}
         setTempCloses={setTempCloses}
-        tempReversal={tempReversal}
-        setTempReversal={setTempReversal}
         handleSaveMaxServices={handleSaveMaxServices}
         handleCancelMaxServices={handleCancelMaxServices}
         startEditingRow={startEditingRow}
