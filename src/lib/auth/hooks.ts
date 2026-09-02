@@ -152,6 +152,13 @@ export const useUpdateMyAvatarMutation = () => {
 export const useChangeMyPasswordMutation = () =>
   useMutation({ mutationFn: authApi.changeMyPassword });
 
+// Customer account closure. Deliberately no store side-effect here: on success the modal
+// navigates to /account-closed, and THAT page runs the client auth teardown (clearAuth +
+// queryClient.clear). Clearing auth from this hook would race RequireCustomer's
+// "unauthenticated -> /select-role" redirect on the Settings page.
+export const useDeleteMyAccountMutation = () =>
+  useMutation({ mutationFn: authApi.deleteMyAccount });
+
 // Batch 18 — Customer email/phone self-change. Requesting/resending never touches cached /auth/me
 // state (the old contact stays authoritative until verified); only a successful verify updates it.
 export const useRequestEmailChangeMutation = () =>

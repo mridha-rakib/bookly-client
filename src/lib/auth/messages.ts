@@ -45,6 +45,10 @@ const codeMessages: Record<string, string> = {
   CUSTOMER_AVATAR_FILE_REQUIRED: "Please choose an image file.",
   CUSTOMER_AVATAR_INVALID_TYPE: "Please choose a JPG, PNG or WebP image.",
   CUSTOMER_AVATAR_TOO_LARGE: "That image is too large. Please choose one under 5 MB.",
+  DELETE_CONFIRMATION_INVALID: "Type DELETE to confirm.",
+  ACCOUNT_HAS_ACTIVE_BOOKINGS:
+    "You have upcoming bookings. Please complete or cancel them before closing your account.",
+  ACCOUNT_DELETED: "This account has been closed.",
 };
 
 export const toUserMessage = (error: unknown): string => {

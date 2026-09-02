@@ -74,6 +74,14 @@ export interface ChangeMyPasswordInput {
   newPassword: string;
 }
 
+export interface DeleteMyAccountInput {
+  currentPassword: string;
+  /** Must be the literal string "DELETE" — the backend enforces this too. */
+  confirmationText: string;
+  /** Optional free-text; the v1 UI never sends it. */
+  deletionReason?: string;
+}
+
 export interface RequestEmailChangeInput {
   currentPassword: string;
   newEmail: string;
@@ -243,6 +251,13 @@ export const authApi = {
     apiRequest<undefined>({
       method: "PATCH",
       url: "/auth/me/password",
+      data: input,
+    }),
+
+  deleteMyAccount: (input: DeleteMyAccountInput) =>
+    apiRequest<undefined>({
+      method: "DELETE",
+      url: "/auth/me",
       data: input,
     }),
 

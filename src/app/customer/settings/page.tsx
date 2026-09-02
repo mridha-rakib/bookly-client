@@ -16,6 +16,7 @@ import { useAuthStore } from "@/lib/auth/store";
 import {
   useChangeMyPasswordMutation,
   useCurrentUserQuery,
+  useDeleteMyAccountMutation,
   useUpdateMyProfileMutation,
 } from "@/lib/auth/hooks";
 import type { NotificationPreferences } from "@/lib/api/auth";
@@ -88,6 +89,7 @@ function SettingsPageContent() {
 
   // Modals
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [showToast, setShowToast] = useState(false);
 
@@ -465,22 +467,24 @@ function SettingsPageContent() {
                 </button>
               </div>
 
-              {/* Delete Account — no self-service deletion/closure backend exists (bookings,
-                  payments, reviews and audit-retention implications are unresolved), so this
-                  routes to the support team instead of implying a live, permanent delete. */}
+              {/* Delete Account — soft delete + anonymization (DELETE /auth/me). Personal
+                  details are removed, the email is freed and every session ends; bookings and
+                  their payment history are retained in anonymized form. Blocked while an
+                  upcoming booking exists. */}
               <div className="flex flex-row justify-between items-center gap-4 border-t border-[#C6C6CB] pt-6">
                 <div className="flex-grow flex flex-col">
                   <span className="font-manrope font-bold text-sm text-[#020305]">Delete Account</span>
                   <span className="font-manrope font-normal text-sm text-[#4E5F78]">
-                    Account deletion isn&apos;t available yet. To close your account, contact our support team.
+                    Permanently close your account. Your personal details are removed; your bookings
+                    and receipts are kept in anonymized form as required. This can&apos;t be undone.
                   </span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => router.push("/contact-support")}
-                  className="box-border flex flex-row justify-center items-center px-4 py-2 bg-white border border-[#C6C6CB] hover:bg-neutral-50 shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-lg font-manrope font-semibold text-sm text-[#020305] whitespace-nowrap cursor-pointer"
+                  onClick={() => setIsDeleteModalOpen(true)}
+                  className="box-border flex flex-row justify-center items-center px-4 py-2 bg-[#BA1A1A] hover:bg-[#a01414] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-lg font-manrope font-semibold text-sm text-white whitespace-nowrap cursor-pointer"
                 >
-                  Contact support
+                  Delete account
                 </button>
               </div>
 
@@ -566,6 +570,9 @@ function SettingsPageContent() {
         </div>
       )}
 
+      {/* Delete Account Dialog Modal */}
+      {isDeleteModalOpen && <DeleteAccountModal onClose={() => setIsDeleteModalOpen(false)} />}
+
       {/* Success/Info Toast */}
       {showToast && (
         <div className="fixed bottom-6 right-6 bg-[#1A1A1A] text-white py-3.5 px-5 rounded-xl shadow-lg z-[1000] flex items-center gap-3 border border-white/10 max-w-[360px]">
@@ -573,6 +580,99 @@ function SettingsPageContent() {
           <span className="text-sm font-medium">{toastMessage}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Account-closure confirmation dialog. Reuses the same modal recipe as the Change Password /
+ * Change Email dialogs (inline overlay, local state, `toUserMessage` inline errors,
+ * `isPending`-gated buttons). Requires the current password AND the typed word "DELETE". On
+ * success it navigates to /account-closed while still authenticated — that page performs the
+ * auth teardown, avoiding a redirect race with RequireCustomer on this page.
+ */
+function DeleteAccountModal({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
+  const deleteMutation = useDeleteMyAccountMutation();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [confirmationText, setConfirmationText] = useState("");
+  const [error, setError] = useState("");
+
+  const canSubmit =
+    currentPassword.length > 0 && confirmationText === "DELETE" && !deleteMutation.isPending;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    try {
+      await deleteMutation.mutateAsync({ currentPassword, confirmationText });
+      router.replace("/account-closed");
+    } catch (err) {
+      setError(toUserMessage(err));
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[300] p-4">
+      <div className="bg-white rounded-xl shadow-2xl border border-[#C6C6CB] p-6 w-full max-w-[480px] animate-in fade-in zoom-in-95 duration-200">
+        <h3 className="font-manrope font-bold text-xl text-[#020305] mb-1">Delete account</h3>
+        <p className="font-manrope text-sm text-[#4E5F78] mb-4">
+          This permanently closes your account and signs you out. Your bookings and receipts are
+          kept in anonymized form as required. This can&apos;t be undone.
+        </p>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="font-manrope font-semibold text-xs text-[#4E5F78] uppercase">
+              Current Password
+            </label>
+            <input
+              type="password"
+              required
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full h-11 px-3 border border-[#C6C6CB] rounded-lg focus:outline-none focus:border-[#0CC0DF] font-manrope text-sm"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="font-manrope font-semibold text-xs text-[#4E5F78] uppercase">
+              Type DELETE to confirm
+            </label>
+            <input
+              type="text"
+              required
+              value={confirmationText}
+              onChange={(e) => setConfirmationText(e.target.value)}
+              placeholder="DELETE"
+              autoComplete="off"
+              className="w-full h-11 px-3 border border-[#C6C6CB] rounded-lg focus:outline-none focus:border-[#0CC0DF] font-manrope text-sm tracking-[2px]"
+            />
+          </div>
+
+          {error && <p className="text-sm text-red-600 font-manrope">{error}</p>}
+
+          <div className="flex flex-row justify-end items-center gap-3 mt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={deleteMutation.isPending}
+              className="px-4 py-2 border border-[#C6C6CB] rounded-lg hover:bg-neutral-50 font-manrope font-semibold text-sm text-[#020305] cursor-pointer disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="px-4 py-2 bg-[#BA1A1A] hover:bg-[#a01414] text-white rounded-lg font-manrope font-semibold text-sm cursor-pointer disabled:opacity-60"
+            >
+              {deleteMutation.isPending ? "Closing account..." : "Delete account"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
