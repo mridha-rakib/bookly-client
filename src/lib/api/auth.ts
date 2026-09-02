@@ -16,13 +16,18 @@ export interface AuthUser {
 }
 
 /**
- * Optional 24h appointment-reminder channels. GET /auth/me always returns this fully populated
- * (an absent stored value resolves to the product default server-side). Governs ONLY reminders —
+ * Optional customer notification channels. GET /auth/me always returns this fully populated (an
+ * absent stored value resolves to the product default server-side). Governs ONLY optional mail —
  * never booking confirmations, cancellations, invoices, no-show notices, or security mail.
+ *
+ * `marketingEmail` (Stage M1) is the persisted marketing opt-in. Default OFF. The Settings row
+ * for it is intentionally not interactive yet — nothing sends marketing email — so the value is
+ * read-only for now.
  */
 export interface NotificationPreferences {
   appointmentReminderEmail: boolean;
   appointmentReminderSms: boolean;
+  marketingEmail: boolean;
 }
 
 export interface AuthProfile {

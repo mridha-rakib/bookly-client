@@ -21,12 +21,13 @@ import {
 import type { NotificationPreferences } from "@/lib/api/auth";
 import { toUserMessage } from "@/lib/auth/messages";
 
-/** The two customer-configurable optional reminder channels. */
-type ReminderChannel = keyof NotificationPreferences;
+/** The customer-configurable optional notification channels (24h appointment reminder + the
+ * marketing-email opt-in). All persisted on `profile.notifications`. */
+type NotificationChannel = keyof NotificationPreferences;
 
-/** Accessible on/off switch reused by both appointment-reminder rows. Reflects server state
- * only — never local optimistic CSS. Disabled while the current-user query is still loading or
- * a mutation for this row is in flight. */
+/** Accessible on/off switch reused by every notification-preference row (appointment reminders
+ * and marketing email). Reflects server state only — never local optimistic CSS. Disabled while
+ * the current-user query is still loading or a mutation for this row is in flight. */
 function ReminderToggle({
   checked,
   disabled,
@@ -96,17 +97,17 @@ function SettingsPageContent() {
     setTimeout(() => setShowToast(false), 3500);
   };
 
-  // Appointment reminder preferences — the ONLY notification controls with a real backend.
-  // Authoritative state is profile.notifications from ["auth","me"]; a toggle performs a real
-  // PATCH /auth/me and the mutation writes the full server payload back into that same cache.
-  // These govern only the 24h reminder — they can never suppress booking confirmations,
-  // cancellations, invoices, no-show notices, or security mail.
+  // Notification preferences — the ONLY notification controls with a real backend. Authoritative
+  // state is profile.notifications from ["auth","me"]; a toggle performs a real PATCH /auth/me
+  // and the mutation writes the full server payload back into that same cache. These govern only
+  // OPTIONAL mail (the 24h appointment reminder and the marketing-email opt-in) — they can never
+  // suppress booking confirmations, cancellations, invoices, no-show notices, or security mail.
   const meQuery = useCurrentUserQuery();
   const updateProfileMutation = useUpdateMyProfileMutation();
-  const [pendingChannel, setPendingChannel] = useState<ReminderChannel | null>(null);
+  const [pendingChannel, setPendingChannel] = useState<NotificationChannel | null>(null);
   const reminderPrefs = meQuery.data?.profile?.notifications;
 
-  const handleReminderToggle = (channel: ReminderChannel, next: boolean) => {
+  const handleNotificationToggle = (channel: NotificationChannel, next: boolean) => {
     if (updateProfileMutation.isPending) {
       return;
     }
@@ -114,7 +115,12 @@ function SettingsPageContent() {
     updateProfileMutation.mutate(
       { notifications: { [channel]: next } },
       {
-        onSuccess: () => showSuccessToast("Your reminder preferences have been updated."),
+        onSuccess: () =>
+          showSuccessToast(
+            channel === "marketingEmail"
+              ? "Your marketing email preference has been updated."
+              : "Your reminder preferences have been updated.",
+          ),
         onError: (error) => showSuccessToast(toUserMessage(error)),
         onSettled: () => setPendingChannel(null),
       },
@@ -275,9 +281,10 @@ function SettingsPageContent() {
             </div>
           </section>
 
-          {/* Notification Preferences Section — the Appointment reminder rows are real, server-
-              backed toggles (PATCH /auth/me → profile.notifications). Marketing stays a
-              placeholder (no consent model — separate future phase). */}
+          {/* Notification Preferences Section — the Appointment reminder Email row and the
+              Marketing Email row are real, server-backed toggles (PATCH /auth/me →
+              profile.notifications, written back into the ["auth","me"] cache). Only the SMS
+              reminder row stays disabled / "Coming soon" (no SMS reminder sender yet). */}
           <section className="bg-white border border-[#C6C6CB] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-xl flex flex-col items-start overflow-hidden">
             <div className="w-full box-border border-b border-[#C6C6CB] px-6 py-4 flex flex-row items-center gap-2">
               <div className="w-5 h-5 flex items-center justify-center">
@@ -290,7 +297,7 @@ function SettingsPageContent() {
 
             <div className="w-full p-6 flex flex-col gap-6">
               <p className="font-manrope font-normal text-sm text-[#4E5F78]">
-                Choose how you&apos;d like to receive appointment reminders. Booking confirmations and important account messages are always sent.
+                Choose which optional emails you&apos;d like to receive. Booking confirmations, cancellations and important account messages are always sent.
               </p>
 
               <div className="w-full flex flex-col gap-4">
@@ -318,7 +325,7 @@ function SettingsPageContent() {
                     checked={reminderPrefs?.appointmentReminderEmail ?? false}
                     disabled={!meQuery.isSuccess || updateProfileMutation.isPending}
                     busy={pendingChannel === "appointmentReminderEmail"}
-                    onChange={(next) => handleReminderToggle("appointmentReminderEmail", next)}
+                    onChange={(next) => handleNotificationToggle("appointmentReminderEmail", next)}
                   />
                 </div>
 
@@ -346,19 +353,26 @@ function SettingsPageContent() {
                   </h3>
                 </div>
 
+                {/* Marketing Email — a real, server-backed opt-in (M3C). Same wiring as the
+                    Appointment reminder Email row: PATCH /auth/me { notifications: { marketingEmail } },
+                    the mutation writes the fresh server payload into the ["auth","me"] cache, and
+                    an error leaves the cache untouched so the switch re-renders from server truth
+                    (natural revert). Default OFF server-side. */}
                 <div className="flex flex-row justify-between items-center py-4">
                   <div className="flex flex-col">
                     <span className="font-manrope font-bold text-base text-[#020305]">Email</span>
                     <span className="font-manrope font-normal text-sm text-[#4E5F78]">
-                      Be the first to know about discounts and local events via email.
+                      Occasional Bookly news, offers, and product updates. Booking confirmations,
+                      reminders you&apos;ve enabled, and account messages are managed separately.
                     </span>
                   </div>
-                  <div
-                    title="Not configurable yet"
-                    className="relative w-11 h-6 rounded-full bg-[#76777B] opacity-50 cursor-not-allowed"
-                  >
-                    <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full" />
-                  </div>
+                  <ReminderToggle
+                    label="Marketing email"
+                    checked={reminderPrefs?.marketingEmail ?? false}
+                    disabled={!meQuery.isSuccess || updateProfileMutation.isPending}
+                    busy={pendingChannel === "marketingEmail"}
+                    onChange={(next) => handleNotificationToggle("marketingEmail", next)}
+                  />
                 </div>
               </div>
             </div>
