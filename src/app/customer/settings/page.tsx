@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
@@ -17,9 +17,11 @@ import {
   useChangeMyPasswordMutation,
   useCurrentUserQuery,
   useDeleteMyAccountMutation,
+  useLinkGoogleAccountMutation,
+  useUnlinkGoogleAccountMutation,
   useUpdateMyProfileMutation,
 } from "@/lib/auth/hooks";
-import type { NotificationPreferences } from "@/lib/api/auth";
+import type { LinkedAccountSummary, NotificationPreferences } from "@/lib/api/auth";
 import { toUserMessage } from "@/lib/auth/messages";
 
 /** The customer-configurable optional notification channels (24h appointment reminder + the
@@ -99,6 +101,33 @@ function SettingsPageContent() {
     setTimeout(() => setShowToast(false), 3500);
   };
 
+  // Linked Accounts (Phase 1 — Google only). Facebook / Apple stay static placeholders below.
+  const [isUnlinkGoogleModalOpen, setIsUnlinkGoogleModalOpen] = useState(false);
+  const linkGoogleMutation = useLinkGoogleAccountMutation();
+
+  // Return trip from the Google consent screen: the backend redirects here with
+  // ?linkedAccount=google&result=connected|error. Show a toast, then strip the params so a
+  // refresh doesn't re-fire it. The ["auth","me"] query refetches on this fresh page load, so
+  // the Google row already reflects the new state by the time this runs. Deferred to a timer so
+  // the toast state update lands after mount rather than synchronously inside the effect.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("linkedAccount") !== "google") {
+      return;
+    }
+    const connected = params.get("result") === "connected";
+    const timer = setTimeout(() => {
+      showSuccessToast(
+        connected
+          ? "Your Google account has been linked."
+          : "We couldn't link your Google account. Please try again.",
+      );
+      router.replace("/customer/settings");
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Notification preferences — the ONLY notification controls with a real backend. Authoritative
   // state is profile.notifications from ["auth","me"]; a toggle performs a real PATCH /auth/me
   // and the mutation writes the full server payload back into that same cache. These govern only
@@ -108,6 +137,10 @@ function SettingsPageContent() {
   const updateProfileMutation = useUpdateMyProfileMutation();
   const [pendingChannel, setPendingChannel] = useState<NotificationChannel | null>(null);
   const reminderPrefs = meQuery.data?.profile?.notifications;
+
+  const googleAccount: LinkedAccountSummary | undefined = meQuery.data?.linkedAccounts?.find(
+    (account) => account.provider === "GOOGLE",
+  );
 
   const handleNotificationToggle = (channel: NotificationChannel, next: boolean) => {
     if (updateProfileMutation.isPending) {
@@ -241,7 +274,9 @@ function SettingsPageContent() {
         {/* Sections Container */}
         <div className="w-full flex flex-col gap-8">
 
-          {/* Linked Accounts Section — not available yet: no OAuth/social-auth capability exists */}
+          {/* Linked Accounts Section — Google is a real, server-backed link (Phase 1: link via
+              OAuth, view the connected account, unlink with password re-auth). Facebook and Apple
+              have no OAuth backend and stay static "not available yet" placeholders. */}
           <section className="bg-white border border-[#C6C6CB] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-xl flex flex-col items-start overflow-hidden">
             <div className="w-full box-border border-b border-[#C6C6CB] px-6 py-4 flex flex-row items-center gap-2">
               <div className="w-5 h-5 flex items-center justify-center">
@@ -253,8 +288,49 @@ function SettingsPageContent() {
             </div>
 
             <div className="w-full p-6 flex flex-col gap-4 max-w-[910px]">
+              {/* Google — real. Server state comes from meQuery.data.linkedAccounts. */}
+              <div className="w-full box-border flex flex-row justify-between items-center p-4 border border-[#C6C6CB] rounded-lg">
+                <div className="flex flex-row items-center gap-4">
+                  <div className="w-10 h-10 bg-[#EBE7E7] rounded-full flex items-center justify-center shrink-0">
+                    <Image src="/settingsIcons/google.svg" alt="Google" className="w-6 h-6 object-contain" width={24} height={24} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="font-manrope font-bold text-base text-[#020305]">Google</span>
+                    <span className="font-manrope font-normal text-sm text-[#4E5F78]">
+                      {googleAccount
+                        ? googleAccount.displayName
+                          ? `${googleAccount.displayName} · ${googleAccount.email}`
+                          : googleAccount.email
+                        : "Not connected"}
+                    </span>
+                  </div>
+                </div>
+                {googleAccount ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsUnlinkGoogleModalOpen(true)}
+                    className="font-manrope font-semibold text-sm text-[#BA1A1A] px-3 py-1.5 rounded-md hover:bg-neutral-50 transition-colors"
+                  >
+                    Unlink
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={linkGoogleMutation.isPending}
+                    onClick={() =>
+                      linkGoogleMutation.mutate(undefined, {
+                        onError: (error) => showSuccessToast(toUserMessage(error)),
+                      })
+                    }
+                    className="font-manrope font-semibold text-sm text-[#4E5F78] px-3 py-1.5 rounded-md hover:bg-neutral-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {linkGoogleMutation.isPending ? "Redirecting…" : "Link"}
+                  </button>
+                )}
+              </div>
+
+              {/* Facebook / Apple — no OAuth backend for these providers yet. */}
               {[
-                { name: "Google", icon: "/settingsIcons/google.svg" },
                 { name: "Facebook", icon: "/settingsIcons/facebook.svg" },
                 { name: "Apple", icon: "/settingsIcons/apple.svg" },
               ].map((provider) => (
@@ -573,6 +649,17 @@ function SettingsPageContent() {
       {/* Delete Account Dialog Modal */}
       {isDeleteModalOpen && <DeleteAccountModal onClose={() => setIsDeleteModalOpen(false)} />}
 
+      {/* Unlink Google Dialog Modal */}
+      {isUnlinkGoogleModalOpen && (
+        <UnlinkGoogleModal
+          onClose={() => setIsUnlinkGoogleModalOpen(false)}
+          onUnlinked={() => {
+            setIsUnlinkGoogleModalOpen(false);
+            showSuccessToast("Your Google account has been unlinked.");
+          }}
+        />
+      )}
+
       {/* Success/Info Toast */}
       {showToast && (
         <div className="fixed bottom-6 right-6 bg-[#1A1A1A] text-white py-3.5 px-5 rounded-xl shadow-lg z-[1000] flex items-center gap-3 border border-white/10 max-w-[360px]">
@@ -669,6 +756,86 @@ function DeleteAccountModal({ onClose }: { onClose: () => void }) {
               className="px-4 py-2 bg-[#BA1A1A] hover:bg-[#a01414] text-white rounded-lg font-manrope font-semibold text-sm cursor-pointer disabled:opacity-60"
             >
               {deleteMutation.isPending ? "Closing account..." : "Delete account"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Unlink-Google confirmation dialog. Same modal recipe as DeleteAccountModal (inline overlay,
+ * local state, `toUserMessage` inline errors, `isPending`-gated buttons). Re-verifies the current
+ * password — the backend enforces it too, and also blocks removing the account's last sign-in
+ * method. On success the mutation invalidates ["auth","me"] so the Google row re-renders.
+ */
+function UnlinkGoogleModal({
+  onClose,
+  onUnlinked,
+}: {
+  onClose: () => void;
+  onUnlinked: () => void;
+}) {
+  const unlinkMutation = useUnlinkGoogleAccountMutation();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [error, setError] = useState("");
+
+  const canSubmit = currentPassword.length > 0 && !unlinkMutation.isPending;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    try {
+      await unlinkMutation.mutateAsync({ currentPassword });
+      onUnlinked();
+    } catch (err) {
+      setError(toUserMessage(err));
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[300] p-4">
+      <div className="bg-white rounded-xl shadow-2xl border border-[#C6C6CB] p-6 w-full max-w-[480px] animate-in fade-in zoom-in-95 duration-200">
+        <h3 className="font-manrope font-bold text-xl text-[#020305] mb-1">Unlink Google</h3>
+        <p className="font-manrope text-sm text-[#4E5F78] mb-4">
+          Your Google account will no longer be linked to Bookly. You can link it again at any
+          time. Enter your current password to confirm.
+        </p>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="font-manrope font-semibold text-xs text-[#4E5F78] uppercase">
+              Current Password
+            </label>
+            <input
+              type="password"
+              required
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full h-11 px-3 border border-[#C6C6CB] rounded-lg focus:outline-none focus:border-[#0CC0DF] font-manrope text-sm"
+            />
+          </div>
+
+          {error && <p className="text-sm text-red-600 font-manrope">{error}</p>}
+
+          <div className="flex flex-row justify-end items-center gap-3 mt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={unlinkMutation.isPending}
+              className="px-4 py-2 border border-[#C6C6CB] rounded-lg hover:bg-neutral-50 font-manrope font-semibold text-sm text-[#020305] cursor-pointer disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="px-4 py-2 bg-[#BA1A1A] hover:bg-[#a01414] text-white rounded-lg font-manrope font-semibold text-sm cursor-pointer disabled:opacity-60"
+            >
+              {unlinkMutation.isPending ? "Unlinking..." : "Unlink Google"}
             </button>
           </div>
         </form>

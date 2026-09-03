@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Mail01Icon } from "@hugeicons/core-free-icons";
@@ -15,6 +16,7 @@ import { toUserMessage } from "@/lib/auth/messages";
 import { saveRegistrationSession } from "@/lib/auth/registration-session";
 import {
   useCustomerEntryMutation,
+  useCustomerGoogleAuthMutation,
   useSendCustomerEmailOtpMutation,
 } from "@/lib/auth/hooks";
 
@@ -24,6 +26,7 @@ export default function CustomerAuthPage() {
   const [emailError, setEmailError] = useState("");
   const customerEntry = useCustomerEntryMutation();
   const sendEmailOtp = useSendCustomerEmailOtpMutation();
+  const googleAuth = useCustomerGoogleAuthMutation();
   const isSubmitting = customerEntry.isPending || sendEmailOtp.isPending;
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
@@ -117,8 +120,10 @@ export default function CustomerAuthPage() {
           <div className="flex flex-col gap-3 w-full">
             <SocialButton
               provider="google"
-              label="Continue With Google"
-              onClick={() => console.log("Google Login clicked")}
+              label={googleAuth.isPending ? "Redirecting to Google…" : "Continue With Google"}
+              onClick={() => googleAuth.mutate()}
+              disabled={googleAuth.isPending}
+              aria-busy={googleAuth.isPending}
             />
             <SocialButton
               provider="apple"
@@ -131,6 +136,18 @@ export default function CustomerAuthPage() {
               onClick={() => console.log("Facebook Login clicked")}
             />
           </div>
+
+          {/* Google sign-up/sign-in carries the same Terms agreement as the email signup checkbox. */}
+          <p className="mt-4 text-center text-xs text-[#9E9E9E] w-full max-w-[520px] leading-relaxed">
+            By continuing with Google you agree to Bookly&apos;s{" "}
+            <Link
+              href="/terms-of-service"
+              className="text-[#240183] underline hover:text-black transition-colors"
+            >
+              Terms &amp; Conditions
+            </Link>
+            .
+          </p>
 
           {/* Footer option link */}
           <div className="text-center mt-8 w-full max-w-[520px]">

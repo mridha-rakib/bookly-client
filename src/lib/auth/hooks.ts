@@ -2,10 +2,26 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { authApi } from "@/lib/api/auth";
+import { authApi, customerGoogleAuthStartUrl } from "@/lib/api/auth";
 import { useAuthStore } from "@/lib/auth/store";
 
 export const useCustomerEntryMutation = () => useMutation({ mutationFn: authApi.customerEntry });
+
+/**
+ * Phase 2B — Customer "Continue with Google". A navigation-only mutation (same idiom as
+ * useLinkGoogleAccountMutation): it just does a full-page redirect to the backend start endpoint,
+ * which owns the entire OAuth handshake. `isPending` stays true through the redirect so the
+ * button can show a "Redirecting…" state. No session is created here — the backend redirects
+ * back to /auth/google/callback and the auth store restores the session from the refresh cookie.
+ */
+export const useCustomerGoogleAuthMutation = () =>
+  useMutation({
+    mutationFn: async () => {
+      window.location.assign(customerGoogleAuthStartUrl());
+      // Resolve only after navigation is under way so the button never flips back to idle.
+      await new Promise<void>(() => {});
+    },
+  });
 
 export const useProfessionalEntryMutation = () =>
   useMutation({ mutationFn: authApi.professionalEntry });
@@ -183,6 +199,30 @@ export const useVerifyPhoneChangeMutation = () => {
     mutationFn: authApi.verifyPhoneChange,
     onSuccess: (data) => {
       queryClient.setQueryData(["auth", "me"], data);
+    },
+  });
+};
+
+// Phase 1 — Customer → Google account linking. Fetches the real Google consent URL (authenticated
+// request) then navigates the browser to it — same idiom as useConnectGoogleCalendarMutation.
+// Google redirects back to /customer/settings?linkedAccount=google&result=... where the page
+// shows a toast and the ["auth","me"] query refetches on the fresh page load.
+export const useLinkGoogleAccountMutation = () =>
+  useMutation({
+    mutationFn: async () => {
+      const { authUrl } = await authApi.getGoogleLinkUrl();
+      window.location.href = authUrl;
+    },
+  });
+
+// Unlink is an in-page action — on success we invalidate ["auth","me"] so the Linked Accounts
+// row re-renders as "Not connected" (same idiom as useDisconnectGoogleCalendarMutation).
+export const useUnlinkGoogleAccountMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: authApi.unlinkGoogleAccount,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
     },
   });
 };

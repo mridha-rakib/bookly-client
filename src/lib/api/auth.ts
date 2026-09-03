@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/api/client";
+import { apiBaseUrl, apiRequest } from "@/lib/api/client";
 import type { BusinessCity } from "@/lib/constants/cities";
 
 export type UserRole = "CUSTOMER" | "BUSINESS_OWNER" | "SUPERVISOR" | "STAFF" | "SUPER_ADMIN";
@@ -88,7 +88,12 @@ export interface RequestEmailChangeInput {
 }
 
 export interface RequestPhoneChangeInput {
-  currentPassword: string;
+  /**
+   * Required for password accounts (Settings → change phone). Omitted by a Google-only Customer
+   * setting their FIRST phone in the post-signup completion flow — that account has no password,
+   * and the backend skips the check for providers without `PASSWORD`.
+   */
+  currentPassword?: string;
   countryCode: string;
   nationalNumber: string;
 }
@@ -104,6 +109,19 @@ export interface AuthBusiness {
   visitType: VisitType;
 }
 
+/**
+ * A linked external sign-in identity (Phase 1: Google only). Returned by GET /auth/me as
+ * `linkedAccounts[]` — always an array, empty when nothing is linked. Never carries the
+ * provider's account id or any token.
+ */
+export interface LinkedAccountSummary {
+  provider: "GOOGLE";
+  email: string;
+  displayName?: string;
+  /** ISO timestamp. */
+  linkedAt: string;
+}
+
 export interface CurrentUserResponse {
   user: AuthUser & {
     emailVerifiedAt?: string;
@@ -111,6 +129,7 @@ export interface CurrentUserResponse {
   };
   profile: AuthProfile | null;
   business: AuthBusiness | null;
+  linkedAccounts: LinkedAccountSummary[];
 }
 
 export interface AuthResponse {
@@ -185,6 +204,19 @@ export interface CategorySelectionInput {
   selectedCategory: string;
   selectedSubcategories: string[];
 }
+
+/**
+ * Absolute URL of the backend's Customer "Continue with Google" entry point. The browser is
+ * navigated here directly (a full-page redirect, not an XHR): the backend builds the Google
+ * consent URL, sets its CSRF nonce cookie, and 302s onward — Google never touches the frontend.
+ * On return the backend redirects to `/auth/google/callback?status=...` on THIS app.
+ */
+export const customerGoogleAuthStartUrl = (): string =>
+  `${apiBaseUrl}/auth/customer/oauth/google/start`;
+
+/** Coarse outcomes the backend puts on `/auth/google/callback?status=...`. No tokens, emails or
+ * reasons are ever included in that URL. */
+export type CustomerGoogleAuthStatus = "success" | "onboarding" | "account_exists" | "error";
 
 export const authApi = {
   customerEntry: (email: string) =>
@@ -302,6 +334,23 @@ export const authApi = {
       method: "POST",
       url: "/auth/me/phone/verify",
       data: { code },
+    }),
+
+  // Phase 1 — Customer → Google account linking. Returns the real Google consent URL; the
+  // frontend navigates the browser to it itself (this API only accepts a Bearer token, which a
+  // plain window.location navigation can't carry). Same shape as
+  // businessApi.getGoogleCalendarAuthUrl.
+  getGoogleLinkUrl: () =>
+    apiRequest<{ authUrl: string }>({
+      method: "GET",
+      url: "/auth/me/linked-accounts/google/authorize-url",
+    }),
+
+  unlinkGoogleAccount: (input: { currentPassword: string }) =>
+    apiRequest<undefined>({
+      method: "DELETE",
+      url: "/auth/me/linked-accounts/google",
+      data: input,
     }),
 
   sendCustomerEmailOtp: (sessionId: string) =>
