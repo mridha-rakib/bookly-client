@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, Suspense } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import Link from "next/link";
@@ -16,6 +16,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/sonner";
 import type { VisitType } from "@/lib/api/auth";
 import {
+  useProfessionalRegistrationProgressQuery,
   useResendProfessionalPhoneOtpMutation,
   useSendProfessionalPhoneOtpMutation,
   useSubmitProfessionalProfileMutation,
@@ -33,9 +34,12 @@ const toBackendVisitType = (visitType: string): VisitType =>
 function ProfessionalSignupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const emailParam = searchParams.get("email") || "";
   const visitType = searchParams.get("type") || "travel";
   const sessionIdParam = searchParams.get("sessionId") || "";
+  // Phase 2C — a Google-verified Business Owner arrives here from
+  // /auth/google/callback?flow=professional&status=onboarding. Their RegistrationSession already
+  // exists (Option B: no User yet), the email is Google-verified, and there is NO password.
+  const isGoogle = searchParams.get("provider") === "google";
 
   const [step, setStep] = useState<1 | 2>(1);
   const [firstName, setFirstName] = useState("");
@@ -53,18 +57,38 @@ function ProfessionalSignupContent() {
   const verifyPhoneOtp = useVerifyProfessionalPhoneOtpMutation();
   const isSubmittingProfile = submitProfile.isPending || sendPhoneOtp.isPending;
 
+  // Google flow only: the name + email were captured server-side (from the Google id_token) when
+  // the session was seeded. Fetch them so the name fields are prefilled and the email row is
+  // authoritative. Disabled (empty sessionId) for the password flow.
+  const registrationProgress = useProfessionalRegistrationProgressQuery(
+    isGoogle ? sessionIdParam : "",
+  );
+  const emailParam = searchParams.get("email") || registrationProgress.data?.email || "";
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const progress = registrationProgress.data;
+    if (!progress) return;
+    if (progress.firstName) setFirstName((current) => current || progress.firstName || "");
+    if (progress.lastName) setLastName((current) => current || progress.lastName || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registrationProgress.data?.sessionId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const getSessionId = () =>
     sessionIdParam || getRegistrationSession("professional", emailParam)?.sessionId || "";
 
   const handleFinishSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!password) {
-      setPasswordError("Password is required");
-      return;
-    }
-    if (password.length < 6) {
-      setPasswordError("Password must be at least 6 characters");
-      return;
+    if (!isGoogle) {
+      if (!password) {
+        setPasswordError("Password is required");
+        return;
+      }
+      if (password.length < 6) {
+        setPasswordError("Password must be at least 6 characters");
+        return;
+      }
     }
     setPasswordError("");
 
@@ -83,7 +107,9 @@ function ProfessionalSignupContent() {
         gender: gender as "male" | "female" | "other",
         countryCode,
         phone,
-        password,
+        // Google sessions have no password — the backend skips hashing when
+        // authProvider === "GOOGLE" and rejects a password on any other path.
+        ...(isGoogle ? {} : { password }),
         agreeTerms,
       });
       await sendPhoneOtp.mutateAsync(sessionId);
@@ -144,6 +170,9 @@ function ProfessionalSignupContent() {
   const handleBack = () => {
     if (step === 2) {
       setStep(1);
+    } else if (isGoogle) {
+      // No email-OTP step in the Google flow — go back to the professional entry screen.
+      router.push(`/professional/auth?type=${visitType}`);
     } else {
       router.push(`/professional/verify?email=${encodeURIComponent(emailParam)}&type=${visitType}`);
     }
@@ -208,17 +237,23 @@ function ProfessionalSignupContent() {
                 icon={<HugeiconsIcon icon={Mail01Icon} size={20} />}
               />
 
-              {/* Password */}
-              <InputField
-                label="Password"
-                placeholder="Password"
-                isPassword
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                error={passwordError}
-                icon={<HugeiconsIcon icon={SquareLock01Icon} size={20} />}
-                required
-              />
+              {/* Password — omitted for a Google sign-up (that account has no password). */}
+              {isGoogle ? (
+                passwordError ? (
+                  <p className="text-xs font-semibold text-red-500 -mt-2">{passwordError}</p>
+                ) : null
+              ) : (
+                <InputField
+                  label="Password"
+                  placeholder="Password"
+                  isPassword
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  error={passwordError}
+                  icon={<HugeiconsIcon icon={SquareLock01Icon} size={20} />}
+                  required
+                />
+              )}
 
               {/* Terms checkbox */}
               <div className="flex items-start gap-2 mt-2">

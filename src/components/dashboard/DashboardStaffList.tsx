@@ -37,7 +37,9 @@ import {
   usePutStaffScheduleMutation,
   useCreateStaffTimeOffMutation,
   useRemoveStaffTimeOffMutation,
-  useUploadStaffAvatarMutation
+  useUploadStaffAvatarMutation,
+  useResendStaffInvitationMutation,
+  useRevokeStaffInvitationMutation
 } from "@/lib/staff/hooks";
 import {
   dayOrder,
@@ -193,6 +195,10 @@ export default function DashboardStaffList() {
 
   const staffListQuery = useStaffListQuery(effectiveBusinessId || undefined);
   const staffMembers = useMemo(() => staffListQuery.data?.members ?? [], [staffListQuery.data]);
+  const pendingInvitations = useMemo(
+    () => staffListQuery.data?.invitations ?? [],
+    [staffListQuery.data],
+  );
   const displayStaffMembers = useMemo(() => staffMembers.map(toDisplayStaff), [staffMembers]);
   const availabilityRows = useMemo(() => staffMembers.map(toAvailabilityRow), [staffMembers]);
   // The staff member currently open in the big edit form. Derived from the live list so the
@@ -204,6 +210,8 @@ export default function DashboardStaffList() {
   );
 
   const createStaffMutation = useCreateStaffMutation();
+  const resendInvitationMutation = useResendStaffInvitationMutation();
+  const revokeInvitationMutation = useRevokeStaffInvitationMutation();
   const updateStaffMutation = useUpdateStaffMutation();
   const removeStaffMutation = useRemoveStaffMutation();
   const putScheduleMutation = usePutStaffScheduleMutation();
@@ -604,41 +612,39 @@ export default function DashboardStaffList() {
       .map(([dayOfWeek, hours]) => ({ dayOfWeek, startTime: hours.startTime, endTime: hours.endTime }));
 
     try {
-      let targetStaffId: string;
-
-      if (editingStaffId !== null) {
-        // Edit Mode — Business is intentionally not sent: a Staff membership cannot be
-        // transferred between businesses in this phase.
-        //
-        // `role` is intentionally EXCLUDED from this payload. STAFF <-> SUPERVISOR changes go
-        // ONLY through the dedicated two-step StaffAccessChangeModal ("Change role" action
-        // below), so a normal Save Changes can never silently move a role — and a role changed
-        // via the modal can never be reverted by a now-stale local form value.
-        await updateStaffMutation.mutateAsync({
-          businessId: effectiveBusinessId,
-          staffId: editingStaffId,
-          input: {
-            name: staffName,
-            email: staffEmail,
-            phone: staffPhone || undefined,
-            employmentActive: staffEmploymentActive
-          }
-        });
-        targetStaffId = editingStaffId;
-      } else {
-        // Create Mode — always targets the authenticated owner's own Business; there is no
-        // Business choice in this form (server independently enforces ownership too).
-        const created = await createStaffMutation.mutateAsync({
+      // Phase 2D — Create Mode issues an invitation; no User/membership exists yet, so schedule
+      // and photo can't be attached now. The owner sets those from Edit once the person accepts.
+      if (editingStaffId === null) {
+        await createStaffMutation.mutateAsync({
           businessId: effectiveBusinessId,
           input: {
             name: staffName,
             email: staffEmail,
             role: staffRole,
-            phone: staffPhone || undefined
-          }
+            phone: staffPhone || undefined,
+          },
         });
-        targetStaffId = created.membershipId as string;
+        closeForm();
+        setIsSubmitting(false);
+        return;
       }
+
+      // Edit Mode only (Create returned early above). Business is intentionally not sent: a
+      // Staff membership cannot be transferred between businesses in this phase.
+      //
+      // `role` is intentionally EXCLUDED from this payload. STAFF <-> SUPERVISOR changes go ONLY
+      // through the dedicated two-step StaffAccessChangeModal ("Change role" action below).
+      await updateStaffMutation.mutateAsync({
+        businessId: effectiveBusinessId,
+        staffId: editingStaffId,
+        input: {
+          name: staffName,
+          email: staffEmail,
+          phone: staffPhone || undefined,
+          employmentActive: staffEmploymentActive
+        }
+      });
+      const targetStaffId: string = editingStaffId;
 
       if (scheduleDays.length > 0 || editingStaffId !== null) {
         try {
@@ -1282,10 +1288,72 @@ export default function DashboardStaffList() {
         </div>
       )}
 
+      {/* Pending invitations (Phase 2D) */}
+      {pendingInvitations.length > 0 && (
+        <div className="w-full mb-6">
+          <h3 className="text-sm font-semibold text-[#1A1A1A] font-poppins mb-3">
+            Pending invitations
+          </h3>
+          <div className="flex flex-col gap-2">
+            {pendingInvitations.map((invitation) => {
+              const busy =
+                (resendInvitationMutation.isPending &&
+                  resendInvitationMutation.variables?.invitationId === invitation.invitationId) ||
+                (revokeInvitationMutation.isPending &&
+                  revokeInvitationMutation.variables?.invitationId === invitation.invitationId);
+              return (
+                <div
+                  key={invitation.invitationId}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E8E8E4]/70 bg-[#FAFAF9] px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-[#1A1A1A] font-poppins truncate">
+                      {invitation.email}
+                    </p>
+                    <p className="text-xs text-[#79716B] font-poppins">
+                      {invitation.role === "SUPERVISOR" ? "Supervisor" : "Staff"} · invitation sent ·
+                      awaiting acceptance
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        resendInvitationMutation.mutate({
+                          businessId: effectiveBusinessId,
+                          invitationId: invitation.invitationId,
+                        })
+                      }
+                      className="text-xs font-semibold text-[#240183] hover:underline disabled:opacity-50 cursor-pointer"
+                    >
+                      Resend
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        revokeInvitationMutation.mutate({
+                          businessId: effectiveBusinessId,
+                          invitationId: invitation.invitationId,
+                        })
+                      }
+                      className="text-xs font-semibold text-[#DE350B] hover:underline disabled:opacity-50 cursor-pointer"
+                    >
+                      Revoke
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Info Alert Box */}
       <div className="bg-[#FAFAF9] border border-[#E8E8E4]/60 rounded-xl p-4 flex items-center gap-3 w-full mb-6">
         <HugeiconsIcon icon={InformationCircleIcon} className="w-5 h-5 text-[#888780] shrink-0" />
-        <span className="text-xs text-[#757575] font-poppins">A secure temporary password is emailed to Supervisors and Staff when they&apos;re added — they can change it once they&apos;ve logged in.</span>
+        <span className="text-xs text-[#757575] font-poppins">An invitation link is emailed to Supervisors and Staff when they&apos;re added — their account is created once they accept it and set a password or continue with Google.</span>
       </div>
 
       {/* Staff Availability Table */}

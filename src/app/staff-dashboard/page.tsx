@@ -1,5 +1,10 @@
+import RequireStaff from "@/components/auth/RequireStaff";
 import StaffDashboard from "@/components/dashboard/StaffDashboard";
 
 export default function Page() {
-  return <StaffDashboard />;
+  return (
+    <RequireStaff>
+      <StaffDashboard />
+    </RequireStaff>
+  );
 }

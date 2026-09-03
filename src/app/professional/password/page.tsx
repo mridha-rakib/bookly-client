@@ -9,11 +9,16 @@ import { SquareLock01Icon } from "@hugeicons/core-free-icons";
 import AuthLayout from "@/components/auth/AuthLayout";
 import AuthCard from "@/components/auth/AuthCard";
 import { InputField } from "@/components/auth/InputField";
+import SocialButton from "@/components/auth/SocialButton";
 import SuccessModal from "@/components/auth/SuccessModal";
 import { Spinner } from "@/components/ui/spinner";
-import { useProfessionalLoginMutation } from "@/lib/auth/hooks";
+import type { VisitType } from "@/lib/api/auth";
+import { useProfessionalGoogleAuthMutation, useProfessionalLoginMutation } from "@/lib/auth/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
 import { getAuthenticatedUserHomePath } from "@/lib/auth/routes";
+
+const toBackendVisitType = (visitType: string): VisitType =>
+  visitType === "location" ? "AT_BUSINESS_LOCATION" : "TRAVEL_TO_CUSTOMER";
 
 function PasswordPageContent() {
   const router = useRouter();
@@ -26,6 +31,7 @@ function PasswordPageContent() {
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
   const [successRedirectPath, setSuccessRedirectPath] = useState("/");
   const login = useProfessionalLoginMutation();
+  const googleAuth = useProfessionalGoogleAuthMutation();
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,6 +86,21 @@ function PasswordPageContent() {
             {login.isPending ? <Spinner className="text-white" /> : "Login"}
           </button>
         </form>
+
+        {/* Divider */}
+        <div className="flex items-center my-6 w-full max-w-[520px]">
+          <div className="flex-1 border-t border-[#E8E6FF]" />
+          <span className="px-3 text-xs font-semibold text-[#9E9E9E] tracking-wider">OR</span>
+          <div className="flex-1 border-t border-[#E8E6FF]" />
+        </div>
+
+        <SocialButton
+          provider="google"
+          label={googleAuth.isPending ? "Redirecting to Google…" : "Continue With Google"}
+          onClick={() => googleAuth.mutate(toBackendVisitType(visitType))}
+          disabled={googleAuth.isPending}
+          aria-busy={googleAuth.isPending}
+        />
       </AuthCard>
 
       {/* Login success modal */}

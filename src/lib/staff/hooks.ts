@@ -33,7 +33,33 @@ export const useCreateStaffMutation = () => {
   return useMutation({
     mutationFn: ({ businessId, input }: { businessId: string; input: CreateStaffInput }) =>
       staffApi.createStaff(businessId, input),
-    onSuccess: (_member, variables) => {
+    onSuccess: (_invitation, variables) => {
+      void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
+    },
+  });
+};
+
+/** Phase 2D — re-send a still-pending staff invitation with a fresh link. */
+export const useResendStaffInvitationMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ businessId, invitationId }: { businessId: string; invitationId: string }) =>
+      staffApi.resendInvitation(businessId, invitationId),
+    onSuccess: (_invitation, variables) => {
+      void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
+    },
+  });
+};
+
+/** Phase 2D — cancel a still-pending staff invitation. */
+export const useRevokeStaffInvitationMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ businessId, invitationId }: { businessId: string; invitationId: string }) =>
+      staffApi.revokeInvitation(businessId, invitationId),
+    onSuccess: (_void, variables) => {
       void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
     },
   });

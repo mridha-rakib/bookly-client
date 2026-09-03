@@ -14,6 +14,7 @@ import { Spinner } from "@/components/ui/spinner";
 import type { VisitType } from "@/lib/api/auth";
 import {
   useProfessionalEntryMutation,
+  useProfessionalGoogleAuthMutation,
   useSendProfessionalEmailOtpMutation,
 } from "@/lib/auth/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
@@ -31,6 +32,7 @@ function ProfessionalAuthContent() {
   const [emailError, setEmailError] = useState("");
   const professionalEntry = useProfessionalEntryMutation();
   const sendEmailOtp = useSendProfessionalEmailOtpMutation();
+  const googleAuth = useProfessionalGoogleAuthMutation();
   const isSubmitting = professionalEntry.isPending || sendEmailOtp.isPending;
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
@@ -126,8 +128,10 @@ function ProfessionalAuthContent() {
         <div className="flex flex-col gap-3 w-full">
           <SocialButton
             provider="google"
-            label="Continue With Google"
-            onClick={() => console.log("Google Login clicked")}
+            label={googleAuth.isPending ? "Redirecting to Google…" : "Continue With Google"}
+            onClick={() => googleAuth.mutate(toBackendVisitType(visitType))}
+            disabled={googleAuth.isPending}
+            aria-busy={googleAuth.isPending}
           />
           <SocialButton
             provider="apple"

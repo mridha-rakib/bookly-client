@@ -64,9 +64,23 @@ export interface UploadStaffAvatarResult {
   avatarUrl: string;
 }
 
+/** Phase 2D — a PENDING invitation (no User/membership yet) shown alongside members. */
+export interface PendingStaffInvitation {
+  invitationId: string;
+  businessId: string;
+  email: string;
+  name: string;
+  role: StaffCreatableRole;
+  status: "PENDING";
+  invitedAt: string;
+  expiresAt: string;
+}
+
 export interface StaffListResponse {
   businessId: string;
   members: StaffMember[];
+  /** Empty until someone is invited but has not yet accepted. */
+  invitations: PendingStaffInvitation[];
 }
 
 export interface CreateStaffInput {
@@ -99,11 +113,25 @@ export const staffApi = {
   listStaff: (businessId: string) =>
     apiRequest<StaffListResponse>({ method: "GET", url: `/businesses/${businessId}/staff` }),
 
+  // Phase 2D — issues a PENDING invitation and emails a link; no User is created until the
+  // invitee accepts (password or Google).
   createStaff: (businessId: string, input: CreateStaffInput) =>
-    apiRequest<StaffMember>({
+    apiRequest<PendingStaffInvitation>({
       method: "POST",
       url: `/businesses/${businessId}/staff`,
       data: input,
+    }),
+
+  resendInvitation: (businessId: string, invitationId: string) =>
+    apiRequest<PendingStaffInvitation>({
+      method: "POST",
+      url: `/businesses/${businessId}/staff/invitations/${invitationId}/resend`,
+    }),
+
+  revokeInvitation: (businessId: string, invitationId: string) =>
+    apiRequest<undefined>({
+      method: "DELETE",
+      url: `/businesses/${businessId}/staff/invitations/${invitationId}`,
     }),
 
   updateStaff: (businessId: string, staffId: string, input: UpdateStaffInput) =>

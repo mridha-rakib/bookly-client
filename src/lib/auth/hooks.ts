@@ -2,7 +2,13 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { authApi, customerGoogleAuthStartUrl } from "@/lib/api/auth";
+import {
+  authApi,
+  customerGoogleAuthStartUrl,
+  professionalGoogleAuthStartUrl,
+  staffInvitationGoogleStartUrl,
+  type VisitType,
+} from "@/lib/api/auth";
 import { useAuthStore } from "@/lib/auth/store";
 
 export const useCustomerEntryMutation = () => useMutation({ mutationFn: authApi.customerEntry });
@@ -26,6 +32,21 @@ export const useCustomerGoogleAuthMutation = () =>
 export const useProfessionalEntryMutation = () =>
   useMutation({ mutationFn: authApi.professionalEntry });
 
+/**
+ * Phase 2C — Business Owner "Continue with Google". Navigation-only, same idiom as
+ * useCustomerGoogleAuthMutation, but the professional start endpoint requires `visitType`
+ * (it is signed into the OAuth state server-side). No User or session is created here — the
+ * backend redirects back to /auth/google/callback?flow=professional&status=… and, for a new
+ * owner, hands back a RegistrationSession id to resume the existing onboarding.
+ */
+export const useProfessionalGoogleAuthMutation = () =>
+  useMutation({
+    mutationFn: async (visitType: VisitType) => {
+      window.location.assign(professionalGoogleAuthStartUrl(visitType));
+      await new Promise<void>(() => {});
+    },
+  });
+
 export const useCustomerLoginMutation = () => {
   const setAuth = useAuthStore((state) => state.setAuth);
   return useMutation({
@@ -41,6 +62,37 @@ export const useProfessionalLoginMutation = () => {
     onSuccess: setAuth,
   });
 };
+
+// --- Phase 2D: Staff/Supervisor invitation acceptance (public — no session yet) --------------
+
+/** Fetches the safe, non-secret invitation info to render the accept screen. */
+export const useStaffInvitationQuery = (token: string) =>
+  useQuery({
+    queryKey: ["staff-invitation", token],
+    queryFn: () => authApi.getStaffInvitation(token),
+    enabled: Boolean(token),
+    retry: false,
+  });
+
+/** Accepts the invitation by setting a password; the backend creates User+Profile+Membership
+ * in one transaction and returns a session, which we push into the auth store. */
+export const useAcceptStaffInvitationPasswordMutation = () => {
+  const setAuth = useAuthStore((state) => state.setAuth);
+  return useMutation({
+    mutationFn: authApi.acceptStaffInvitationWithPassword,
+    onSuccess: setAuth,
+  });
+};
+
+/** Navigation-only, same idiom as the other Google mutations — full-page redirect to the
+ * backend start endpoint, which re-validates the token and owns the OAuth handshake. */
+export const useStaffInvitationGoogleMutation = () =>
+  useMutation({
+    mutationFn: async (token: string) => {
+      window.location.assign(staffInvitationGoogleStartUrl(token));
+      await new Promise<void>(() => {});
+    },
+  });
 
 // Only writes auth state when the response role actually is SUPER_ADMIN — the backend
 // (roleMatchesPortal) already guarantees this, but the store is not the security boundary,

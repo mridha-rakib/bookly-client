@@ -178,7 +178,11 @@ export interface ProfileInput {
   gender: Gender;
   countryCode: string;
   phone: string;
-  password: string;
+  /**
+   * Omitted for a Google registration session (`authProvider === "GOOGLE"`) — that account has
+   * no password and the backend skips hashing. Always sent for a password registration.
+   */
+  password?: string;
   agreeTerms: boolean;
 }
 
@@ -214,9 +218,32 @@ export interface CategorySelectionInput {
 export const customerGoogleAuthStartUrl = (): string =>
   `${apiBaseUrl}/auth/customer/oauth/google/start`;
 
+/**
+ * Absolute URL of the backend's Business Owner "Continue with Google" entry point. Same
+ * full-page-redirect contract as `customerGoogleAuthStartUrl`, but the professional flow needs
+ * the `visitType` up front — it is signed into the OAuth state server-side (never trusted from
+ * the callback query). On return the backend redirects to
+ * `/auth/google/callback?flow=professional&status=...` on THIS app.
+ */
+export const professionalGoogleAuthStartUrl = (visitType: VisitType): string =>
+  `${apiBaseUrl}/auth/professional/oauth/google/start?visitType=${encodeURIComponent(visitType)}`;
+
+/**
+ * Absolute URL of the backend's Staff/Supervisor invitation "Continue with Google" entry point
+ * (Phase 2D). Full-page redirect; the invitation `token` is required — the backend re-validates
+ * it and signs the `invitationId` into the OAuth state. On return the backend redirects to
+ * `/auth/google/callback?flow=staff&status=...` on THIS app.
+ */
+export const staffInvitationGoogleStartUrl = (token: string): string =>
+  `${apiBaseUrl}/auth/staff/invitation/oauth/google/start?token=${encodeURIComponent(token)}`;
+
 /** Coarse outcomes the backend puts on `/auth/google/callback?status=...`. No tokens, emails or
- * reasons are ever included in that URL. */
+ * reasons are ever included in that URL. Shared by the customer, professional and staff flows
+ * (the `flow` query param distinguishes them). */
 export type CustomerGoogleAuthStatus = "success" | "onboarding" | "account_exists" | "error";
+/** Staff invitation adds two coarse outcomes to the shared callback contract. */
+export type StaffGoogleAuthStatus = "success" | "email_mismatch" | "expired" | "error";
+export type GoogleAuthFlow = "customer" | "professional" | "staff";
 
 export const authApi = {
   customerEntry: (email: string) =>
@@ -485,4 +512,40 @@ export const authApi = {
       url: "/auth/professional/register/progress",
       params: { sessionId },
     }),
+
+  // Phase 2D — Staff/Supervisor invitation acceptance. All PUBLIC (the invitee has no session).
+  getStaffInvitation: (token: string) =>
+    apiRequest<StaffInvitationInfo>({
+      method: "GET",
+      url: "/auth/staff/invitation",
+      params: { token },
+    }),
+
+  acceptStaffInvitationWithPassword: (input: AcceptStaffInvitationInput) =>
+    apiRequest<AuthResponse>({
+      method: "POST",
+      url: "/auth/staff/invitation/accept/password",
+      data: input,
+    }),
 };
+
+/** Safe, non-secret fields the accept screen renders. */
+export interface StaffInvitationInfo {
+  email: string;
+  role: "SUPERVISOR" | "STAFF";
+  businessName: string;
+  expiresAt: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+export interface AcceptStaffInvitationInput {
+  token: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  /** Both or neither — a country code with no number (or vice versa) is rejected server-side. */
+  countryCode?: string;
+  nationalNumber?: string;
+  agreeTerms: true;
+}
