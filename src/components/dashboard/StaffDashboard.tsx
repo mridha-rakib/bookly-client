@@ -13,6 +13,7 @@ import DashboardBookingsList from "@/components/dashboard/DashboardBookingsList"
 import NotAvailableForRole from "@/components/dashboard/NotAvailableForRole";
 import ContactSupport from "@/components/support/ContactSupport";
 import DashboardReviewsList from "@/components/dashboard/DashboardReviewsList";
+import StaffMySchedule from "@/components/dashboard/StaffMySchedule";
 import { useManagedBusinessContext } from "@/lib/business/hooks";
 import { useCurrentUserQuery } from "@/lib/auth/hooks";
 
@@ -89,16 +90,10 @@ export default function StaffDashboard() {
     }
 
     if (activeTab === "Staff") {
-      // No product rule grants STAFF team-management access (staff.route.ts is BUSINESS_OWNER-only)
-      // — same honest-unavailable treatment, rather than a mock add/edit/delete-teammate UI.
-      return (
-        <NotAvailableForRole
-          title="Staff"
-          subtitle="Team members, hours, and service assignments"
-          message="Team management isn't available for your account"
-          detail="Only the Business Owner can manage team members."
-        />
-      );
+      // Phase 4A — Staff still has no team-management access (staff.route.ts core-identity
+      // endpoints stay BUSINESS_OWNER-only), but now gets read-only self-service: their own
+      // schedule and their own assigned services, via the new /staff/me/* endpoints.
+      return <StaffMySchedule />;
     }
 
     if (activeTab === "Reviews") {

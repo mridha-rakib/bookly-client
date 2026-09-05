@@ -16,7 +16,16 @@ interface AddressSectionProps {
   setFloorUnit: (v: string) => void;
   roomNo: string;
   setRoomNo: (v: string) => void;
+  timezone: string;
+  setTimezone: (v: string) => void;
 }
+
+// The backend validates timezone as "any string Intl.DateTimeFormat accepts as a valid IANA
+// zone" (see api/src/common/time/timezone.ts isValidIanaTimeZone) rather than an enumerated
+// list, so this mirrors that by sourcing the full runtime IANA database instead of a hand-picked
+// subset.
+const IANA_TIME_ZONES: string[] =
+  typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
 
 export default function AddressSection({
   city,
@@ -30,7 +39,9 @@ export default function AddressSection({
   floorUnit,
   setFloorUnit,
   roomNo,
-  setRoomNo
+  setRoomNo,
+  timezone,
+  setTimezone
 }: AddressSectionProps) {
   return (
     <div className="flex flex-col gap-4 w-full">
@@ -131,6 +142,35 @@ export default function AddressSection({
               />
             </div>
           </div>
+        </div>
+
+        {/* Timezone */}
+        <div className="flex flex-col gap-2 w-full">
+          <label className="text-xs font-semibold text-[#1A1A1A]">Timezone</label>
+          <div className="relative h-11 w-full">
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              className="w-full h-full appearance-none bg-white border border-[#D5D2C9] rounded-lg px-3 pr-10 text-xs font-poppins focus:outline-none focus:border-black cursor-pointer"
+            >
+              {!IANA_TIME_ZONES.includes(timezone) && timezone ? (
+                <option value={timezone}>{timezone}</option>
+              ) : null}
+              {IANA_TIME_ZONES.map((zone) => (
+                <option key={zone} value={zone}>
+                  {zone}
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-3 top-3.5 pointer-events-none text-neutral-500">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+          <p className="text-[11px] text-neutral-500">
+            Used to interpret your opening hours, bookings, and reminders correctly.
+          </p>
         </div>
       </div>
     </div>

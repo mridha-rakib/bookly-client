@@ -14,6 +14,8 @@ interface BusinessInfoSectionProps {
   setPhoneFlag: (v: string) => void;
   phoneNumber: string;
   setPhoneNumber: (v: string) => void;
+  description: string;
+  setDescription: (v: string) => void;
 }
 
 export default function BusinessInfoSection({
@@ -26,7 +28,9 @@ export default function BusinessInfoSection({
   phoneFlag,
   setPhoneFlag,
   phoneNumber,
-  setPhoneNumber
+  setPhoneNumber,
+  description,
+  setDescription
 }: BusinessInfoSectionProps) {
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   
@@ -114,6 +118,18 @@ export default function BusinessInfoSection({
               className="flex-1 h-11 bg-white border border-[#D5D2C9] border-l-0 rounded-r-lg px-3 text-xs font-poppins focus:outline-none focus:border-black"
             />
           </div>
+        </div>
+
+        {/* Brief description */}
+        <div className="flex flex-col gap-2 w-full">
+          <label className="text-xs font-semibold text-[#1A1A1A]">Brief description</label>
+          <textarea
+            placeholder="Tell customers what your business offers"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            className="w-full bg-white border border-[#D5D2C9] rounded-lg px-3 py-2 text-xs font-poppins focus:outline-none focus:border-black resize-none"
+          />
         </div>
       </div>
     </div>

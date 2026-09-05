@@ -91,6 +91,7 @@ export interface BusinessDetail {
   address: BusinessAddress;
   location?: BusinessLocation;
   briefDescription: string;
+  timezone: string;
   category: string;
   subcategories: string[];
   instagramHandle?: string;
@@ -114,6 +115,7 @@ export interface UpdateBusinessInput {
   floorUnit?: string;
   aptRoom?: string;
   briefDescription?: string;
+  timezone?: string;
   category?: string;
   subcategories?: string[];
   coordinates?: { lat: number; lng: number };

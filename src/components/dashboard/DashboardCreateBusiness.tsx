@@ -33,6 +33,7 @@ import { buildGoogleMapsEmbedUrl } from "@/lib/maps/google-maps";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/sonner";
 import type { BusinessCity, BusinessMedia, UpdateBusinessInput } from "@/lib/api/business";
+import { daysOfWeek as businessHoursDaysOfWeek, type BusinessHoursDay } from "@/lib/api/business-hours";
 import {
   useBusinessMediaQuery,
   useBusinessQuery,
@@ -43,6 +44,7 @@ import {
   useUpdateBusinessTravelSettingsMutation,
   useUploadBusinessMediaMutation,
 } from "@/lib/business/hooks";
+import { useBusinessHoursQuery, useUpdateBusinessHoursMutation } from "@/lib/business/hours-hooks";
 import { toUserMessage } from "@/lib/auth/messages";
 import { BUSINESS_CITIES } from "@/lib/constants/cities";
 import {
@@ -63,6 +65,11 @@ const timeOptions = [
   "12:00", "12:30", "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", "17:00", "17:30",
   "18:00", "18:30", "19:00", "19:30", "20:00", "20:30", "21:00", "21:30", "22:00", "22:30", "23:00", "23:30"
 ];
+
+// Monday-first, index-aligned with businessHoursDaysOfWeek ("MONDAY".."SUNDAY") — the Opening
+// Hours section's `days` state keys off the display name, so this is the single place that
+// order is defined for the frontend<->backend day mapping.
+const DAY_LABELS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const buildDefaultTravelFeeRows = (): TravelFeeRow[] =>
   BUSINESS_CITIES.map((city) => ({ name: city, active: false, fee: "0.00" }));
@@ -99,6 +106,8 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
   const [neighborhood, setNeighborhood] = useState("");
   const [floorUnit, setFloorUnit] = useState("");
   const [roomNo, setRoomNo] = useState("");
+  const [businessDescription, setBusinessDescription] = useState("");
+  const [timezone, setTimezone] = useState("Europe/Nicosia");
 
   // Country Dropdown
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
@@ -321,10 +330,16 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     isError: isTravelSettingsError,
     error: travelSettingsError,
   } = useBusinessTravelSettingsQuery(mode !== "create" ? businessId : undefined);
+  const {
+    data: businessHours,
+    isError: isBusinessHoursError,
+    error: businessHoursError,
+  } = useBusinessHoursQuery(mode !== "create" ? businessId : undefined);
   const uploadBusinessMediaMutation = useUploadBusinessMediaMutation();
   const deleteBusinessMediaMutation = useDeleteBusinessMediaMutation();
   const setBusinessProfileMediaMutation = useSetBusinessProfileMediaMutation();
   const updateBusinessTravelSettingsMutation = useUpdateBusinessTravelSettingsMutation();
+  const updateBusinessHoursMutation = useUpdateBusinessHoursMutation();
   const canMutateMedia = mode === "edit" && Boolean(businessId);
   const displayMedia = [...businessMedia].sort((left, right) => {
     if (left.role !== right.role) {
@@ -352,6 +367,12 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     }
   }, [isTravelSettingsError, travelSettingsError]);
 
+  useEffect(() => {
+    if (isBusinessHoursError) {
+      toast.error(toUserMessage(businessHoursError));
+    }
+  }, [isBusinessHoursError, businessHoursError]);
+
   const matchCategoryOption = (value: string): string =>
     serviceCategoryOptions.find((option) => option.toUpperCase() === value.toUpperCase()) ?? value;
 
@@ -377,6 +398,8 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     setNeighborhood(business.address.area);
     setFloorUnit(business.address.floorUnit ?? "");
     setRoomNo(business.address.aptRoom ?? "");
+    setBusinessDescription(business.briefDescription);
+    setTimezone(business.timezone);
     setSelectedCategory(matchCategoryOption(business.category));
     setSelectedSubcategories(business.subcategories.map(matchCategoryOption));
     // Registration persists the owner-selected shop location as Business.location
@@ -428,12 +451,40 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
   }, [travelSettings]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  // Opening Hours — only overwrite the local form once real data comes back and a document
+  // actually exists (`configured`); an unconfigured Business keeps the interactive starter
+  // template already in `days` state as its first-time-setup default rather than being
+  // fabricated as "closed all week".
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!businessHours?.configured) {
+      return;
+    }
+
+    const byDay = new Map(businessHours.days.map((day) => [day.dayOfWeek, day]));
+    setDays(
+      businessHoursDaysOfWeek.map((dayOfWeek, index) => {
+        const found = byDay.get(dayOfWeek);
+        return {
+          name: DAY_LABELS[index] as string,
+          open: found?.isOpen ?? false,
+          slots:
+            found && found.slots.length > 0
+              ? found.slots.map((slot) => ({ start: slot.startTime, end: slot.endTime }))
+              : [{ start: "09:00", end: "18:00" }],
+        };
+      }),
+    );
+  }, [businessHours]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const handleSaveChanges = async () => {
     if (
       mode !== "edit" ||
       !businessId ||
       updateBusinessMutation.isPending ||
-      updateBusinessTravelSettingsMutation.isPending
+      updateBusinessTravelSettingsMutation.isPending ||
+      updateBusinessHoursMutation.isPending
     ) {
       onBack();
       return;
@@ -447,6 +498,8 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
       streetNumber,
       category: selectedCategory,
       subcategories: selectedSubcategories,
+      briefDescription: businessDescription,
+      timezone,
     };
 
     if (floorUnit) input.floorUnit = floorUnit;
@@ -486,10 +539,23 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
         businessId,
         cities: travelSettingsInput,
       });
+    } catch (error) {
+      toast.error(`Business details saved, but travel fees could not be saved. ${toUserMessage(error)}`);
+      return;
+    }
+
+    const businessHoursDays: BusinessHoursDay[] = days.map((day, index) => ({
+      dayOfWeek: businessHoursDaysOfWeek[index] as BusinessHoursDay["dayOfWeek"],
+      isOpen: day.open,
+      slots: day.open ? day.slots.map((slot) => ({ startTime: slot.start, endTime: slot.end })) : [],
+    }));
+
+    try {
+      await updateBusinessHoursMutation.mutateAsync({ businessId, days: businessHoursDays });
       toast.success("Business updated");
       onBack();
     } catch (error) {
-      toast.error(`Business details saved, but travel fees could not be saved. ${toUserMessage(error)}`);
+      toast.error(`Business details saved, but opening hours could not be saved. ${toUserMessage(error)}`);
     }
   };
 
@@ -754,6 +820,8 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
           setPhoneFlag={setPhoneFlag}
           phoneNumber={phoneNumber}
           setPhoneNumber={setPhoneNumber}
+          description={businessDescription}
+          setDescription={setBusinessDescription}
         />
 
         {/* 3. Address Section */}
@@ -770,6 +838,8 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
           setFloorUnit={setFloorUnit}
           roomNo={roomNo}
           setRoomNo={setRoomNo}
+          timezone={timezone}
+          setTimezone={setTimezone}
         />
 
         {/* 4. Location & Real Map Section */}

@@ -1,7 +1,11 @@
 "use client";
 
-import React, { useRef, useState, useEffect } from "react";
+import React from "react";
 import { Spinner } from "@/components/ui/spinner";
+import { useOtpInput } from "@/hooks/useOtpInput";
+
+/** SMS OTP length — Twilio Verify (backend PHONE_OTP_CODE_LENGTH) delivers 6-digit codes. */
+const PHONE_OTP_LENGTH = 6;
 
 export interface PhoneVerificationStep2Props {
   countryCode: string;
@@ -21,48 +25,12 @@ export default function PhoneVerificationStep2({
   isVerifying = false,
   isResending = false,
 }: PhoneVerificationStep2Props) {
-  const [otp, setOtp] = useState<string[]>(["", "", "", ""]);
-  const [activeBox, setActiveBox] = useState<number>(0);
-  const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
-
-  useEffect(() => {
-    inputsRef.current[0]?.focus();
-  }, []);
-
-  const handleChange = (value: string, index: number) => {
-    if (value && !/^\d+$/.test(value)) return;
-
-    const newOtp = [...otp];
-    newOtp[index] = value.substring(value.length - 1);
-    setOtp(newOtp);
-
-    if (value && index < 3) {
-      inputsRef.current[index + 1]?.focus();
-      setActiveBox(index + 1);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
-    if (e.key === "Backspace") {
-      if (!otp[index] && index > 0) {
-        const newOtp = [...otp];
-        newOtp[index - 1] = "";
-        setOtp(newOtp);
-        inputsRef.current[index - 1]?.focus();
-        setActiveBox(index - 1);
-      } else {
-        const newOtp = [...otp];
-        newOtp[index] = "";
-        setOtp(newOtp);
-      }
-    }
-  };
+  const otp = useOtpInput(PHONE_OTP_LENGTH);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const otpValue = otp.join("");
-    if (otpValue.length === 4) {
-      await onVerify(otpValue);
+    if (otp.value.length === PHONE_OTP_LENGTH) {
+      await onVerify(otp.value);
     }
   };
 
@@ -79,25 +47,25 @@ export default function PhoneVerificationStep2({
           </span>
         </p>
 
-        {/* OTP Box Wrapper */}
-        <div className="flex gap-4 mb-8">
-          {otp.map((digit, idx) => {
-            const isActive = activeBox === idx;
+        {/* OTP Box Wrapper — 6 digits (Twilio Verify) */}
+        <div className="flex gap-1.5 sm:gap-2.5 mb-8">
+          {otp.values.map((digit, idx) => {
+            const isActive = otp.activeBox === idx;
             return (
               <input
                 key={idx}
-                ref={(el) => {
-                  inputsRef.current[idx] = el;
-                }}
+                ref={otp.registerRef(idx)}
                 type="text"
                 pattern="\d*"
                 inputMode="numeric"
+                autoComplete={idx === 0 ? "one-time-code" : "off"}
                 maxLength={1}
                 value={digit}
-                onFocus={() => setActiveBox(idx)}
-                onKeyDown={(e) => handleKeyDown(e, idx)}
-                onChange={(e) => handleChange(e.target.value, idx)}
-                className={`w-14 h-16 sm:w-16 sm:h-20 text-center text-2xl font-semibold rounded-2xl border-2 bg-[#FCFCFD] text-[#1A1A1A] focus:outline-none transition-all duration-200 ${
+                onFocus={() => otp.setActiveBox(idx)}
+                onKeyDown={(e) => otp.handleKeyDown(e, idx)}
+                onChange={(e) => otp.handleChange(e.target.value, idx)}
+                onPaste={otp.handlePaste}
+                className={`w-10 h-14 sm:w-12 sm:h-16 text-center text-xl sm:text-2xl font-semibold rounded-2xl border-2 bg-[#FCFCFD] text-[#1A1A1A] focus:outline-none transition-all duration-200 ${
                   isActive
                     ? "border-[#240183] bg-white shadow-sm ring-2 ring-[#240183]/10"
                     : "border-[#DAD6FF]"
@@ -110,7 +78,7 @@ export default function PhoneVerificationStep2({
         {/* Verify Button */}
         <button
           type="submit"
-          disabled={otp.join("").length < 4 || isVerifying}
+          disabled={otp.value.length < PHONE_OTP_LENGTH || isVerifying}
           className="w-full max-w-[520px] h-12 bg-[#1A1A1A] hover:bg-black text-white font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isVerifying ? <Spinner className="text-white" /> : "Verify"}
@@ -122,7 +90,7 @@ export default function PhoneVerificationStep2({
           <button
             type="button"
             disabled={isResending}
-            className="text-[#240183] font-semibold hover:underline cursor-pointer"
+            className="text-[#240183] font-semibold hover:underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             onClick={onResend}
           >
             Resend code

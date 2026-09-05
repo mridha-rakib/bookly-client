@@ -109,6 +109,17 @@ export interface CreateTimeOffInput {
   endDate?: string;
 }
 
+// Matches api/src/modules/staff/staff.service.ts StaffAssignedServiceDto — a deliberately
+// minimal read for Staff/Supervisor self-service "my assigned services", not the full
+// owner-facing Service shape.
+export interface StaffAssignedService {
+  id: string;
+  name: string;
+  category: string;
+  subcategory?: string;
+  status: string;
+}
+
 export const staffApi = {
   listStaff: (businessId: string) =>
     apiRequest<StaffListResponse>({ method: "GET", url: `/businesses/${businessId}/staff` }),
@@ -187,5 +198,19 @@ export const staffApi = {
     apiRequest<undefined>({
       method: "DELETE",
       url: `/businesses/${businessId}/staff/${staffId}/time-off/${timeOffId}`,
+    }),
+
+  // Phase 4A self-service — Staff/Supervisor reading their OWN schedule/assigned services via
+  // their own active StaffMembership (never a staffId path param the caller could substitute).
+  getMySchedule: (businessId: string) =>
+    apiRequest<ScheduleDay[]>({
+      method: "GET",
+      url: `/businesses/${businessId}/staff/me/schedule`,
+    }),
+
+  listMyAssignedServices: (businessId: string) =>
+    apiRequest<StaffAssignedService[]>({
+      method: "GET",
+      url: `/businesses/${businessId}/staff/me/services`,
     }),
 };

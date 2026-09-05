@@ -18,12 +18,29 @@ import {
 export const staffKeys = {
   all: ["staff"] as const,
   list: (businessId: string) => [...staffKeys.all, "list", businessId] as const,
+  mySchedule: (businessId: string) => [...staffKeys.all, "my-schedule", businessId] as const,
+  myServices: (businessId: string) => [...staffKeys.all, "my-services", businessId] as const,
 };
 
 export const useStaffListQuery = (businessId: string | undefined) =>
   useQuery({
     queryKey: staffKeys.list(businessId ?? ""),
     queryFn: () => staffApi.listStaff(businessId as string),
+    enabled: Boolean(businessId),
+  });
+
+// Phase 4A self-service — Staff/Supervisor reading their OWN schedule/assigned services.
+export const useMyScheduleQuery = (businessId: string | undefined) =>
+  useQuery({
+    queryKey: staffKeys.mySchedule(businessId ?? ""),
+    queryFn: () => staffApi.getMySchedule(businessId as string),
+    enabled: Boolean(businessId),
+  });
+
+export const useMyAssignedServicesQuery = (businessId: string | undefined) =>
+  useQuery({
+    queryKey: staffKeys.myServices(businessId ?? ""),
+    queryFn: () => staffApi.listMyAssignedServices(businessId as string),
     enabled: Boolean(businessId),
   });
 
