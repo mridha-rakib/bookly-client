@@ -379,9 +379,33 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
     () => (travelSettingsQuery.data?.cities ?? []).filter((city) => city.active).map((city) => city.city),
     [travelSettingsQuery.data]
   );
+  // Only currently-eligible staff are offered for a NEW assignment — an inactive/removed
+  // membership must never become newly selectable (approved rule). A membership that is merely
+  // employmentActive: false is still a real, existing row (see staff.model.ts's own removedAt
+  // comment: removal is soft — the row is never deleted), so this filter alone is what keeps
+  // them out of the "assign" checklist; the separately-rendered stale list below is what lets
+  // the Owner actually see and remove an already-assigned one.
   const assignableStaff = useMemo(
-    () => (staffListQuery.data?.members ?? []).filter((member) => !member.isOwner && member.membershipId),
+    () =>
+      (staffListQuery.data?.members ?? []).filter(
+        (member) => !member.isOwner && member.membershipId && member.employmentActive
+      ),
     [staffListQuery.data]
+  );
+  // Currently assigned (per the live, editable selection) but no longer eligible for a NEW
+  // assignment — i.e. persisted on this Service yet missing from assignableStaff above. Sourced
+  // from the Service's OWN fetched `assignedStaff` (which already correctly resolves every
+  // persisted membershipId, active or not — see ServiceService.toServiceDto), never re-derived
+  // from the general Staff list (which excludes removed staff entirely). Empty for a brand-new
+  // Service (serviceQuery.data is undefined in "create" mode).
+  const staleAssignedStaff = useMemo(
+    () =>
+      (serviceQuery.data?.assignedStaff ?? []).filter(
+        (staff) =>
+          form.assignedStaffMembershipIds.includes(staff.membershipId) &&
+          !assignableStaff.some((m) => m.membershipId === staff.membershipId)
+      ),
+    [serviceQuery.data, form.assignedStaffMembershipIds, assignableStaff]
   );
   const showCitiesSection = business?.visitType === "TRAVEL_TO_CUSTOMER";
 
@@ -515,6 +539,11 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
                 Draft
               </span>
             )}
+            {mode !== "create" && serviceQuery.data?.status === "ARCHIVED" && (
+              <span className="px-2 py-0.5 rounded-full bg-neutral-100 border border-neutral-300 text-[10px] font-poppins font-medium uppercase tracking-[0.5px] text-neutral-500">
+                Archived — saving here will not restore it
+              </span>
+            )}
           </div>
         </div>
 
@@ -602,6 +631,42 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
                       </span>
                     )}
                   </div>
+                </div>
+
+                <div className="flex flex-col gap-2 w-full">
+                  <span className={fieldLabelClass}>
+                    Service category (you created) <span className="text-[#D85A30]">*</span>
+                  </span>
+                  <div className="relative w-full">
+                    <select
+                      disabled={isReadOnly}
+                      value={form.serviceCategoryId}
+                      onChange={(e) => setField("serviceCategoryId", e.target.value)}
+                      className={selectClass}
+                      style={selectArrowStyle}
+                      aria-invalid={Boolean(errors.serviceCategoryId)}
+                      aria-describedby={
+                        errors.serviceCategoryId ? "package-service-category-error" : undefined
+                      }
+                    >
+                      <option value="">— Select —</option>
+                      {activeCategories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {noCategoriesAvailable && (
+                    <span className="text-xs text-[#D85A30]">
+                      No service categories yet — add one in Business Profile → Edit.
+                    </span>
+                  )}
+                  {errors.serviceCategoryId && (
+                    <span id="package-service-category-error" className="text-xs text-[#D85A30]">
+                      {errors.serviceCategoryId}
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex flex-col gap-2 w-full">
@@ -1098,6 +1163,45 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
             <span className="text-xs text-neutral-500 font-normal mt-1">
               Manage your team under Staff → Add / edit staff members.
             </span>
+
+            {staleAssignedStaff.length > 0 && (
+              <div className="flex flex-col gap-2 mt-3">
+                <span className="text-xs text-neutral-500 font-normal">
+                  Previously assigned staff who are no longer active. They can&apos;t be
+                  re-selected — remove them and save to clear this Service&apos;s assignment.
+                </span>
+                <div className="flex flex-wrap gap-4">
+                  {staleAssignedStaff.map((member) => (
+                    <div
+                      key={member.membershipId}
+                      className="h-[38px] pl-2 pr-3 rounded-full text-xs font-poppins font-medium flex items-center gap-2 border border-neutral-200 bg-neutral-50 text-neutral-500"
+                    >
+                      <Image
+                        src={member.avatarUrl || "/img/dumyUser.jpeg"}
+                        alt={member.name}
+                        className="w-6 h-6 rounded-full object-cover grayscale opacity-70"
+                        width={24}
+                        height={24}
+                      />
+                      <span>{member.name}</span>
+                      <span className="px-1.5 py-0.5 rounded-full bg-neutral-200 text-neutral-600 text-[10px] uppercase tracking-[0.5px]">
+                        Inactive
+                      </span>
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={() => toggleStaff(member.membershipId)}
+                          aria-label={`Remove ${member.name}`}
+                          className="w-4 h-4 rounded-full hover:bg-neutral-300 flex items-center justify-center cursor-pointer text-neutral-600"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Section 8: Assigned Add-ons (read-only — managed from the Add-on's own

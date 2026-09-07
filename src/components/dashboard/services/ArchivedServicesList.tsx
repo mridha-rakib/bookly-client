@@ -13,8 +13,10 @@ import { formatAssignedStaffSummary, formatServiceDuration, formatServicePrice }
 import { useRestoreServiceMutation, useServicesQuery } from "@/lib/services/hooks";
 import ServiceForm from "./ServiceForm";
 
+type FormView = { mode: "edit" | "view"; serviceId: string } | null;
+
 export default function ArchivedServicesList() {
-  const [viewingServiceId, setViewingServiceId] = useState<string | null>(null);
+  const [formView, setFormView] = useState<FormView>(null);
   const [restoringService, setRestoringService] = useState<Service | null>(null);
 
   const businessProfileQuery = useMyBusinessProfileQuery();
@@ -35,13 +37,13 @@ export default function ArchivedServicesList() {
     }
   }, [loadError]);
 
-  if (viewingServiceId) {
+  if (formView) {
     return (
       <ServiceForm
         businessId={businessId}
-        mode="view"
-        serviceId={viewingServiceId}
-        onDone={() => setViewingServiceId(null)}
+        mode={formView.mode}
+        serviceId={formView.serviceId}
+        onDone={() => setFormView(null)}
       />
     );
   }
@@ -120,10 +122,17 @@ export default function ArchivedServicesList() {
                   <div className="border-t border-[#F5F5F4] pt-4 mt-5 shrink-0 flex justify-end gap-2">
                     <button
                       type="button"
-                      onClick={() => setViewingServiceId(service.id)}
+                      onClick={() => setFormView({ mode: "view", serviceId: service.id })}
                       className="h-[32px] px-4 bg-[#EBEBEB] text-[#757575] font-poppins font-medium text-xs rounded-[8px] hover:bg-[#E2E2E2] transition-colors cursor-pointer"
                     >
                       View
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormView({ mode: "edit", serviceId: service.id })}
+                      className="h-[32px] px-4 bg-[#EBEBEB] text-[#757575] font-poppins font-medium text-xs rounded-[8px] hover:bg-[#E2E2E2] transition-colors cursor-pointer"
+                    >
+                      Edit
                     </button>
                     <button
                       type="button"

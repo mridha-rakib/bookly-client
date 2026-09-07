@@ -23,6 +23,10 @@ export const bookingKeys = {
   calendars: (businessId: string) => [...bookingKeys.all, "calendar", businessId] as const,
   calendar: (businessId: string, fromDate: string, toDate: string) =>
     [...bookingKeys.calendars(businessId), fromDate, toDate] as const,
+  bookableServices: (businessId: string) =>
+    [...bookingKeys.all, "bookable-services", businessId] as const,
+  bookableAddons: (businessId: string, serviceId: string) =>
+    [...bookingKeys.all, "bookable-addons", businessId, serviceId] as const,
   // --- Customer scope (Batch 9) — cross-business, mirrors "/me/bookings" ---
   customerAll: ["customerBookings"] as const,
   customerLists: () => [...bookingKeys.customerAll, "list"] as const,
@@ -72,6 +76,26 @@ export const useBusinessCalendarQuery = (
     queryKey: bookingKeys.calendar(businessId ?? "", fromDate ?? "", toDate ?? ""),
     queryFn: () => bookingsApi.getCalendar(businessId as string, fromDate as string, toDate as string),
     enabled: Boolean(businessId) && Boolean(fromDate) && Boolean(toDate),
+  });
+
+/** Manual-booking picker data (Owner-or-Supervisor) — see bookingsApi.listBookableServices's own
+ * doc comment for why this is a separate read path from the Owner-only Service-management
+ * queries in @/lib/services/hooks. */
+export const useBookableServicesQuery = (businessId: string | undefined) =>
+  useQuery({
+    queryKey: bookingKeys.bookableServices(businessId ?? ""),
+    queryFn: () => bookingsApi.listBookableServices(businessId as string),
+    enabled: Boolean(businessId),
+  });
+
+export const useBookableAddonsForServiceQuery = (
+  businessId: string | undefined,
+  serviceId: string | undefined,
+) =>
+  useQuery({
+    queryKey: bookingKeys.bookableAddons(businessId ?? "", serviceId ?? ""),
+    queryFn: () => bookingsApi.listBookableAddonsForService(businessId as string, serviceId as string),
+    enabled: Boolean(businessId) && Boolean(serviceId),
   });
 
 /** Shared success handler for every business-side lifecycle mutation below: seed the fresh
