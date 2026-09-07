@@ -4,10 +4,14 @@ import Image from "next/image";
 import React from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 
+import {
+  UNKNOWN_BUSINESS_CATEGORY_ICON,
+  getBusinessCategoryIconSrc,
+} from "@/lib/business-category/categoryIcon";
+
 export interface Category {
   name: string;
   label: string;
-  icon: any;
   containerWidth: string;
   textWidth: string;
 }
@@ -44,6 +48,8 @@ export default function CategorySelectorStep2({
       <div className="w-full flex flex-wrap md:flex-row md:flex-nowrap items-center justify-center md:justify-between gap-4 md:gap-6 min-h-[108px] py-4 md:py-0">
         {categories.map((cat) => {
           const isSelected = selectedCategory === cat.name;
+          // Approved Business Category SVG — the shared map, identical to the homepage bar.
+          const iconSrc = getBusinessCategoryIconSrc(cat.name);
           return (
             <button
               key={cat.name}
@@ -54,14 +60,22 @@ export default function CategorySelectorStep2({
                 : "bg-white text-[#817469] border-[#E8E8E4] hover:bg-[#FAF9F7]"
                 }`}
             >
-              {/* Icon wrapper */}
-              <div className="w-8 h-8 bg-[#EDE3DE] rounded flex items-center justify-center text-[#111111] p-1 gap-2.5">
-                {cat.icon ? (
-                  <HugeiconsIcon icon={cat.icon} size={24} />
-                ) : (
-                  <Image src="/Icons/famicon.svg" alt="pets & home" className="w-6 h-6 object-contain" width={24} height={24} />
-                )}
-              </div>
+              {/* Icon — the approved SVG already carries its own #EDE3DE rounded 32×32
+                  container, so it replaces the former icon chip (no doubled background). */}
+              {iconSrc ? (
+                <Image
+                  src={iconSrc}
+                  alt=""
+                  aria-hidden
+                  width={32}
+                  height={32}
+                  className="w-8 h-8 shrink-0"
+                />
+              ) : (
+                <div className="w-8 h-8 bg-[#EDE3DE] rounded flex items-center justify-center text-[#111111] p-1">
+                  <HugeiconsIcon icon={UNKNOWN_BUSINESS_CATEGORY_ICON} size={24} />
+                </div>
+              )}
               {/* Text */}
               <span className="text-sm font-medium tracking-[0.7px] uppercase text-center leading-5 w-[145.6px]">
                 {cat.label}

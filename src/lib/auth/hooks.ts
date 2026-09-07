@@ -1,10 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
 
 import {
   authApi,
+  customerAppleAuthStartUrl,
+  customerFacebookAuthStartUrl,
   customerGoogleAuthStartUrl,
+  professionalAppleAuthStartUrl,
+  professionalFacebookAuthStartUrl,
   professionalGoogleAuthStartUrl,
   staffInvitationGoogleStartUrl,
   type VisitType,
@@ -43,6 +48,55 @@ export const useProfessionalGoogleAuthMutation = () =>
   useMutation({
     mutationFn: async (visitType: VisitType) => {
       window.location.assign(professionalGoogleAuthStartUrl(visitType));
+      await new Promise<void>(() => {});
+    },
+  });
+
+/**
+ * Customer "Continue with Facebook" — LOGIN (and, email permitting, signup). Navigation-only,
+ * exact same idiom as useCustomerGoogleAuthMutation: a synchronous full-page redirect to the
+ * backend `start` endpoint, which owns the whole OAuth handshake and sets the CSRF nonce cookie.
+ * No session is created here — the backend redirects back to /auth/facebook/callback?status=…
+ * This is NOT the Settings "Link Facebook" flow and never hits its authenticated route.
+ */
+export const useCustomerFacebookAuthMutation = () =>
+  useMutation({
+    mutationFn: async () => {
+      window.location.assign(customerFacebookAuthStartUrl());
+      await new Promise<void>(() => {});
+    },
+  });
+
+/** Business Owner "Continue with Facebook". Navigation-only, same idiom as
+ * useProfessionalGoogleAuthMutation — `visitType` is signed into the OAuth state server-side. */
+export const useProfessionalFacebookAuthMutation = () =>
+  useMutation({
+    mutationFn: async (visitType: VisitType) => {
+      window.location.assign(professionalFacebookAuthStartUrl(visitType));
+      await new Promise<void>(() => {});
+    },
+  });
+
+/**
+ * Customer "Continue with Apple" — LOGIN. Navigation-only, identical idiom to
+ * useCustomerFacebookAuthMutation: a synchronous full-page redirect to the backend `start`
+ * endpoint. The backend 302s to Apple; Apple POSTs its callback (form_post) to the backend, which
+ * redirects to /auth/apple/callback?status=… No session, no cookie handled here. This is NOT the
+ * Settings "Link Apple" flow.
+ */
+export const useCustomerAppleAuthMutation = () =>
+  useMutation({
+    mutationFn: async () => {
+      window.location.assign(customerAppleAuthStartUrl());
+      await new Promise<void>(() => {});
+    },
+  });
+
+/** Business Owner "Continue with Apple". Navigation-only — `visitType` signed into the state. */
+export const useProfessionalAppleAuthMutation = () =>
+  useMutation({
+    mutationFn: async (visitType: VisitType) => {
+      window.location.assign(professionalAppleAuthStartUrl(visitType));
       await new Promise<void>(() => {});
     },
   });
@@ -255,17 +309,38 @@ export const useVerifyPhoneChangeMutation = () => {
   });
 };
 
-// Phase 1 — Customer → Google account linking. Fetches the real Google consent URL (authenticated
-// request) then navigates the browser to it — same idiom as useConnectGoogleCalendarMutation.
-// Google redirects back to /customer/settings?linkedAccount=google&result=... where the page
-// shows a toast and the ["auth","me"] query refetches on the fresh page load.
-export const useLinkGoogleAccountMutation = () =>
-  useMutation({
+// Shared by the Google + Facebook "Link" mutations (customer/settings Linked Accounts). Both
+// fetch a provider consent URL over an authenticated request, then do a full-page redirect; on
+// success the browser leaves the page, so the mutation never needs to "finish". The provider
+// redirects back to /customer/settings?linkedAccount=<provider>&result=... where the page shows a
+// toast and ["auth","me"] refetches on the fresh page load.
+//
+// `disabled={isPending}` alone can't stop a fast double-click: `isPending` only disables the
+// button on the next React commit, so a second click landing in that gap starts a second
+// authorize-url request (two signed states minted, two rate-limit hits). The synchronous `ref`
+// guard here closes that gap — it's set before the first await and released only on failure, so
+// one click = one authorize-url call = one redirect, while a failed attempt stays retryable.
+const useProviderLinkMutation = (getAuthUrl: () => Promise<{ authUrl: string }>) => {
+  const redirecting = useRef(false);
+  return useMutation({
     mutationFn: async () => {
-      const { authUrl } = await authApi.getGoogleLinkUrl();
-      window.location.href = authUrl;
+      if (redirecting.current) {
+        return;
+      }
+      redirecting.current = true;
+      try {
+        const { authUrl } = await getAuthUrl();
+        window.location.href = authUrl;
+        // Intentionally not released here — navigation is underway; keep the button locked.
+      } catch (error) {
+        redirecting.current = false;
+        throw error;
+      }
     },
   });
+};
+
+export const useLinkGoogleAccountMutation = () => useProviderLinkMutation(authApi.getGoogleLinkUrl);
 
 // Unlink is an in-page action — on success we invalidate ["auth","me"] so the Linked Accounts
 // row re-renders as "Not connected" (same idiom as useDisconnectGoogleCalendarMutation).
@@ -273,6 +348,36 @@ export const useUnlinkGoogleAccountMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: authApi.unlinkGoogleAccount,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+    },
+  });
+};
+
+// Customer -> Facebook account linking. Same navigate-away idiom + double-click guard as
+// useLinkGoogleAccountMutation (see useProviderLinkMutation). LINKING only, never "Continue with
+// Facebook" login.
+export const useLinkFacebookAccountMutation = () =>
+  useProviderLinkMutation(authApi.getFacebookLinkUrl);
+
+export const useUnlinkFacebookAccountMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: authApi.unlinkFacebookAccount,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+    },
+  });
+};
+
+// Customer -> Apple account linking. Same navigate-away idiom + synchronous double-click ref
+// guard as the Google/Facebook link mutations (useProviderLinkMutation). LINKING only.
+export const useLinkAppleAccountMutation = () => useProviderLinkMutation(authApi.getAppleLinkUrl);
+
+export const useUnlinkAppleAccountMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: authApi.unlinkAppleAccount,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
     },

@@ -67,7 +67,10 @@ export interface CatalogBusiness {
   media: CatalogMedia[];
 }
 
-export type CatalogServicePricingMode = "FIXED" | "HOURLY" | "PER_PERSON" | "PACKAGE";
+// Matches api/src/modules/services/service.types.ts ServicePricingMode exactly — a Package
+// Deal service has no pricingMode at all (see CatalogService.isPackageDeal below instead;
+// "PACKAGE" was never a real value the backend sends, see the Package Deal audit's own finding).
+export type CatalogServicePricingMode = "FIXED" | "HOURLY" | "PER_PERSON";
 
 export interface CatalogService {
   id: string;

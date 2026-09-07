@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
+import type { CatalogAddon, CatalogService } from "@/lib/api/catalog";
 import type { BusinessCity } from "@/lib/constants/cities";
 
 /**
@@ -318,6 +319,22 @@ export const bookingsApi = {
 
   getDetailForBusiness: (businessId: string, bookingId: string) =>
     apiRequest<BookingDetail>({ method: "GET", url: `/businesses/${businessId}/bookings/${bookingId}` }),
+
+  /** Read-only manual-booking picker data (Owner-or-Supervisor) — same authorization
+   * createManual itself uses, deliberately NOT the Owner-only Service-management endpoint.
+   * Reuses the exact same `CatalogService`/`CatalogAddon` shapes the public venue catalog
+   * already uses (see api/src/modules/booking/booking.service.ts's own doc comment). */
+  listBookableServices: (businessId: string) =>
+    apiRequest<{ services: CatalogService[] }>({
+      method: "GET",
+      url: `/businesses/${businessId}/bookings/bookable-services`,
+    }),
+
+  listBookableAddonsForService: (businessId: string, serviceId: string) =>
+    apiRequest<{ addons: CatalogAddon[] }>({
+      method: "GET",
+      url: `/businesses/${businessId}/bookings/services/${serviceId}/addons`,
+    }),
 
   getCalendar: (businessId: string, fromDate: string, toDate: string) =>
     apiRequest<{ bookings: BookingCalendarEntry[] }>({

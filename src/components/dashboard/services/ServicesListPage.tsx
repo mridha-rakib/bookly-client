@@ -17,6 +17,7 @@ import {
   useUpdateBookingSettingsMutation,
   useUpdateServiceStatusMutation
 } from "@/lib/services/hooks";
+import type { Service } from "@/lib/api/services";
 import ServiceCard from "./ServiceCard";
 import ServiceForm from "./ServiceForm";
 
@@ -25,6 +26,10 @@ type ViewState = { mode: "list" } | { mode: "create" } | { mode: "edit" | "view"
 export default function ServicesListPage() {
   const [view, setView] = useState<ViewState>({ mode: "list" });
   const [archivingId, setArchivingId] = useState<string | null>(null);
+  // Confirmation gate for the destructive "Archive" action (soft-archive, not a hard delete —
+  // see ServiceService.archiveService's own doc comment; Restore already exists for recovery).
+  // Holding the full Service (not just its id) so the confirmation copy can name it.
+  const [archivingService, setArchivingService] = useState<Service | null>(null);
 
   // Services are Business-Owner-only management functionality — always the owner's own
   // Primary Business, same pattern as Staff (see DashboardStaffList.tsx).
@@ -94,11 +99,15 @@ export default function ServicesListPage() {
     );
   };
 
-  const handleArchive = (serviceId: string) => {
+  // Confirmed via Confirm below — never called directly from the card's menu click anymore.
+  const confirmArchive = () => {
+    if (!archivingService) return;
+    const serviceId = archivingService.id;
     setArchivingId(serviceId);
     archiveMutation.mutate(
       { businessId, serviceId },
       {
+        onSuccess: () => setArchivingService(null),
         onError: (error) => toast.error(toUserMessage(error)),
         onSettled: () => setArchivingId(null)
       }
@@ -174,7 +183,7 @@ export default function ServicesListPage() {
                 addonCount={addonCountByServiceId.get(service.id)}
                 onView={() => setView({ mode: "view", serviceId: service.id })}
                 onEdit={() => setView({ mode: "edit", serviceId: service.id })}
-                onArchive={() => handleArchive(service.id)}
+                onArchive={() => setArchivingService(service)}
                 onToggleActive={() => handleToggleActive(service.id, service.status === "ACTIVE")}
                 isMutating={
                   (updateStatusMutation.isPending && updateStatusMutation.variables?.serviceId === service.id) ||
@@ -185,6 +194,39 @@ export default function ServicesListPage() {
           </div>
         )}
       </div>
+
+      {archivingService && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+              <span className="font-poppins font-semibold text-base text-[#111111]">Archive service</span>
+              <span className="font-poppins font-normal text-sm text-neutral-500">
+                Archive &quot;{archivingService.name}&quot;? It will be removed from your active
+                catalogue and can no longer be booked. You can restore it later from Archived
+                Services.
+              </span>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                disabled={archivingId === archivingService.id}
+                onClick={confirmArchive}
+                className="h-[40px] rounded-lg bg-[#D85A30] hover:bg-[#c04f2a] text-white font-poppins font-medium text-sm disabled:opacity-60 cursor-pointer"
+              >
+                {archivingId === archivingService.id ? "Archiving…" : "Archive"}
+              </button>
+            </div>
+            <button
+              type="button"
+              disabled={archivingId === archivingService.id}
+              onClick={() => setArchivingService(null)}
+              className="text-xs text-neutral-500 hover:text-black self-center cursor-pointer disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

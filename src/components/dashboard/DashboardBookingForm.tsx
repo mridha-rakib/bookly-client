@@ -2,7 +2,7 @@
 import Image from "next/image";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowLeft02Icon,
@@ -16,22 +16,26 @@ import {
   UserIcon,
 } from "@hugeicons/core-free-icons";
 
-import { useServicesQuery } from "@/lib/services/hooks";
-import { useAddonsForServiceQuery } from "@/lib/addons/hooks";
+import { useStaffListQuery } from "@/lib/staff/hooks";
 import { useClientsQuery, useCreateClientMutation } from "@/lib/clients/hooks";
 import { clientInputSchema, flattenClientErrors } from "@/lib/clients/schema";
 import type { BusinessClientDto, CreateClientInput } from "@/lib/api/clients";
 import { CLIENT_TAGS, type ClientTag } from "@/lib/api/clients";
-import { useCreateManualBookingMutation } from "@/lib/bookings/hooks";
+import {
+  useBookableAddonsForServiceQuery,
+  useBookableServicesQuery,
+  useCreateManualBookingMutation,
+} from "@/lib/bookings/hooks";
 import { usePublicBookingConfigQuery } from "@/lib/superAdminSettings/hooks";
 import type { CreateManualBookingInput } from "@/lib/api/bookings";
 import { useAvailabilityQuery } from "@/lib/availability/hooks";
 import type { AvailabilitySlot } from "@/lib/api/availability";
-import type { Service } from "@/lib/api/services";
+import type { CatalogService } from "@/lib/api/catalog";
 import { formatEuro, formatServiceDuration, formatServicePrice } from "@/lib/services/format";
 import { BUSINESS_CITIES, type BusinessCity } from "@/lib/constants/cities";
 import { CLIENT_PROPERTY_TYPES } from "@/lib/api/clients";
 import { getFieldErrors, toUserMessage } from "@/lib/auth/messages";
+import { toast } from "@/components/ui/sonner";
 import TimeStep from "@/app/venue/components/TimeStep";
 
 interface DashboardBookingFormProps {
@@ -131,11 +135,24 @@ export default function DashboardBookingForm({
   };
 
   // --- Services / add-ons -------------------------------------------------------------------
-  const servicesQuery = useServicesQuery(businessId, { status: "ACTIVE" });
+  // Owner-or-Supervisor read-only booking-context data (never the Owner-only Service-management
+  // endpoint @/lib/services/hooks uses — Supervisor 403s on that; see
+  // api/src/modules/booking/booking.service.ts's own "Manual-booking read context" doc comment).
+  const servicesQuery = useBookableServicesQuery(businessId);
   // Package-deal services cannot be booked at all yet anywhere in this codebase — see
   // BookingCreationService.resolveServiceLines's own BOOKING_PACKAGE_SERVICE_NOT_SUPPORTED_YET —
   // excluded here rather than offered and then rejected at submit time.
   const bookableServices = (servicesQuery.data?.services ?? []).filter((s) => !s.isPackageDeal);
+  // Staff eligibility is read from the same Owner-or-Supervisor staff list the Staff dashboard
+  // page already uses, cross-referenced against each Service's own `assignedStaffMembershipIds`
+  // (the booking-context Service DTO deliberately doesn't embed staff — this avoids a second,
+  // duplicated staff/avatar-assembly path for what is already a fully solved read).
+  const staffListQuery = useStaffListQuery(businessId);
+  const staffById = new Map(
+    (staffListQuery.data?.members ?? [])
+      .filter((m): m is typeof m & { membershipId: string } => m.membershipId !== null)
+      .map((m) => [m.membershipId, m]),
+  );
 
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [pricingInputByService, setPricingInputByService] = useState<Record<string, PricingInput>>({});
@@ -143,11 +160,24 @@ export default function DashboardBookingForm({
 
   const selectedServices = selectedServiceIds
     .map((id) => bookableServices.find((s) => s.id === id))
-    .filter((s): s is Service => Boolean(s));
+    .filter((s): s is CatalogService => Boolean(s));
   const primaryServiceId = selectedServiceIds[0];
 
-  const addonsQuery = useAddonsForServiceQuery(businessId, primaryServiceId);
-  const activeAddons = (addonsQuery.data ?? []).filter((a) => a.status === "ACTIVE");
+  const addonsQuery = useBookableAddonsForServiceQuery(businessId, primaryServiceId);
+  const activeAddons = addonsQuery.data?.addons ?? [];
+
+  // A real data-load failure (e.g. an authorization mismatch) must never be indistinguishable
+  // from "genuinely nothing to show" — surfaced the same way this dashboard already surfaces
+  // load errors elsewhere (see ArchivedServicesList.tsx/ServicesListPage.tsx's own pattern).
+  useEffect(() => {
+    if (servicesQuery.isError) toast.error(toUserMessage(servicesQuery.error));
+  }, [servicesQuery.isError, servicesQuery.error]);
+  useEffect(() => {
+    if (addonsQuery.isError) toast.error(toUserMessage(addonsQuery.error));
+  }, [addonsQuery.isError, addonsQuery.error]);
+  useEffect(() => {
+    if (staffListQuery.isError) toast.error(toUserMessage(staffListQuery.error));
+  }, [staffListQuery.isError, staffListQuery.error]);
 
   // Server-authoritative product limit on service lines per booking (Batch 21). The backend
   // re-validates on create regardless; this only stops the UI going over.
@@ -184,7 +214,7 @@ export default function DashboardBookingForm({
     }
   };
 
-  const estimatePriceCents = (service: Service, input: PricingInput): number => {
+  const estimatePriceCents = (service: CatalogService, input: PricingInput): number => {
     if (service.pricingMode === "FIXED" && service.fixedPricing) return service.fixedPricing.priceCents;
     if (service.pricingMode === "HOURLY" && service.hourlyPricing) {
       return (input.hours ?? service.hourlyPricing.minHours) * service.hourlyPricing.ratePerHourCents;
@@ -199,7 +229,7 @@ export default function DashboardBookingForm({
     (sum, s) => sum + estimatePriceCents(s, pricingInputByService[s.id] ?? {}),
     0,
   );
-  const selectedAddons = activeAddons.filter((a) => selectedAddonIds.includes(a.addonId));
+  const selectedAddons = activeAddons.filter((a) => selectedAddonIds.includes(a.id));
   const addonsTotalCents = selectedAddons.reduce((sum, a) => sum + (a.priceCents ?? 0), 0);
   const totalCents = servicesTotalCents + addonsTotalCents;
 
@@ -210,7 +240,9 @@ export default function DashboardBookingForm({
   const eligibleStaff = selectedServices.length
     ? selectedServices
         .reduce<{ membershipId: string; name: string }[] | undefined>((acc, service) => {
-          const active = service.assignedStaff.filter((m) => m.employmentActive);
+          const active = service.assignedStaffMembershipIds
+            .map((id) => staffById.get(id))
+            .filter((m): m is NonNullable<typeof m> => m !== undefined && m.employmentActive);
           if (!acc) return active.map((m) => ({ membershipId: m.membershipId, name: m.name }));
           return acc.filter((m) => active.some((a) => a.membershipId === m.membershipId));
         }, undefined) ?? []
@@ -852,9 +884,9 @@ export default function DashboardBookingForm({
                     {addonsQuery.isLoading ? "Loading add-ons…" : activeAddons.length === 0 ? "No add-ons available" : "Choose add-ons..."}
                   </option>
                   {activeAddons
-                    .filter((a) => !selectedAddonIds.includes(a.addonId))
+                    .filter((a) => !selectedAddonIds.includes(a.id))
                     .map((a) => (
-                      <option key={a.addonId} value={a.addonId}>
+                      <option key={a.id} value={a.id}>
                         {a.name} {a.priceCents !== undefined ? `(${formatEuro(a.priceCents)})` : ""}
                       </option>
                     ))}
@@ -864,14 +896,14 @@ export default function DashboardBookingForm({
             </div>
 
             {selectedAddons.map((addon) => (
-              <div key={addon.addonId} className="bg-white border border-neutral-200/50 rounded-xl p-4 flex items-center justify-between shadow-sm select-none">
+              <div key={addon.id} className="bg-white border border-neutral-200/50 rounded-xl p-4 flex items-center justify-between shadow-sm select-none">
                 <span className="font-inter font-medium text-[17px] text-[#0D0D0D]">{addon.name}</span>
                 <div className="flex items-center gap-4">
                   <span className="font-inter font-medium text-lg text-[#0D0D0D]">
                     {addon.priceCents !== undefined ? formatEuro(addon.priceCents) : "—"}
                   </span>
                   <button
-                    onClick={() => setSelectedAddonIds(selectedAddonIds.filter((id) => id !== addon.addonId))}
+                    onClick={() => setSelectedAddonIds(selectedAddonIds.filter((id) => id !== addon.id))}
                     className="w-6 h-6 rounded-full hover:bg-neutral-100 flex items-center justify-center transition-all"
                   >
                     <HugeiconsIcon icon={Cancel01Icon} className="w-4 h-4 text-[#0C0C0C]" />

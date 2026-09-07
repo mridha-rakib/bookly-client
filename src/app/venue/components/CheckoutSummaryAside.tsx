@@ -15,6 +15,11 @@ export type PromoInputStatus = "idle" | "applying" | "applied" | "error";
 
 interface CheckoutSummaryAsideProps {
   bookingStep: WizardStep | null;
+  /** True only for a Package Deal purchase (session 1) — approved rule: the deposit-now/
+   * balance-at-venue mechanics are identical to a normal booking, but what unlocks and how
+   * cancellation/no-show work afterwards is different enough that the generic copy below would
+   * be misleading if left unchanged for this flow. Never affects normal booking copy. */
+  isPackagePurchase?: boolean;
   business?: CatalogBusiness;
   preview?: BookingCreationPreview;
   isPreviewLoading?: boolean;
@@ -35,6 +40,7 @@ interface CheckoutSummaryAsideProps {
 
 export default function CheckoutSummaryAside({
   bookingStep,
+  isPackagePurchase,
   business,
   preview,
   isPreviewLoading,
@@ -157,7 +163,9 @@ export default function CheckoutSummaryAside({
             <div className="absolute bottom-full right-[-80px] sm:right-[-40px] mb-3 hidden group-hover:flex w-[290px] sm:w-[420px] md:w-[480px] bg-white border border-neutral-200 shadow-2xl rounded-xl p-5 gap-2.5 z-50 text-left font-inter text-[14.5px] leading-[22px] text-[#666666] items-start transition-opacity duration-200">
               <HugeiconsIcon icon={InformationCircleIcon} size={22} className="text-black shrink-0 mt-0.5" />
               <span>
-                Charged now to secure your slot — 20% of the service price, minimum €5, maximum €35. Deducted from your total at the venue.
+                {isPackagePurchase
+                  ? "Charged now to secure your first session — 20% of the package price, minimum €5, maximum €35. The remaining balance is paid at the venue, and settling it in full is what unlocks booking your remaining sessions."
+                  : "Charged now to secure your slot — 20% of the service price, minimum €5, maximum €35. Deducted from your total at the venue."}
               </span>
             </div>
           </div>
@@ -205,19 +213,41 @@ export default function CheckoutSummaryAside({
 
       {showPolicy && (
         <div className="bg-[#FFFFFF] border border-neutral-200 rounded-xl p-5 mt-3 flex flex-col gap-3 font-inter text-[#757575] text-[13.9px] leading-relaxed w-full">
-          <p>
-            A {financials ? formatBookingMoney(financials.depositCents) : "deposit"} is charged now to secure your
-            appointment and will be deducted from your total service cost.
-          </p>
-          <p>
-            You will pay the remaining {financials ? formatBookingMoney(financials.balanceDueCents) : ""} at the
-            venue by cash or card.
-          </p>
-          <p>Payment is processed securely via Stripe. Your card is also stored for the Business&apos;s cancellation/no-show policy below.</p>
-          <p className="pt-2 border-t border-neutral-100 text-[12px] leading-normal italic">
-            Cancellation and no-show fees, if any, are set by {business?.name ?? "this Business"} and are calculated
-            based on the full service price, not the deposit amount.
-          </p>
+          {isPackagePurchase ? (
+            <>
+              <p>
+                A {financials ? formatBookingMoney(financials.depositCents) : "deposit"} is charged now to secure
+                your first session and will be deducted from the package&apos;s total cost.
+              </p>
+              <p>
+                You will pay the remaining {financials ? formatBookingMoney(financials.balanceDueCents) : ""} at the
+                venue by cash or card. Your remaining sessions cannot be booked until the Business records this
+                balance as fully paid.
+              </p>
+              <p>Payment is processed securely via Stripe. Your card is also stored for the Business&apos;s cancellation/no-show policy below.</p>
+              <p className="pt-2 border-t border-neutral-100 text-[12px] leading-normal italic">
+                Cancelling a scheduled session on time returns it to your package balance with no fee. A late
+                cancellation or a no-show forfeits that session — the lost session is the only penalty; no
+                additional fee is charged on top.
+              </p>
+            </>
+          ) : (
+            <>
+              <p>
+                A {financials ? formatBookingMoney(financials.depositCents) : "deposit"} is charged now to secure your
+                appointment and will be deducted from your total service cost.
+              </p>
+              <p>
+                You will pay the remaining {financials ? formatBookingMoney(financials.balanceDueCents) : ""} at the
+                venue by cash or card.
+              </p>
+              <p>Payment is processed securely via Stripe. Your card is also stored for the Business&apos;s cancellation/no-show policy below.</p>
+              <p className="pt-2 border-t border-neutral-100 text-[12px] leading-normal italic">
+                Cancellation and no-show fees, if any, are set by {business?.name ?? "this Business"} and are calculated
+                based on the full service price, not the deposit amount.
+              </p>
+            </>
+          )}
         </div>
       )}
     </div>

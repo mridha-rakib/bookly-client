@@ -25,6 +25,10 @@ import {
   useFinalizeCustomerBookingMutation,
   usePreviewCustomerBookingMutation,
 } from "@/lib/bookings/hooks";
+import {
+  usePreviewPackagePurchaseMutation,
+  usePurchasePackageMutation,
+} from "@/lib/packages/hooks";
 import type { BookingDetail, CreateBookingInput } from "@/lib/api/bookings";
 import { getStripe } from "@/lib/payments/stripe-client";
 import { formatBookingMoney } from "@/lib/bookings/format";
@@ -136,7 +140,23 @@ function VenueDetailsContent() {
 
   const previewMutation = usePreviewCustomerBookingMutation();
   const finalizeMutation = useFinalizeCustomerBookingMutation();
-  const preview = previewMutation.data && "financials" in previewMutation.data ? previewMutation.data : undefined;
+
+  // Package Deal purchase (Package Deal audit) — a Package Service is bought through its own
+  // dedicated preview/purchase endpoints (always exactly one line, session 1 only, never a
+  // per-session or per-hour price and never a Promo Code — see BookingCreationService's own
+  // "Customer: Package purchase / session redemption" doc comment). Every other step of this
+  // SAME wizard (add-ons, professionals, time, 3DS retry, confirmation) is reused verbatim.
+  const isPackagePurchaseFlow = Boolean(selectedService?.isPackageDeal);
+  const previewPackageMutation = usePreviewPackagePurchaseMutation();
+  const purchasePackageMutation = usePurchasePackageMutation();
+
+  const preview = isPackagePurchaseFlow
+    ? previewPackageMutation.data && "financials" in previewPackageMutation.data
+      ? previewPackageMutation.data
+      : undefined
+    : previewMutation.data && "financials" in previewMutation.data
+      ? previewMutation.data
+      : undefined;
 
   // Batch 13 — Promo Code. `appliedPromoCode` is the server-CONFIRMED code (only set after a
   // successful preview resolves it); `promoCodeInput` is the raw, uncommitted text field.
@@ -177,6 +197,14 @@ function VenueDetailsContent() {
     if (bookingStep !== "time" && bookingStep !== "payment") return;
     const input = buildBookingInput();
     if (!input) return;
+
+    if (isPackagePurchaseFlow) {
+      // No Promo Code support for a Package purchase (deferred — see the Package Deal audit)
+      // and no self-heal needed since one is never applied here.
+      previewPackageMutation.mutate({ businessId: venueId, input });
+      return;
+    }
+
     previewMutation.mutate(
       { businessId: venueId, input },
       {
@@ -195,7 +223,7 @@ function VenueDetailsContent() {
       },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookingStep, selectedServiceId, selectedAddonIds.join(","), selectedProfessional, selectedSlot?.startAt, appliedPromoCode]);
+  }, [bookingStep, selectedServiceId, selectedAddonIds.join(","), selectedProfessional, selectedSlot?.startAt, appliedPromoCode, isPackagePurchaseFlow]);
 
   const handleApplyPromo = async () => {
     const code = promoCodeInput.trim();
@@ -293,9 +321,17 @@ function VenueDetailsContent() {
       // awaited) with NO error shown, leaving the customer staring at a dead button. Every
       // finalize call in this flow must always resolve to either a confirmed booking or a
       // visible, real error — never a silent no-op (see spec section 6's own requirement).
-      let result: Awaited<ReturnType<typeof finalizeMutation.mutateAsync>>;
+      // A Package purchase goes through its own finalize call (still returns the exact same
+      // FinalizeBookingResult shape, so the 3DS/confirmation handling below is identical either
+      // way — see BookingCreationService.finalizePackagePurchase's own doc comment).
+      const submitFinalize = () =>
+        isPackagePurchaseFlow
+          ? purchasePackageMutation.mutateAsync({ businessId: venueId, input })
+          : finalizeMutation.mutateAsync({ businessId: venueId, input });
+
+      let result: Awaited<ReturnType<typeof submitFinalize>>;
       try {
-        result = await finalizeMutation.mutateAsync({ businessId: venueId, input });
+        result = await submitFinalize();
       } catch (error) {
         setWalletError(toUserMessage(error));
         return;
@@ -317,7 +353,7 @@ function VenueDetailsContent() {
             setWalletError(confirmResult.error.message ?? "Payment authentication failed.");
             return;
           }
-          const retry = await finalizeMutation.mutateAsync({ businessId: venueId, input });
+          const retry = await submitFinalize();
           if (!("clientSecret" in retry)) {
             setConfirmedBooking(retry);
             setBookingStep("confirmed");
@@ -859,7 +895,7 @@ function VenueDetailsContent() {
                                   {formatBookingMoney(service.perPersonPricing.ratePerPersonCents)} per person • min {service.perPersonPricing.minPersons} person • max {service.perPersonPricing.maxPersons} person
                                 </span>
                               )}
-                              {(service.pricingMode === "FIXED" || service.pricingMode === "PACKAGE") && durationText && (
+                              {(service.pricingMode === "FIXED" || service.isPackageDeal) && durationText && (
                                 <span className="text-sm text-[#767676]">{durationText}</span>
                               )}
 
@@ -1821,22 +1857,34 @@ function VenueDetailsContent() {
             {bookingStep !== "confirmed" && (
               <CheckoutSummaryAside
                 bookingStep={bookingStep}
+                isPackagePurchase={isPackagePurchaseFlow}
                 business={catalogQuery.data?.business}
                 preview={preview}
-                isPreviewLoading={previewMutation.isPending}
-                previewError={previewMutation.isError || finalizeMutation.isError}
+                isPreviewLoading={
+                  isPackagePurchaseFlow ? previewPackageMutation.isPending : previewMutation.isPending
+                }
+                previewError={
+                  isPackagePurchaseFlow
+                    ? previewPackageMutation.isError || purchasePackageMutation.isError
+                    : previewMutation.isError || finalizeMutation.isError
+                }
                 showPolicy={showPolicy}
                 setShowPolicy={setShowPolicy}
                 onContinue={handleWizardContinue}
                 canContinue={canContinueWizard}
-                isSubmitting={finalizeMutation.isPending || confirming3ds}
+                isSubmitting={
+                  (isPackagePurchaseFlow ? purchasePackageMutation.isPending : finalizeMutation.isPending) ||
+                  confirming3ds
+                }
                 submitError={walletError}
-                promoCodeInput={promoCodeInput}
-                setPromoCodeInput={setPromoCodeInput}
-                promoStatus={promoStatus}
-                promoErrorMessage={promoErrorMessage}
-                onApplyPromo={handleApplyPromo}
-                onRemovePromo={handleRemovePromo}
+                // No Promo Code support for a Package purchase (deferred) — omitting these
+                // props hides the whole section (CheckoutSummaryAside's own guard).
+                promoCodeInput={isPackagePurchaseFlow ? undefined : promoCodeInput}
+                setPromoCodeInput={isPackagePurchaseFlow ? undefined : setPromoCodeInput}
+                promoStatus={isPackagePurchaseFlow ? undefined : promoStatus}
+                promoErrorMessage={isPackagePurchaseFlow ? undefined : promoErrorMessage}
+                onApplyPromo={isPackagePurchaseFlow ? undefined : handleApplyPromo}
+                onRemovePromo={isPackagePurchaseFlow ? undefined : handleRemovePromo}
               />
             )}
 

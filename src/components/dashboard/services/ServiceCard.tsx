@@ -63,7 +63,7 @@ export default function ServiceCard({
   const discount = formatDiscount(service);
   const isDraft = service.status === "DRAFT";
   const isActive = service.status === "ACTIVE";
-  const title = service.isPackageDeal ? service.name : service.name;
+  const title = service.name;
   const subtitle = service.serviceCategoryName;
 
   return (
@@ -115,7 +115,7 @@ export default function ServiceCard({
                     }}
                     className="px-4 py-2 hover:bg-neutral-50 w-full text-left cursor-pointer text-[#D85A30]"
                   >
-                    Delete
+                    Archive
                   </button>
                 </div>
               </>
@@ -226,6 +226,11 @@ export default function ServiceCard({
         {service.isFeatured && (
           <span className="bg-[#E9F2FF] text-[#2D47C8] text-xs font-normal px-2.5 py-1 rounded-full">
             Featured
+          </span>
+        )}
+        {service.isPackageDeal && service.packagePricing && (
+          <span className="bg-[#F3E9FF] text-[#6B2DC8] text-xs font-normal px-2.5 py-1 rounded-full">
+            {service.packagePricing.sessionsInPackage} sessions
           </span>
         )}
         {discount && (

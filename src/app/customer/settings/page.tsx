@@ -17,7 +17,11 @@ import {
   useChangeMyPasswordMutation,
   useCurrentUserQuery,
   useDeleteMyAccountMutation,
+  useLinkAppleAccountMutation,
+  useLinkFacebookAccountMutation,
   useLinkGoogleAccountMutation,
+  useUnlinkAppleAccountMutation,
+  useUnlinkFacebookAccountMutation,
   useUnlinkGoogleAccountMutation,
   useUpdateMyProfileMutation,
 } from "@/lib/auth/hooks";
@@ -101,26 +105,32 @@ function SettingsPageContent() {
     setTimeout(() => setShowToast(false), 3500);
   };
 
-  // Linked Accounts (Phase 1 — Google only). Facebook / Apple stay static placeholders below.
+  // Linked Accounts. Google + Facebook + Apple are real, server-backed links.
   const [isUnlinkGoogleModalOpen, setIsUnlinkGoogleModalOpen] = useState(false);
+  const [isUnlinkFacebookModalOpen, setIsUnlinkFacebookModalOpen] = useState(false);
+  const [isUnlinkAppleModalOpen, setIsUnlinkAppleModalOpen] = useState(false);
   const linkGoogleMutation = useLinkGoogleAccountMutation();
+  const linkFacebookMutation = useLinkFacebookAccountMutation();
+  const linkAppleMutation = useLinkAppleAccountMutation();
 
-  // Return trip from the Google consent screen: the backend redirects here with
-  // ?linkedAccount=google&result=connected|error. Show a toast, then strip the params so a
-  // refresh doesn't re-fire it. The ["auth","me"] query refetches on this fresh page load, so
-  // the Google row already reflects the new state by the time this runs. Deferred to a timer so
+  // Return trip from a provider consent screen: the backend redirects here with
+  // ?linkedAccount=google|facebook|apple&result=connected|error. Show a toast, then strip the params so
+  // a refresh doesn't re-fire it. The ["auth","me"] query refetches on this fresh page load, so
+  // the provider row already reflects the new state by the time this runs. Deferred to a timer so
   // the toast state update lands after mount rather than synchronously inside the effect.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("linkedAccount") !== "google") {
+    const provider = params.get("linkedAccount");
+    if (provider !== "google" && provider !== "facebook" && provider !== "apple") {
       return;
     }
+    const label = provider === "google" ? "Google" : provider === "facebook" ? "Facebook" : "Apple";
     const connected = params.get("result") === "connected";
     const timer = setTimeout(() => {
       showSuccessToast(
         connected
-          ? "Your Google account has been linked."
-          : "We couldn't link your Google account. Please try again.",
+          ? `Your ${label} account has been linked.`
+          : `We couldn't link your ${label} account. Please try again.`,
       );
       router.replace("/customer/settings");
     }, 0);
@@ -140,6 +150,12 @@ function SettingsPageContent() {
 
   const googleAccount: LinkedAccountSummary | undefined = meQuery.data?.linkedAccounts?.find(
     (account) => account.provider === "GOOGLE",
+  );
+  const facebookAccount: LinkedAccountSummary | undefined = meQuery.data?.linkedAccounts?.find(
+    (account) => account.provider === "FACEBOOK",
+  );
+  const appleAccount: LinkedAccountSummary | undefined = meQuery.data?.linkedAccounts?.find(
+    (account) => account.provider === "APPLE",
   );
 
   const handleNotificationToggle = (channel: NotificationChannel, next: boolean) => {
@@ -274,9 +290,10 @@ function SettingsPageContent() {
         {/* Sections Container */}
         <div className="w-full flex flex-col gap-8">
 
-          {/* Linked Accounts Section — Google is a real, server-backed link (Phase 1: link via
-              OAuth, view the connected account, unlink with password re-auth). Facebook and Apple
-              have no OAuth backend and stay static "not available yet" placeholders. */}
+          {/* Linked Accounts Section — Google and Facebook are real, server-backed links (link
+              via OAuth, view the connected account, unlink with password re-auth). Linking only —
+              neither is a "Continue with …" login. Apple has no OAuth backend and stays a static
+              "not available yet" placeholder. */}
           <section className="bg-white border border-[#C6C6CB] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-xl flex flex-col items-start overflow-hidden">
             <div className="w-full box-border border-b border-[#C6C6CB] px-6 py-4 flex flex-row items-center gap-2">
               <div className="w-5 h-5 flex items-center justify-center">
@@ -317,6 +334,7 @@ function SettingsPageContent() {
                   <button
                     type="button"
                     disabled={linkGoogleMutation.isPending}
+                    aria-busy={linkGoogleMutation.isPending}
                     onClick={() =>
                       linkGoogleMutation.mutate(undefined, {
                         onError: (error) => showSuccessToast(toUserMessage(error)),
@@ -324,38 +342,94 @@ function SettingsPageContent() {
                     }
                     className="font-manrope font-semibold text-sm text-[#4E5F78] px-3 py-1.5 rounded-md hover:bg-neutral-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {linkGoogleMutation.isPending ? "Redirecting…" : "Link"}
+                    {linkGoogleMutation.isPending ? "Connecting…" : "Link"}
                   </button>
                 )}
               </div>
 
-              {/* Facebook / Apple — no OAuth backend for these providers yet. */}
-              {[
-                { name: "Facebook", icon: "/settingsIcons/facebook.svg" },
-                { name: "Apple", icon: "/settingsIcons/apple.svg" },
-              ].map((provider) => (
-                <div
-                  key={provider.name}
-                  className="w-full box-border flex flex-row justify-between items-center p-4 border border-[#C6C6CB] rounded-lg"
-                >
-                  <div className="flex flex-row items-center gap-4">
-                    <div className="w-10 h-10 bg-[#EBE7E7] rounded-full flex items-center justify-center shrink-0">
-                      <Image src={provider.icon} alt={provider.name} className="w-6 h-6 object-contain" width={24} height={24} />
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="font-manrope font-bold text-base text-[#020305]">{provider.name}</span>
-                      <span className="font-manrope font-normal text-sm text-[#4E5F78]">Not connected</span>
-                    </div>
+              {/* Facebook — real. Server state comes from meQuery.data.linkedAccounts. */}
+              <div className="w-full box-border flex flex-row justify-between items-center p-4 border border-[#C6C6CB] rounded-lg">
+                <div className="flex flex-row items-center gap-4">
+                  <div className="w-10 h-10 bg-[#EBE7E7] rounded-full flex items-center justify-center shrink-0">
+                    <Image src="/settingsIcons/facebook.svg" alt="Facebook" className="w-6 h-6 object-contain" width={24} height={24} />
                   </div>
+                  <div className="flex flex-col">
+                    <span className="font-manrope font-bold text-base text-[#020305]">Facebook</span>
+                    <span className="font-manrope font-normal text-sm text-[#4E5F78]">
+                      {facebookAccount
+                        ? facebookAccount.displayName
+                          ? `${facebookAccount.displayName} · ${facebookAccount.email}`
+                          : facebookAccount.email
+                        : "Not connected"}
+                    </span>
+                  </div>
+                </div>
+                {facebookAccount ? (
                   <button
                     type="button"
-                    onClick={() => showSuccessToast(`Linking a ${provider.name} account isn't available yet.`)}
-                    className="font-manrope font-semibold text-sm text-[#4E5F78] px-3 py-1.5 rounded-md hover:bg-neutral-50 transition-colors"
+                    onClick={() => setIsUnlinkFacebookModalOpen(true)}
+                    className="font-manrope font-semibold text-sm text-[#BA1A1A] px-3 py-1.5 rounded-md hover:bg-neutral-50 transition-colors"
                   >
-                    Link
+                    Unlink
                   </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={linkFacebookMutation.isPending}
+                    aria-busy={linkFacebookMutation.isPending}
+                    onClick={() =>
+                      linkFacebookMutation.mutate(undefined, {
+                        onError: (error) => showSuccessToast(toUserMessage(error)),
+                      })
+                    }
+                    className="font-manrope font-semibold text-sm text-[#4E5F78] px-3 py-1.5 rounded-md hover:bg-neutral-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {linkFacebookMutation.isPending ? "Connecting…" : "Link"}
+                  </button>
+                )}
+              </div>
+
+              {/* Apple — real. Server state comes from meQuery.data.linkedAccounts. */}
+              <div className="w-full box-border flex flex-row justify-between items-center p-4 border border-[#C6C6CB] rounded-lg">
+                <div className="flex flex-row items-center gap-4">
+                  <div className="w-10 h-10 bg-[#EBE7E7] rounded-full flex items-center justify-center shrink-0">
+                    <Image src="/settingsIcons/apple.svg" alt="Apple" className="w-6 h-6 object-contain" width={24} height={24} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="font-manrope font-bold text-base text-[#020305]">Apple</span>
+                    <span className="font-manrope font-normal text-sm text-[#4E5F78]">
+                      {appleAccount
+                        ? appleAccount.displayName
+                          ? `${appleAccount.displayName} · ${appleAccount.email}`
+                          : appleAccount.email
+                        : "Not connected"}
+                    </span>
+                  </div>
                 </div>
-              ))}
+                {appleAccount ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsUnlinkAppleModalOpen(true)}
+                    className="font-manrope font-semibold text-sm text-[#BA1A1A] px-3 py-1.5 rounded-md hover:bg-neutral-50 transition-colors"
+                  >
+                    Unlink
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={linkAppleMutation.isPending}
+                    aria-busy={linkAppleMutation.isPending}
+                    onClick={() =>
+                      linkAppleMutation.mutate(undefined, {
+                        onError: (error) => showSuccessToast(toUserMessage(error)),
+                      })
+                    }
+                    className="font-manrope font-semibold text-sm text-[#4E5F78] px-3 py-1.5 rounded-md hover:bg-neutral-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {linkAppleMutation.isPending ? "Connecting…" : "Link"}
+                  </button>
+                )}
+              </div>
             </div>
           </section>
 
@@ -651,11 +725,36 @@ function SettingsPageContent() {
 
       {/* Unlink Google Dialog Modal */}
       {isUnlinkGoogleModalOpen && (
-        <UnlinkGoogleModal
+        <UnlinkProviderModal
+          provider="Google"
           onClose={() => setIsUnlinkGoogleModalOpen(false)}
           onUnlinked={() => {
             setIsUnlinkGoogleModalOpen(false);
             showSuccessToast("Your Google account has been unlinked.");
+          }}
+        />
+      )}
+
+      {/* Unlink Facebook Dialog Modal */}
+      {isUnlinkFacebookModalOpen && (
+        <UnlinkProviderModal
+          provider="Facebook"
+          onClose={() => setIsUnlinkFacebookModalOpen(false)}
+          onUnlinked={() => {
+            setIsUnlinkFacebookModalOpen(false);
+            showSuccessToast("Your Facebook account has been unlinked.");
+          }}
+        />
+      )}
+
+      {/* Unlink Apple Dialog Modal */}
+      {isUnlinkAppleModalOpen && (
+        <UnlinkProviderModal
+          provider="Apple"
+          onClose={() => setIsUnlinkAppleModalOpen(false)}
+          onUnlinked={() => {
+            setIsUnlinkAppleModalOpen(false);
+            showSuccessToast("Your Apple account has been unlinked.");
           }}
         />
       )}
@@ -765,19 +864,30 @@ function DeleteAccountModal({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * Unlink-Google confirmation dialog. Same modal recipe as DeleteAccountModal (inline overlay,
- * local state, `toUserMessage` inline errors, `isPending`-gated buttons). Re-verifies the current
- * password — the backend enforces it too, and also blocks removing the account's last sign-in
- * method. On success the mutation invalidates ["auth","me"] so the Google row re-renders.
+ * Unlink confirmation dialog, shared by Google, Facebook and Apple. Same modal recipe as
+ * DeleteAccountModal (inline overlay, local state, `toUserMessage` inline errors,
+ * `isPending`-gated buttons). Re-verifies the current password — the backend enforces it too, and
+ * also blocks removing the account's last sign-in method. On success the mutation invalidates
+ * ["auth","me"] so the provider row re-renders.
  */
-function UnlinkGoogleModal({
+function UnlinkProviderModal({
+  provider,
   onClose,
   onUnlinked,
 }: {
+  provider: "Google" | "Facebook" | "Apple";
   onClose: () => void;
   onUnlinked: () => void;
 }) {
-  const unlinkMutation = useUnlinkGoogleAccountMutation();
+  const unlinkGoogleMutation = useUnlinkGoogleAccountMutation();
+  const unlinkFacebookMutation = useUnlinkFacebookAccountMutation();
+  const unlinkAppleMutation = useUnlinkAppleAccountMutation();
+  const unlinkMutation =
+    provider === "Google"
+      ? unlinkGoogleMutation
+      : provider === "Facebook"
+        ? unlinkFacebookMutation
+        : unlinkAppleMutation;
   const [currentPassword, setCurrentPassword] = useState("");
   const [error, setError] = useState("");
 
@@ -798,9 +908,9 @@ function UnlinkGoogleModal({
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[300] p-4">
       <div className="bg-white rounded-xl shadow-2xl border border-[#C6C6CB] p-6 w-full max-w-[480px] animate-in fade-in zoom-in-95 duration-200">
-        <h3 className="font-manrope font-bold text-xl text-[#020305] mb-1">Unlink Google</h3>
+        <h3 className="font-manrope font-bold text-xl text-[#020305] mb-1">Unlink {provider}</h3>
         <p className="font-manrope text-sm text-[#4E5F78] mb-4">
-          Your Google account will no longer be linked to Bookly. You can link it again at any
+          Your {provider} account will no longer be linked to Bookly. You can link it again at any
           time. Enter your current password to confirm.
         </p>
 
@@ -835,7 +945,7 @@ function UnlinkGoogleModal({
               disabled={!canSubmit}
               className="px-4 py-2 bg-[#BA1A1A] hover:bg-[#a01414] text-white rounded-lg font-manrope font-semibold text-sm cursor-pointer disabled:opacity-60"
             >
-              {unlinkMutation.isPending ? "Unlinking..." : "Unlink Google"}
+              {unlinkMutation.isPending ? "Unlinking..." : `Unlink ${provider}`}
             </button>
           </div>
         </form>

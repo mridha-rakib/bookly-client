@@ -52,6 +52,7 @@ import {
   useServiceCategoriesQuery,
   useUpdateServiceCategoryMutation
 } from "@/lib/services/hooks";
+import type { ServiceCategory } from "@/lib/api/services";
 
 interface DashboardCreateBusinessProps {
   onBack: () => void;
@@ -146,11 +147,26 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
   // Custom Service Categories — real, Business-scoped persistence (Services feature). Only
   // available once the Business exists (edit/view), same rule as the other real sections
   // below — "create" mode has no businessId yet, so there is nowhere to persist a category.
-  const customCategoriesQuery = useServiceCategoriesQuery(mode !== "create" ? businessId : undefined);
-  const customCategories = (customCategoriesQuery.data ?? []).map((category) => category.name);
+  // `includeInactive: true` so archived categories are discoverable here for Reactivate —
+  // ServiceForm's own category picker is a SEPARATE query that stays active-only (see
+  // ServiceForm.tsx's own useServiceCategoriesQuery call, unchanged by this).
+  const customCategoriesQuery = useServiceCategoriesQuery(
+    mode !== "create" ? businessId : undefined,
+    true,
+  );
+  const activeServiceCategories = (customCategoriesQuery.data ?? []).filter((c) => c.active);
+  const archivedServiceCategories = (customCategoriesQuery.data ?? []).filter((c) => !c.active);
+  const customCategories = activeServiceCategories.map((category) => category.name);
+  const archivedCustomCategories = archivedServiceCategories.map((category) => category.name);
   const createServiceCategoryMutation = useCreateServiceCategoryMutation();
   const updateServiceCategoryMutation = useUpdateServiceCategoryMutation();
   const [newCatInput, setNewCatInput] = useState("");
+  // Rename dialog — name-keyed the same way removeCustomCategory already is (the backend's
+  // unique index on {businessId, nameKey} spans active AND archived rows, so a name uniquely
+  // identifies at most one category for this business at any time).
+  const [renamingCategory, setRenamingCategory] = useState<ServiceCategory | null>(null);
+  const [renameInput, setRenameInput] = useState("");
+  const [reactivatingCategoryName, setReactivatingCategoryName] = useState<string | null>(null);
 
   const addCustomCategory = () => {
     const name = newCatInput.trim();
@@ -179,6 +195,58 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     updateServiceCategoryMutation.mutate(
       { businessId, categoryId: category.id, input: { active: false } },
       { onError: (error) => toast.error(toUserMessage(error)) }
+    );
+  };
+
+  const startRenameCategory = (name: string) => {
+    const category = customCategoriesQuery.data?.find((candidate) => candidate.name === name);
+    if (!category) {
+      return;
+    }
+    setRenamingCategory(category);
+    setRenameInput(category.name);
+  };
+
+  // Same persisted category/ID — a PATCH {name}, never a create+archive pair (no duplicate
+  // category, no orphaned Service reference; see service.service.ts's updateCategory).
+  const submitRenameCategory = () => {
+    if (!businessId || !renamingCategory) {
+      return;
+    }
+    const name = renameInput.trim();
+    if (!name || name === renamingCategory.name) {
+      setRenamingCategory(null);
+      return;
+    }
+    updateServiceCategoryMutation.mutate(
+      { businessId, categoryId: renamingCategory.id, input: { name } },
+      {
+        onSuccess: () => setRenamingCategory(null),
+        // Dialog stays open on failure (e.g. SERVICE_CATEGORY_ALREADY_EXISTS for a name that
+        // collides with another active OR archived category) so the Owner can correct it.
+        onError: (error) => toast.error(toUserMessage(error))
+      }
+    );
+  };
+
+  // Same persisted category/ID — a PATCH {active:true}, never a new category (no duplicate,
+  // no Service reassignment; see service.service.ts's updateCategory).
+  const reactivateCustomCategory = (name: string) => {
+    if (!businessId) {
+      return;
+    }
+    const category = customCategoriesQuery.data?.find((candidate) => candidate.name === name);
+    if (!category) {
+      return;
+    }
+    setReactivatingCategoryName(name);
+    updateServiceCategoryMutation.mutate(
+      { businessId, categoryId: category.id, input: { active: true } },
+      {
+        onSuccess: () => toast.success(`"${category.name}" reactivated`),
+        onError: (error) => toast.error(toUserMessage(error)),
+        onSettled: () => setReactivatingCategoryName(null)
+      }
     );
   };
 
@@ -861,6 +929,10 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
           setNewCatInput={setNewCatInput}
           addCustomCategory={addCustomCategory}
           removeCustomCategory={removeCustomCategory}
+          archivedCategories={archivedCustomCategories}
+          onRenameCategory={startRenameCategory}
+          onReactivateCategory={reactivateCustomCategory}
+          reactivatingCategory={reactivatingCategoryName}
         />
 
       </fieldset>
@@ -984,7 +1056,51 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
         </div>
 
       </div>
-    
+
+      {/* Rename Service Category dialog */}
+      {renamingCategory && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={() => setRenamingCategory(null)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col gap-1">
+              <span className="font-poppins font-semibold text-base text-[#111111]">
+                Rename Service Category
+              </span>
+            </div>
+            <input
+              type="text"
+              value={renameInput}
+              onChange={(e) => setRenameInput(e.target.value)}
+              maxLength={60}
+              autoFocus
+              className="h-10 bg-white border border-[#D3D1C7] rounded-lg px-3 text-sm font-poppins focus:outline-none focus:border-black"
+            />
+            <div className="flex flex-row justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRenamingCategory(null)}
+                className="h-9 px-4 bg-[#EBEBEB] hover:bg-neutral-200 text-[#757575] font-poppins font-semibold text-xs rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={updateServiceCategoryMutation.isPending || !renameInput.trim()}
+                onClick={submitRenameCategory}
+                className="h-9 px-4 bg-[#1C1B1C] hover:bg-black text-white font-poppins font-medium text-xs rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       </div></main>
   );
 }
