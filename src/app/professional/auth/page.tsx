@@ -13,7 +13,9 @@ import SocialButton from "@/components/auth/SocialButton";
 import { Spinner } from "@/components/ui/spinner";
 import type { VisitType } from "@/lib/api/auth";
 import {
+  useProfessionalAppleAuthMutation,
   useProfessionalEntryMutation,
+  useProfessionalFacebookAuthMutation,
   useProfessionalGoogleAuthMutation,
   useSendProfessionalEmailOtpMutation,
 } from "@/lib/auth/hooks";
@@ -33,6 +35,8 @@ function ProfessionalAuthContent() {
   const professionalEntry = useProfessionalEntryMutation();
   const sendEmailOtp = useSendProfessionalEmailOtpMutation();
   const googleAuth = useProfessionalGoogleAuthMutation();
+  const facebookAuth = useProfessionalFacebookAuthMutation();
+  const appleAuth = useProfessionalAppleAuthMutation();
   const isSubmitting = professionalEntry.isPending || sendEmailOtp.isPending;
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
@@ -135,13 +139,17 @@ function ProfessionalAuthContent() {
           />
           <SocialButton
             provider="apple"
-            label="Continue With Apple"
-            onClick={() => console.log("Apple Login clicked")}
+            label={appleAuth.isPending ? "Redirecting to Apple…" : "Continue With Apple"}
+            onClick={() => appleAuth.mutate(toBackendVisitType(visitType))}
+            disabled={appleAuth.isPending}
+            aria-busy={appleAuth.isPending}
           />
           <SocialButton
             provider="facebook"
-            label="Continue With Facebook"
-            onClick={() => console.log("Facebook Login clicked")}
+            label={facebookAuth.isPending ? "Redirecting to Facebook…" : "Continue With Facebook"}
+            onClick={() => facebookAuth.mutate(toBackendVisitType(visitType))}
+            disabled={facebookAuth.isPending}
+            aria-busy={facebookAuth.isPending}
           />
         </div>
 

@@ -24,6 +24,14 @@ interface ServiceCategorySectionProps {
   setNewCatInput: (v: string) => void;
   addCustomCategory: () => void;
   removeCustomCategory: (cat: string) => void;
+  /** Archived (active:false) custom Service Categories — reactivate-only, never selectable for
+   * a new Service until reactivated. Omit/empty when there are none to show. */
+  archivedCategories?: string[];
+  /** Opens the rename flow for an active category (the parent owns the dialog/mutation). */
+  onRenameCategory?: (cat: string) => void;
+  onReactivateCategory?: (cat: string) => void;
+  /** Name of the category currently being reactivated — disables just that button. */
+  reactivatingCategory?: string | null;
 }
 
 export default function ServiceCategorySection({
@@ -35,7 +43,11 @@ export default function ServiceCategorySection({
   newCatInput,
   setNewCatInput,
   addCustomCategory,
-  removeCustomCategory
+  removeCustomCategory,
+  archivedCategories = [],
+  onRenameCategory,
+  onReactivateCategory,
+  reactivatingCategory = null
 }: ServiceCategorySectionProps) {
   const mainCategories = serviceCategoryOptions;
   const subCategories = serviceCategoryOptions;
@@ -105,10 +117,50 @@ export default function ServiceCategorySection({
             {customCategories.map((cat) => (
               <div key={cat} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#E8E8E4] text-[#111111] rounded-lg text-xs font-medium">
                 <span>{cat}</span>
-                <button type="button" onClick={() => removeCustomCategory(cat)} className="hover:text-red-500 font-bold ml-1">×</button>
+                {onRenameCategory && (
+                  <button
+                    type="button"
+                    onClick={() => onRenameCategory(cat)}
+                    className="hover:text-black/60 ml-1"
+                    aria-label={`Rename ${cat}`}
+                    title="Rename"
+                  >
+                    ✎
+                  </button>
+                )}
+                <button type="button" onClick={() => removeCustomCategory(cat)} className="hover:text-red-500 font-bold ml-1" aria-label={`Archive ${cat}`} title="Archive">×</button>
               </div>
             ))}
           </div>
+
+          {/* Archived Tabs — reactivate-only; not selectable for a new Service until reactivated */}
+          {archivedCategories.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-medium text-neutral-400 uppercase tracking-wide">
+                Archived
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {archivedCategories.map((cat) => (
+                  <div
+                    key={cat}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 text-neutral-400 rounded-lg text-xs font-medium"
+                  >
+                    <span>{cat}</span>
+                    {onReactivateCategory && (
+                      <button
+                        type="button"
+                        onClick={() => onReactivateCategory(cat)}
+                        disabled={reactivatingCategory === cat}
+                        className="text-[#111111] hover:underline font-semibold ml-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
+                      >
+                        Reactivate
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Input to Add Tab */}
           <div className="flex items-center gap-3 w-full max-w-[450px]">

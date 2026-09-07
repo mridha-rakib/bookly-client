@@ -15,7 +15,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { toUserMessage } from "@/lib/auth/messages";
 import { saveRegistrationSession } from "@/lib/auth/registration-session";
 import {
+  useCustomerAppleAuthMutation,
   useCustomerEntryMutation,
+  useCustomerFacebookAuthMutation,
   useCustomerGoogleAuthMutation,
   useSendCustomerEmailOtpMutation,
 } from "@/lib/auth/hooks";
@@ -27,6 +29,8 @@ export default function CustomerAuthPage() {
   const customerEntry = useCustomerEntryMutation();
   const sendEmailOtp = useSendCustomerEmailOtpMutation();
   const googleAuth = useCustomerGoogleAuthMutation();
+  const facebookAuth = useCustomerFacebookAuthMutation();
+  const appleAuth = useCustomerAppleAuthMutation();
   const isSubmitting = customerEntry.isPending || sendEmailOtp.isPending;
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
@@ -127,13 +131,17 @@ export default function CustomerAuthPage() {
             />
             <SocialButton
               provider="apple"
-              label="Continue With Apple"
-              onClick={() => console.log("Apple Login clicked")}
+              label={appleAuth.isPending ? "Redirecting to Apple…" : "Continue With Apple"}
+              onClick={() => appleAuth.mutate()}
+              disabled={appleAuth.isPending}
+              aria-busy={appleAuth.isPending}
             />
             <SocialButton
               provider="facebook"
-              label="Continue With Facebook"
-              onClick={() => console.log("Facebook Login clicked")}
+              label={facebookAuth.isPending ? "Redirecting to Facebook…" : "Continue With Facebook"}
+              onClick={() => facebookAuth.mutate()}
+              disabled={facebookAuth.isPending}
+              aria-busy={facebookAuth.isPending}
             />
           </div>
 

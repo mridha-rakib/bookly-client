@@ -36,10 +36,15 @@ function ProfessionalSignupContent() {
   const searchParams = useSearchParams();
   const visitType = searchParams.get("type") || "travel";
   const sessionIdParam = searchParams.get("sessionId") || "";
-  // Phase 2C — a Google-verified Business Owner arrives here from
-  // /auth/google/callback?flow=professional&status=onboarding. Their RegistrationSession already
-  // exists (Option B: no User yet), the email is Google-verified, and there is NO password.
-  const isGoogle = searchParams.get("provider") === "google";
+  // A social-verified Business Owner arrives here from
+  // /auth/<provider>/callback?flow=professional&status=onboarding. Their RegistrationSession
+  // already exists (Option B: no User yet), the email is provider-verified, and there is NO
+  // password. Same UI for Google and Facebook — the backend session already carries the provider.
+  const providerParam = searchParams.get("provider");
+  // Every social provider (google / facebook / apple) drives the same passwordless, name/email-
+  // prefilled, no-email-OTP onboarding — the backend RegistrationSession already carries which one.
+  const isGoogle =
+    providerParam === "google" || providerParam === "facebook" || providerParam === "apple";
 
   const [step, setStep] = useState<1 | 2>(1);
   const [firstName, setFirstName] = useState("");

@@ -1,6 +1,15 @@
 import type { AssignedServiceStaff, Service } from "@/lib/api/services";
 import type { BusinessCity } from "@/lib/constants/cities";
 
+/** The subset of pricing fields formatServicePrice/formatServiceDuration actually read —
+ * satisfied structurally by both the Owner-management `Service` type AND the read-only
+ * `CatalogService` shape (see @/lib/api/catalog.ts), so both callers share one formatter
+ * instead of duplicating this pricing-display logic per DTO shape. */
+type ServicePricingFields = Pick<
+  Service,
+  "isPackageDeal" | "pricingMode" | "fixedPricing" | "hourlyPricing" | "perPersonPricing" | "packagePricing"
+>;
+
 /** Integer-cents <-> "12.00" euro text, matching the existing convention in
  * DashboardCreateBusiness.tsx's Travel Fees section (centsToFeeText/feeTextToCents). */
 export const centsToEuroText = (cents: number): string => (cents / 100).toFixed(2);
@@ -18,7 +27,7 @@ export const euroTextToCents = (value: string): number | null => {
 export const formatEuro = (cents: number): string => `€${centsToEuroText(cents)}`;
 
 /** Price + suffix shown at the top of a Service card, e.g. "€120", "€50 /per hour". */
-export const formatServicePrice = (service: Service): { amount: string; suffix?: string } => {
+export const formatServicePrice = (service: ServicePricingFields): { amount: string; suffix?: string } => {
   if (service.isPackageDeal && service.packagePricing) {
     return { amount: formatEuro(service.packagePricing.bundlePriceCents) };
   }
@@ -36,7 +45,7 @@ export const formatServicePrice = (service: Service): { amount: string; suffix?:
 
 /** Duration shown on the card, e.g. "90 min" — package/fixed/per-person all carry a per-
  * session duration; hourly has none (min/max hours is shown separately). */
-export const formatServiceDuration = (service: Service): string | undefined => {
+export const formatServiceDuration = (service: ServicePricingFields): string | undefined => {
   const durationMin =
     service.packagePricing?.durationMin ??
     service.fixedPricing?.durationMin ??

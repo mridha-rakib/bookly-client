@@ -1,5 +1,7 @@
+"use client";
+
 import Image from "next/image";
-import React from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Location01Icon } from "@hugeicons/core-free-icons";
@@ -48,6 +50,10 @@ export default function ServiceCard({
 }: ServiceCardProps) {
   const router = useRouter();
   const isAvailable = rec.isAvailable ?? true;
+  // Image-only loading/failure state — keeps the fixed-height image area from looking blank
+  // before the photo arrives (or if it fails). No effect on card geometry or any overlay.
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
   return (
     <div
       onClick={() => {
@@ -57,8 +63,24 @@ export default function ServiceCard({
     >
       {/* Card Image Area */}
       <div className="relative w-full h-[140px] xs:h-[180px] sm:h-[220px] md:h-[241px] p-[4px] bg-transparent overflow-hidden shrink-0">
-        {rec.image ? (
-          <Image src={rec.image} alt={rec.title} className="w-full h-full rounded-[8px] object-cover group-hover:scale-105 transition-transform duration-300" draggable="false" fill />
+        {rec.image && !imageError ? (
+          <>
+            {!imageLoaded && (
+              <div
+                aria-hidden="true"
+                className="absolute inset-0 rounded-[8px] bg-neutral-100 animate-pulse"
+              />
+            )}
+            <Image
+              src={rec.image}
+              alt={rec.title}
+              className={`w-full h-full rounded-[8px] object-cover group-hover:scale-105 transition-all duration-300 ${imageLoaded ? "opacity-100" : "opacity-0"}`}
+              draggable="false"
+              fill
+              onLoad={() => setImageLoaded(true)}
+              onError={() => setImageError(true)}
+            />
+          </>
         ) : (
           <div className="w-full h-full rounded-[8px] bg-neutral-100 flex items-center justify-center">
             <span className="text-neutral-400 text-xs font-medium">{rec.title}</span>

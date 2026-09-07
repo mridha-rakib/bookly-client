@@ -3,19 +3,12 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  Car04Icon,
-  DashboardSquare02Icon,
-  FootballIcon,
-  HealtcareIcon,
-  PartyIcon,
-  SailboatOffshoreIcon,
-  WellnessIcon,
-} from "@hugeicons/core-free-icons";
+import { DashboardSquare02Icon } from "@hugeicons/core-free-icons";
 import ServiceCard, { type Recommendation } from "@/components/ServiceCard";
 import Carousel from "@/components/landing-page/Carousel";
 import BookAgainSection from "@/components/landing-page/BookAgainSection";
-import { useHomeSectionsQuery } from "@/lib/discovery/hooks";
+import { CategoryTileIcon } from "@/components/landing-page/categoryIcons";
+import { useDiscoveryCategoriesQuery, useHomeSectionsQuery } from "@/lib/discovery/hooks";
 import { discoveryCardToRecommendation } from "@/lib/discovery/card";
 import { useLocationStore } from "@/lib/location/store";
 import { useAuthStore } from "@/lib/auth/store";
@@ -158,7 +151,13 @@ export default function CategoryServicesSection() {
   const authReady = authStatus !== "unknown";
 
   const homeSections = useHomeSectionsQuery(
-    { city: selectedCity ?? undefined },
+    {
+      city: selectedCity ?? undefined,
+      // "All" applies no restriction; a specific tile hard-filters every row below by its
+      // exact `Business.category` string (never "all", never a slug). `category` is part of
+      // the query key (see discoveryKeys.homeSections), so switching tiles refetches.
+      category: selectedCategory === "all" ? undefined : [selectedCategory],
+    },
     { enabled: authReady, authScope: authUserId ?? "anon" },
   );
 
@@ -170,17 +169,35 @@ export default function CategoryServicesSection() {
 
   const handleBookNow = (id: string) => router.push(`/venue?id=${id}`);
 
-  // The 8 homepage category tiles are a design-driven grouping with no mapping to the free-form
-  // `Business.category` strings the backend actually stores, so selecting one only styles the
-  // tile — it does not (and must not fake) filtering the rows below. Real category filtering
-  // lives on /explore, driven by the real `/discovery/categories` list.
+  // The homepage category tiles are the SAME real, distinct, publicly-visible category list
+  // `/explore`'s own filter sidebar uses (`/discovery/categories` — see discovery.repository.ts's
+  // `listDistinctCategories`, already alphabetically ordered server-side; no client re-sort). A
+  // category with no currently-visible business simply isn't returned, so it isn't shown — that
+  // is intentional. Known categories render an approved category-specific icon (see
+  // categoryIcons.tsx); an unknown future category gets a safe generic fallback. Selecting a tile
+  // now hard-filters all three rows below in place by its exact `Business.category` (via the
+  // home-sections `category` param); "All" clears the restriction.
+  const categoriesQuery = useDiscoveryCategoriesQuery();
+  const realCategories = categoriesQuery.data?.categories ?? [];
+
+  // If the selected tile's category no longer exists once the real list loads (renamed/removed
+  // on the backend), fall back to "All" rather than leaving a dead selection highlighted —
+  // adjusting state during render, same pattern already used in explore/page.tsx.
+  if (
+    categoriesQuery.data &&
+    selectedCategory !== "all" &&
+    !realCategories.includes(selectedCategory)
+  ) {
+    setSelectedCategory("all");
+  }
 
   return (
     <>
-      {/* 5. Category Section */}
+      {/* 5. Category Section — real, distinct, publicly-visible Business.category values only;
+          no invented taxonomy, no fixed tile count. */}
       <section className="w-full max-w-[1440px] mx-auto px-4 md:px-[64px] mt-16">
         <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-4 justify-items-center pb-4 w-full">
-          {/* ALL Category Card */}
+          {/* ALL Category Card — a real UI control, never sent to the backend as a category. */}
           <button
             onClick={() => setSelectedCategory("all")}
             className={`flex w-[150px] h-[108px] flex-col items-center justify-center gap-[24px] rounded-xl transition-all duration-200 cursor-pointer shrink-0 ${
@@ -193,95 +210,29 @@ export default function CategoryServicesSection() {
             <span className="text-xs font-semibold tracking-wider uppercase">All</span>
           </button>
 
-          {/* BEAUTY & WELLNESS */}
-          <button
-            onClick={() => setSelectedCategory("wellness")}
-            className={`flex w-[150px] h-[108px] flex-col items-center justify-center gap-[24px] rounded-xl transition-all duration-200 cursor-pointer shrink-0 ${
-              selectedCategory === "wellness"
-                ? "bg-[#111111] text-[#817469] shadow-md scale-105"
-                : "bg-white text-[#817469] border border-neutral-100 hover:shadow-sm"
-            }`}
-          >
-            <div className="p-1 rounded bg-[#EDE3DE]">
-              <HugeiconsIcon icon={WellnessIcon} size={24} strokeWidth={1.5} color="#111111" />
-            </div>
-            <span className="text-xs font-semibold tracking-wider uppercase text-center">Beauty & Wellness</span>
-          </button>
-
-          {/* HEALTH & FITNESS */}
-          <button
-            onClick={() => setSelectedCategory("health")}
-            className={`flex w-[150px] h-[108px] flex-col items-center justify-center gap-[24px] rounded-xl transition-all duration-200 cursor-pointer shrink-0 ${
-              selectedCategory === "health"
-                ? "bg-[#111111] text-[#817469] shadow-md scale-105"
-                : "bg-white text-[#817469] border border-neutral-100 hover:shadow-sm"
-            }`}
-          >
-            <div className="p-1 rounded bg-[#EDE3DE]">
-              <HugeiconsIcon icon={HealtcareIcon} size={24} strokeWidth={1.5} color="#111111" />
-            </div>
-            <span className="text-xs font-semibold tracking-wider uppercase text-center">Health & Fitness</span>
-          </button>
-
-          {/* SPORTS & ACTIVITIES */}
-          <button
-            onClick={() => setSelectedCategory("sports")}
-            className={`flex w-[150px] h-[108px] flex-col items-center justify-center gap-[24px] rounded-xl transition-all duration-200 cursor-pointer shrink-0 ${
-              selectedCategory === "sports"
-                ? "bg-[#111111] text-[#817469] shadow-md scale-105"
-                : "bg-white text-[#817469] border border-neutral-100 hover:shadow-sm"
-            }`}
-          >
-            <div className="p-1 rounded bg-[#EDE3DE]">
-              <HugeiconsIcon icon={FootballIcon} size={24} strokeWidth={1.5} color="#111111" />
-            </div>
-            <span className="text-xs font-semibold tracking-wider uppercase text-center">Sports & Activities</span>
-          </button>
-
-          {/* EXPERIENCES & TOURS */}
-          <button
-            onClick={() => setSelectedCategory("experiences")}
-            className={`flex w-[150px] h-[108px] flex-col items-center justify-center gap-[24px] rounded-xl transition-all duration-200 cursor-pointer shrink-0 ${
-              selectedCategory === "experiences"
-                ? "bg-[#111111] text-[#817469] shadow-md scale-105"
-                : "bg-white text-[#817469] border border-neutral-100 hover:shadow-sm"
-            }`}
-          >
-            <div className="p-1 rounded bg-[#EDE3DE]">
-              <HugeiconsIcon icon={SailboatOffshoreIcon} size={24} strokeWidth={1.5} color="#111111" />
-            </div>
-            <span className="text-xs font-semibold tracking-wider uppercase text-center">Experiences & Tours</span>
-          </button>
-
-          {/* ENTERTAINMENT & EVENTS */}
-          <button
-            onClick={() => setSelectedCategory("entertainment")}
-            className={`flex w-[150px] h-[108px] flex-col items-center justify-center gap-[24px] rounded-xl transition-all duration-200 cursor-pointer shrink-0 ${
-              selectedCategory === "entertainment"
-                ? "bg-[#111111] text-[#817469] shadow-md scale-105"
-                : "bg-white text-[#817469] border border-neutral-100 hover:shadow-sm"
-            }`}
-          >
-            <div className="p-1 rounded bg-[#EDE3DE]">
-              <HugeiconsIcon icon={PartyIcon} size={24} strokeWidth={1.5} color="#111111" />
-            </div>
-            <span className="text-xs font-semibold tracking-wider uppercase text-center">Events & Shows</span>
-          </button>
-
-          {/* AUTOMOTIVE */}
-          <button
-            onClick={() => setSelectedCategory("automotive")}
-            className={`flex w-[150px] h-[108px] flex-col items-center justify-center gap-[24px] rounded-xl transition-all duration-200 cursor-pointer shrink-0 ${
-              selectedCategory === "automotive"
-                ? "bg-[#111111] text-[#817469] shadow-md scale-105"
-                : "bg-white text-[#817469] border border-neutral-100 hover:shadow-sm"
-            }`}
-          >
-            <div className="p-1 rounded bg-[#EDE3DE]">
-              <HugeiconsIcon icon={Car04Icon} size={24} strokeWidth={1.5} color="#111111" />
-            </div>
-            <span className="text-xs font-semibold tracking-wider uppercase text-center">Automotive</span>
-          </button>
+          {categoriesQuery.isLoading
+            ? Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="w-[150px] h-[108px] rounded-xl bg-neutral-100 animate-pulse shrink-0"
+                />
+              ))
+            : realCategories.map((category) => (
+                <button
+                  key={category}
+                  onClick={() => setSelectedCategory(category)}
+                  className={`flex w-[150px] h-[108px] flex-col items-center justify-center gap-[24px] rounded-xl transition-all duration-200 cursor-pointer shrink-0 ${
+                    selectedCategory === category
+                      ? "bg-[#111111] text-[#817469] shadow-md scale-105"
+                      : "bg-white text-[#817469] border border-neutral-100 hover:shadow-sm"
+                  }`}
+                >
+                  <CategoryTileIcon category={category} />
+                  <span className="text-xs font-semibold tracking-wider uppercase text-center px-2">
+                    {category}
+                  </span>
+                </button>
+              ))}
         </div>
       </section>
 

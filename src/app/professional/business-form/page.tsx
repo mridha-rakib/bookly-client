@@ -4,14 +4,6 @@ import React, { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
-import {
-  WellnessIcon,
-  HealtcareIcon,
-  FootballIcon,
-  SailboatOffshoreIcon,
-  PartyIcon,
-  Car04Icon,
-} from "@hugeicons/core-free-icons";
 import BusinessFormStep1, {
   type BusinessFormStep1Errors,
 } from "@/components/business-form/BusinessFormStep1";
@@ -172,15 +164,17 @@ function BusinessFormContent() {
     }
   }, [registrationProgress.isError]);
 
-  // Category Configuration
+  // Category Configuration. Icons are resolved from the shared approved Business Category
+  // map (lib/business-category/categoryIcon) inside CategorySelectorStep2 — the same asset
+  // set the homepage category bar uses. `name` is the exact `Business.category` string.
   const categories = [
-    { name: "Beauty & Wellness", label: "beauty & Wellness", icon: WellnessIcon, containerWidth: "w-[186px]", textWidth: "w-[150px]" },
-    { name: "Health & Fitness", label: "Health & Fitness", icon: HealtcareIcon, containerWidth: "w-[169px]", textWidth: "w-[133px]" },
-    { name: "Sports & Activities", label: "Sports & Activities", icon: FootballIcon, containerWidth: "w-[193px]", textWidth: "w-[157px]" },
-    { name: "Experience & Tours", label: "Experience & Tours", icon: SailboatOffshoreIcon, containerWidth: "w-[193px]", textWidth: "w-[157px]" },
-    { name: "Entertainment & Events", label: "Entertainment & Events", icon: PartyIcon, containerWidth: "w-[231px]", textWidth: "w-[195px]" },
-    { name: "Pets & Home", label: "pets & home", icon: null, containerWidth: "w-[134px]", textWidth: "w-[98px]" },
-    { name: "Automotive", label: "automotive", icon: Car04Icon, containerWidth: "w-[133px]", textWidth: "w-[97px]" },
+    { name: "Beauty & Wellness", label: "beauty & Wellness", containerWidth: "w-[186px]", textWidth: "w-[150px]" },
+    { name: "Health & Fitness", label: "Health & Fitness", containerWidth: "w-[169px]", textWidth: "w-[133px]" },
+    { name: "Sports & Activities", label: "Sports & Activities", containerWidth: "w-[193px]", textWidth: "w-[157px]" },
+    { name: "Experience & Tours", label: "Experience & Tours", containerWidth: "w-[193px]", textWidth: "w-[157px]" },
+    { name: "Entertainment & Events", label: "Entertainment & Events", containerWidth: "w-[231px]", textWidth: "w-[195px]" },
+    { name: "Pets & Home", label: "pets & home", containerWidth: "w-[134px]", textWidth: "w-[98px]" },
+    { name: "Automotive", label: "automotive", containerWidth: "w-[133px]", textWidth: "w-[97px]" },
   ];
 
   const handleSelectedCategoryChange = (cat: string) => {

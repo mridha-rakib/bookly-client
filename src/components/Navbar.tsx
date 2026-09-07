@@ -15,6 +15,7 @@ import {
   Home01Icon,
   HeadsetIcon,
   Ticket01Icon,
+  GiftCardIcon,
   ProfileIcon,
   Logout01Icon,
   ArrowDown01Icon,
@@ -257,6 +258,20 @@ export default function Navbar({
                     >
                       <HugeiconsIcon icon={File01Icon} className="w-[18px] h-[18px] text-[#0C0C0C]" />
                       <span className="font-medium text-base text-[#1C1B1C]">My Bookings</span>
+                    </button>
+
+                    <div className="border-t border-[#ACAAB4] w-full"></div>
+
+                    {/* 3b. My Packages */}
+                    <button
+                      className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
+                      onClick={() => {
+                        setShowUserDropdown(false);
+                        router.push("/customer/packages");
+                      }}
+                    >
+                      <HugeiconsIcon icon={GiftCardIcon} className="w-[18px] h-[18px] text-[#0C0C0C]" />
+                      <span className="font-medium text-base text-[#1C1B1C]">My Packages</span>
                     </button>
 
                     <div className="border-t border-[#ACAAB4] w-full"></div>
@@ -623,6 +638,20 @@ export default function Navbar({
           >
             <HugeiconsIcon icon={File01Icon} className="w-[18px] h-[18px] text-[#0C0C0C]" />
             <span className="font-medium text-base text-[#1C1B1C]">My Bookings</span>
+          </button>
+
+          <div className="border-t border-[#ACAAB4] w-full"></div>
+
+          {/* 3b. My Packages */}
+          <button
+            className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
+            onClick={() => {
+              setShowUserDropdown(false);
+              router.push("/customer/packages");
+            }}
+          >
+            <HugeiconsIcon icon={GiftCardIcon} className="w-[18px] h-[18px] text-[#0C0C0C]" />
+            <span className="font-medium text-base text-[#1C1B1C]">My Packages</span>
           </button>
 
           <div className="border-t border-[#ACAAB4] w-full"></div>

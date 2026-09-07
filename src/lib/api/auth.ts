@@ -110,12 +110,12 @@ export interface AuthBusiness {
 }
 
 /**
- * A linked external sign-in identity (Phase 1: Google only). Returned by GET /auth/me as
- * `linkedAccounts[]` — always an array, empty when nothing is linked. Never carries the
- * provider's account id or any token.
+ * A linked external sign-in identity. Returned by GET /auth/me as `linkedAccounts[]` — always an
+ * array, empty when nothing is linked. Never carries the provider's account id or any token.
+ * Google, Facebook and Apple all support both Settings linking and "Continue with …" login.
  */
 export interface LinkedAccountSummary {
-  provider: "GOOGLE";
+  provider: "GOOGLE" | "FACEBOOK" | "APPLE";
   email: string;
   displayName?: string;
   /** ISO timestamp. */
@@ -244,6 +244,41 @@ export type CustomerGoogleAuthStatus = "success" | "onboarding" | "account_exist
 /** Staff invitation adds two coarse outcomes to the shared callback contract. */
 export type StaffGoogleAuthStatus = "success" | "email_mismatch" | "expired" | "error";
 export type GoogleAuthFlow = "customer" | "professional" | "staff";
+
+/** Provider-neutral coarse callback outcomes — same contract for Google and Facebook login. */
+export type SocialAuthStatus = "success" | "onboarding" | "account_exists" | "error";
+
+/**
+ * Absolute URL of the backend's Customer "Continue with Facebook" entry point. Same
+ * full-page-redirect contract as `customerGoogleAuthStartUrl` (LOGIN — not Settings linking):
+ * the backend builds the Facebook consent URL, sets its CSRF nonce cookie, and 302s onward. On
+ * return the backend redirects to `/auth/facebook/callback?status=...` on THIS app.
+ */
+export const customerFacebookAuthStartUrl = (): string =>
+  `${apiBaseUrl}/auth/customer/oauth/facebook/start`;
+
+/**
+ * Absolute URL of the backend's Business Owner "Continue with Facebook" entry point. Like the
+ * Google equivalent, `visitType` is required up front and signed into the OAuth state
+ * server-side. On return the backend redirects to
+ * `/auth/facebook/callback?flow=professional&status=...` on THIS app.
+ */
+export const professionalFacebookAuthStartUrl = (visitType: VisitType): string =>
+  `${apiBaseUrl}/auth/professional/oauth/facebook/start?visitType=${encodeURIComponent(visitType)}`;
+
+/**
+ * Absolute URL of the backend's Customer "Continue with Apple" entry point. Same
+ * synchronous full-page-redirect contract (LOGIN, not Settings linking). The backend 302s to
+ * Apple; Apple POSTs its callback (form_post) to the backend, which then redirects to
+ * `/auth/apple/callback?status=...` on THIS app.
+ */
+export const customerAppleAuthStartUrl = (): string =>
+  `${apiBaseUrl}/auth/customer/oauth/apple/start`;
+
+/** Business Owner "Continue with Apple". `visitType` is required and signed into the OAuth state
+ * server-side; return lands on `/auth/apple/callback?flow=professional&status=...`. */
+export const professionalAppleAuthStartUrl = (visitType: VisitType): string =>
+  `${apiBaseUrl}/auth/professional/oauth/apple/start?visitType=${encodeURIComponent(visitType)}`;
 
 export const authApi = {
   customerEntry: (email: string) =>
@@ -377,6 +412,38 @@ export const authApi = {
     apiRequest<undefined>({
       method: "DELETE",
       url: "/auth/me/linked-accounts/google",
+      data: input,
+    }),
+
+  // Customer -> Facebook account linking. Same contract as getGoogleLinkUrl / unlinkGoogleAccount
+  // (linking only — there is no "Continue with Facebook" login). The browser is navigated to the
+  // returned authUrl; Facebook redirects back to
+  // /customer/settings?linkedAccount=facebook&result=...
+  getFacebookLinkUrl: () =>
+    apiRequest<{ authUrl: string }>({
+      method: "GET",
+      url: "/auth/me/linked-accounts/facebook/authorize-url",
+    }),
+
+  unlinkFacebookAccount: (input: { currentPassword: string }) =>
+    apiRequest<undefined>({
+      method: "DELETE",
+      url: "/auth/me/linked-accounts/facebook",
+      data: input,
+    }),
+
+  // Customer -> Apple account linking (linking only). Same contract as getFacebookLinkUrl /
+  // unlinkFacebookAccount; the browser is navigated to the returned authUrl.
+  getAppleLinkUrl: () =>
+    apiRequest<{ authUrl: string }>({
+      method: "GET",
+      url: "/auth/me/linked-accounts/apple/authorize-url",
+    }),
+
+  unlinkAppleAccount: (input: { currentPassword: string }) =>
+    apiRequest<undefined>({
+      method: "DELETE",
+      url: "/auth/me/linked-accounts/apple",
       data: input,
     }),
 
