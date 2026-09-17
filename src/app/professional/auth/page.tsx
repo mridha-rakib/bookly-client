@@ -144,22 +144,14 @@ function ProfessionalAuthContent() {
           <SocialButton
             provider="apple"
             label={appleAuth.isPending ? "Redirecting to Apple…" : "Continue With Apple"}
-<<<<<<< HEAD
             onClick={() => appleAuth.mutate()}
-=======
-            onClick={() => appleAuth.mutate(toBackendVisitType(visitType))}
->>>>>>> ca126a4f6ff14aa988c44ea73c30011f535d0663
             disabled={appleAuth.isPending}
             aria-busy={appleAuth.isPending}
           />
           <SocialButton
             provider="facebook"
             label={facebookAuth.isPending ? "Redirecting to Facebook…" : "Continue With Facebook"}
-<<<<<<< HEAD
             onClick={() => facebookAuth.mutate()}
-=======
-            onClick={() => facebookAuth.mutate(toBackendVisitType(visitType))}
->>>>>>> ca126a4f6ff14aa988c44ea73c30011f535d0663
             disabled={facebookAuth.isPending}
             aria-busy={facebookAuth.isPending}
           />
