@@ -1,5 +1,21 @@
 import type { BookingSource, BookingStatus } from "@/lib/api/bookings";
 
+/** ONE canonical "Get Directions"/"Open in maps" destination builder — always the Booking's OWN
+ * historical fulfilment snapshot (address text, or the frozen coordinate when one exists), NEVER
+ * the Business's current address. Prefers the coordinate-based destination when a valid
+ * historical `location` was snapshotted (more precise); falls back to the historical address
+ * text otherwise. Never geocodes anything itself — this only builds an external Google Maps URL
+ * the browser navigates to when clicked. */
+export const buildBookingDirectionsUrl = (destination: {
+  location?: { lat: number; lng: number } | undefined;
+  addressText: string;
+}): string => {
+  const query = destination.location
+    ? `${destination.location.lat},${destination.location.lng}`
+    : destination.addressText;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+};
+
 /** Integer-cents formatter — same convention as lib/services/format.ts's formatEuro. */
 export const formatBookingMoney = (cents: number): string => `€${(cents / 100).toFixed(2)}`;
 
