@@ -3,7 +3,7 @@ import Image from "next/image";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowLeft02Icon,
@@ -21,6 +21,7 @@ import {
 import BusinessInfoSection from "../create-business/BusinessInfoSection";
 import AddressSection from "../create-business/AddressSection";
 import LocationSection from "../create-business/LocationSection";
+import type { ProfileMarkerMediaState } from "../create-business/BusinessProfileMap";
 import ServiceCategorySection, { serviceCategoryOptions } from "../create-business/ServiceCategorySection";
 import PhotosSection from "../create-business/PhotosSection";
 import OpeningHoursSection from "../create-business/OpeningHoursSection";
@@ -29,7 +30,7 @@ import ClosedPeriodsSection from "../create-business/ClosedPeriodsSection";
 import LeadTimeSettingsSection from "../create-business/LeadTimeSettingsSection";
 import AdditionalInfoSection from "../create-business/AdditionalInfoSection";
 import TravelFeesSection, { type TravelFeeRow } from "../create-business/TravelFeesSection";
-import { buildGoogleMapsEmbedUrl } from "@/lib/maps/google-maps";
+import { geocodeAddress, reverseGeocodeCoordinates } from "@/lib/maps/googleGeocoding";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/sonner";
 import type { BusinessCity, BusinessMedia, UpdateBusinessInput } from "@/lib/api/business";
@@ -369,15 +370,39 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     setCityFees(updated);
   };
 
-  // Map Coordinates (Larnaca Cyprus default: 34.9172, 33.6232)
+  // Map Coordinates (Larnaca Cyprus default: 34.9172, 33.6232). This is the *field's
+  // visible text* — it doubles as the human-readable persisted-location label (set by
+  // the effect below) and, transiently, as whatever the user is currently typing to
+  // search. It never itself represents a persisted coordinate — see `previewCenter`.
   const [searchLocation, setSearchLocation] = useState("Larnaca, Cyprus");
-  const [mapUrl, setMapUrl] = useState(buildGoogleMapsEmbedUrl("34.9172,33.6232"));
+  // A temporary, display-only recenter target produced by the Search button — kept
+  // entirely separate from the business's real persisted `location.{lat,lng}` (read
+  // directly from `business` below) so a cosmetic search preview can never be mistaken
+  // for — or accidentally saved as — an actual location edit. This map/section has no
+  // path that writes coordinates at all; Search only ever moves the camera.
+  const [previewCenter, setPreviewCenter] = useState<{ lat: number; lng: number } | null>(null);
+  // The same resolved label as `searchLocation`, but frozen against the user's live
+  // typing — the marker hover popup must keep showing the real persisted address even
+  // while the search field temporarily holds whatever the user is typing to search, so
+  // a search-in-progress can never be mistaken for the actual saved business address.
+  const [resolvedLocationLabel, setResolvedLocationLabel] = useState("Larnaca, Cyprus");
+  const searchRequestRef = useRef(0);
 
   const handleLocationSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchLocation.trim()) {
-      setMapUrl(buildGoogleMapsEmbedUrl(searchLocation));
-    }
+    const query = searchLocation.trim();
+    if (!query) return;
+
+    const requestId = ++searchRequestRef.current;
+    void (async () => {
+      const coordinates = await geocodeAddress(query);
+      if (searchRequestRef.current !== requestId) return; // a newer search has since started
+      if (coordinates) {
+        setPreviewCenter(coordinates);
+      } else {
+        toast.error("Location not found. Please try a different search.");
+      }
+    })();
   };
 
   // Real Business Profile data (edit/view only — "create" stays local/mocked; see report).
@@ -390,6 +415,7 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
   const updateBusinessMutation = useUpdateBusinessMutation();
   const {
     data: businessMedia = [],
+    isLoading: isLoadingBusinessMedia,
     isError: isBusinessMediaError,
     error: businessMediaError,
   } = useBusinessMediaQuery(mode !== "create" ? businessId : undefined);
@@ -416,6 +442,32 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
 
     return left.sortOrder - right.sortOrder;
   });
+  // The Business Profile map's circular marker reuses this exact already-loaded photo —
+  // no extra request. Note: `BusinessDetail` (this screen's `business`) has no
+  // `profileMedia` field of its own (that shape only exists on the `BusinessCard` used
+  // by the dashboard's business list) — the profile photo here is identified the same
+  // way the rest of this component already does, via `businessMedia`'s `role`.
+  const profileImageUrl = businessMedia.find((media) => media.role === "PROFILE")?.url;
+  // Explicit three-state derivation for the marker, using useBusinessMediaQuery's OWN
+  // `isLoading` (true only until the first successful/errored fetch, never again on a
+  // later background refetch) rather than inferring "no image" from `profileImageUrl`
+  // being undefined — that inference couldn't tell "hasn't loaded yet" apart from
+  // "loaded, and there's genuinely no PROFILE photo," which is exactly what let a
+  // still-loading marker render (and on a bad race, stay rendered) as the fallback icon.
+  // "create" mode never has a real businessId, so its query never runs — treated as
+  // "empty" (matches the pre-existing behavior: no marker photo while creating).
+  // Memoized so BusinessProfileMap's `[profileMedia, mapStatus]` effect only re-fires
+  // when one of these actually changes, not on every unrelated parent re-render.
+  const profileMediaState: ProfileMarkerMediaState = useMemo(() => {
+    if (mode === "create") return { status: "empty" };
+    if (isLoadingBusinessMedia) return { status: "loading" };
+    return profileImageUrl ? { status: "ready", url: profileImageUrl } : { status: "empty" };
+  }, [mode, isLoadingBusinessMedia, profileImageUrl]);
+  // "create" mode has no real business/location yet (see the comment above `business`
+  // below) — the map still shows a preview, centered the same way the previous Embed
+  // helper's own default did, just with no marker photo since no business exists yet.
+  const businessCoordinates =
+    business?.location ?? (mode === "create" ? { lat: 34.9172, lng: 33.6232 } : null);
 
   useEffect(() => {
     if (isBusinessError) {
@@ -470,31 +522,65 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     setTimezone(business.timezone);
     setSelectedCategory(matchCategoryOption(business.category));
     setSelectedSubcategories(business.subcategories.map(matchCategoryOption));
-    // Registration persists the owner-selected shop location as Business.location
-    // {lat, lng, searchQuery}. The map must reflect that exact spot, so lat/lng (the
-    // precise pin) takes priority over the human-readable searchQuery text, which is
-    // only used to fill the search box display and as a fallback when coordinates are
-    // unavailable. The structured address is a last resort for businesses with no
-    // persisted location at all — it must never override real registration coordinates.
-    if (business.location) {
-      const { lat, lng, searchQuery } = business.location;
-      setMapUrl(buildGoogleMapsEmbedUrl(`${lat},${lng}`));
-      setSearchLocation(searchQuery ?? `${lat}, ${lng}`);
-    } else {
-      const structuredAddress = [
-        business.address.streetNumber,
-        business.address.streetName,
-        business.address.area,
-        business.address.city,
-      ]
-        .filter(Boolean)
-        .join(", ");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [business?.id]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-      if (structuredAddress) {
-        setSearchLocation(structuredAddress);
-        setMapUrl(buildGoogleMapsEmbedUrl(structuredAddress));
-      }
+  // Human-readable persisted-location label. Structured `area, city` (already-loaded
+  // business data, matching the exact format the customer-facing venue page already
+  // shows) is painted immediately as a safe synchronous value — using any existing
+  // meaningful (non-coordinate-shaped) `location.searchQuery` instead when one exists,
+  // so a business someone already labeled nicely doesn't visibly flash — while a Google
+  // reverse geocode of the exact stored coordinate resolves in the background and, on
+  // success, becomes the final displayed label. On failure it settles back to the
+  // structured address. Raw `lat, lng` is never shown at any point in this chain. This
+  // label is purely for display: it's the field's *starting* text, but the field's live
+  // value diverges from it the moment the user types a search query, and this effect is
+  // the only place besides `handleLocationSearch` that ever calls `setSearchLocation`.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!business) return;
+
+    // A previous version of this Dashboard's own Save handler could persist a raw
+    // "35.0165922, 34.050283"-shaped string into `location.searchQuery`. Such a value
+    // is exactly the bug this fix corrects, so it must never be treated as a valid
+    // human-readable label — old stored data is not touched, only how it's displayed.
+    const isCoordinatePairString = (value: string): boolean =>
+      /^-?\d{1,3}(\.\d+)?\s*,\s*-?\d{1,3}(\.\d+)?$/.test(value.trim());
+
+    const structuredFallback =
+      [business.address.area, business.address.city].filter(Boolean).join(", ") ||
+      "Location not set";
+
+    if (!business.location) {
+      setPreviewCenter(null);
+      setSearchLocation(structuredFallback);
+      setResolvedLocationLabel(structuredFallback);
+      return;
     }
+
+    const { lat, lng, searchQuery } = business.location;
+    const existingLabel =
+      searchQuery && searchQuery.trim() && !isCoordinatePairString(searchQuery)
+        ? searchQuery.trim()
+        : undefined;
+
+    setPreviewCenter(null);
+    setSearchLocation(existingLabel ?? structuredFallback);
+    setResolvedLocationLabel(existingLabel ?? structuredFallback);
+
+    let cancelled = false;
+    void (async () => {
+      const formattedAddress = await reverseGeocodeCoordinates(lat, lng);
+      if (cancelled) return;
+      const finalLabel = formattedAddress ?? structuredFallback;
+      setSearchLocation(finalLabel);
+      setResolvedLocationLabel(finalLabel);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [business?.id]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -576,7 +662,17 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
       input.countryCode = phoneCode;
       input.nationalNumber = phoneNumber;
     }
-    if (searchLocation) input.searchQuery = searchLocation;
+    // Deliberately NOT sending `searchQuery` here. `searchLocation` doubles as this
+    // screen's location *search box* text — the moment the user types into it to
+    // preview a place (LocationSection's "Search location to update map..." field),
+    // it no longer reflects the business's actual persisted address, only unconfirmed
+    // preview text. This map has no "confirm new location" action (see
+    // BusinessProfileMap: read-only, `coordinates` is never sent from this screen
+    // either), so there is no legitimate address text for this Save action to write —
+    // the real label is always derived from the persisted coordinate via
+    // reverse-geocoding (see the `business?.id`-keyed effect above). A previous
+    // version of this handler did send it, which is exactly the stale/wrong
+    // `location.searchQuery` class of bug flagged in that effect's own comment.
 
     const travelSettingsInput = [];
 
@@ -914,8 +1010,13 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
         <LocationSection
           searchLocation={searchLocation}
           setSearchLocation={setSearchLocation}
-          mapUrl={mapUrl}
           handleLocationSearch={handleLocationSearch}
+          lat={businessCoordinates?.lat}
+          lng={businessCoordinates?.lng}
+          profileMedia={profileMediaState}
+          previewCenter={previewCenter}
+          businessName={businessName}
+          displayAddress={resolvedLocationLabel}
         />
 
         {/* 5, 6, 7. Service Categories Section */}

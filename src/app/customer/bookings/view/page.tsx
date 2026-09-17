@@ -25,6 +25,7 @@ import {
 import { toUserMessage } from "@/lib/auth/messages";
 import BookingReviewCard from "../BookingReviewCard";
 import RescheduleModal from "../RescheduleModal";
+import BookingLocationMap from "../BookingLocationMap";
 
 function BookingViewContent() {
   const searchParams = useSearchParams();
@@ -242,16 +243,7 @@ function BookingViewContent() {
                   </a>
 
                   {showMap ? (
-                    <div className="w-full h-44 rounded-lg overflow-hidden border border-[#ACAAB4]">
-                      <iframe
-                        width="100%"
-                        height="100%"
-                        frameBorder="0"
-                        style={{ border: 0 }}
-                        src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
-                        allowFullScreen
-                      />
-                    </div>
+                    <BookingLocationMap address={mapQuery} />
                   ) : (
                     <div
                       onClick={() => setShowMap(true)}

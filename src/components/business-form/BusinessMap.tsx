@@ -1,19 +1,12 @@
 "use client";
 
-// Leaflet's own stylesheet must be loaded or the map container renders without its
-// sizing/positioning rules — tiles then stack into a small, non-interactive-looking
-// thumbnail instead of a real pannable/zoomable map. Importing the CSS shipped by the
-// already-installed `leaflet` package (rather than a CDN link) keeps this self-contained
-// and version-locked to package.json, and is Next.js's documented exception allowing
-// global CSS imports from node_modules inside any component.
-import "leaflet/dist/leaflet.css";
-
 import React, { useEffect, useRef, useState } from "react";
-import L from "leaflet";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { FullScreenIcon, MinimizeScreenIcon } from "@hugeicons/core-free-icons";
 
 import { toast } from "@/components/ui/sonner";
+import { isGoogleMapsConfigured, loadGoogleMapsLibrary } from "@/lib/maps/googleMapsLoader";
+import { fetchPlaceSuggestions, type PlaceSuggestion } from "@/lib/maps/googlePlaces";
 
 interface BusinessMapProps {
   lat: number;
@@ -23,6 +16,29 @@ interface BusinessMapProps {
   onSearchChange: (query: string) => void;
 }
 
+// Same visual spec as the previous Leaflet `divIcon` (Ellipse 124 / Ellipse 127 /
+// Rectangle 12), redrawn as an inline SVG so it can be used as a classic
+// `google.maps.Marker` icon. `AdvancedMarkerElement` was the migration audit's first
+// choice, but it requires a Google Cloud "Map ID" that is not configured anywhere in
+// this project (no NEXT_PUBLIC_GOOGLE_MAP_ID or equivalent exists) — rather than
+// fabricate one, this uses the classic `Marker` API. Google *soft*-deprecated
+// `google.maps.Marker` in Feb 2024 in favor of AdvancedMarkerElement, but it is
+// explicitly "not scheduled to be discontinued" and continues to receive bug fixes
+// (see its own deprecation notice in @types/google.maps) — safe to build on today.
+const MARKER_ICON_URL = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="44" height="65" viewBox="0 0 44 65">
+  <ellipse cx="22" cy="64" rx="5" ry="1" fill="#000000" fill-opacity="0.4" />
+  <rect x="20" y="42" width="4" height="20" fill="#8EBAC5" />
+  <circle cx="22" cy="22" r="21" fill="#8EBAC5" fill-opacity="0.7" stroke="#FFFFFF" stroke-width="2" />
+  <circle cx="22" cy="22" r="6" fill="#111111" />
+</svg>
+`)}`;
+
+const DEFAULT_ZOOM = 13;
+const RESOLVED_ZOOM = 16;
+const SUGGESTION_DEBOUNCE_MS = 300;
+const MIN_SUGGESTION_QUERY_LENGTH = 2;
+
 export default function BusinessMap({
   lat,
   lng,
@@ -31,105 +47,136 @@ export default function BusinessMap({
   onSearchChange,
 }: BusinessMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const markerRef = useRef<L.Marker | null>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const markerRef = useRef<google.maps.Marker | null>(null);
   const hasZoomedToResolvedRef = useRef(false);
-  const [searching, setSearching] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  // Keeps the click/dragend listeners (attached once, at map-init time) reading the
+  // latest `onChange` prop without needing to re-attach them on every render.
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
 
-  // Initialize Map
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [mapStatus, setMapStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isResolvingSelection, setIsResolvingSelection] = useState(false);
+  // Guards against an in-flight suggestion request for an older query overwriting the
+  // dropdown after the user has kept typing (the JS SDK has no request-level abort).
+  const latestSuggestionQueryRef = useRef("");
+
+  // Initialize Map (once). Google Maps JS is loaded lazily via the shared loader, so
+  // this effect is async; `cancelled` prevents it from touching state/refs after
+  // unmount or after a second mount raced ahead of this one.
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
-    const initialCenter: L.LatLngExpression = [lat || 32.7767, lng || -96.7970];
+    if (!isGoogleMapsConfigured()) {
+      // Synchronous bail-out reporting external (env config) state, not derived
+      // React state — same pattern already used in this codebase (see page.tsx).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMapStatus("error");
+      return;
+    }
 
-    const map = L.map(mapContainerRef.current, {
-      center: initialCenter,
-      zoom: 13,
-      zoomControl: false,
-    });
+    let cancelled = false;
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '&copy; OpenStreetMap contributors',
-    }).addTo(map);
+    (async () => {
+      try {
+        const [mapsLibrary, markerLibrary] = await Promise.all([
+          loadGoogleMapsLibrary("maps"),
+          loadGoogleMapsLibrary("marker"),
+        ]);
+        if (cancelled || !mapContainerRef.current) return;
 
-    // Custom Icon matching user SS spec
-    const customIcon = L.divIcon({
-      className: "custom-gps-marker",
-      html: `
-        <div class="relative flex flex-col items-center select-none" style="width: 44px; height: 65px;">
-          <!-- Ellipse 124 -->
-          <div class="w-11 h-11 rounded-full bg-[#8EBAC5] bg-opacity-70 border-2 border-white flex items-center justify-center shadow-md">
-            <!-- Ellipse 127 -->
-            <div class="w-3 h-3 rounded-full bg-[#111111]"></div>
-          </div>
-          <!-- Rectangle 12 -->
-          <div class="w-1 h-5 bg-[#8EBAC5] -mt-0.5 shadow-sm"></div>
-          <!-- Shadow -->
-          <div class="w-2.5 h-0.5 bg-black bg-opacity-40 rounded-full blur-[1px] mt-0.5"></div>
-        </div>
-      `,
-      iconSize: [44, 65],
-      iconAnchor: [22, 63],
-    });
+        const initialCenter: google.maps.LatLngLiteral = { lat: lat || 34.9172, lng: lng || 33.6232 };
 
-    const marker = L.marker(initialCenter, {
-      icon: customIcon,
-      draggable: true,
-    }).addTo(map);
+        const map = new mapsLibrary.Map(mapContainerRef.current, {
+          center: initialCenter,
+          zoom: DEFAULT_ZOOM,
+          disableDefaultUI: true,
+          zoomControl: true,
+          clickableIcons: false,
+        });
 
-    // Update coordinates on dragend
-    marker.on("dragend", () => {
-      const position = marker.getLatLng();
-      onChange(position.lat, position.lng);
-    });
+        const marker = new markerLibrary.Marker({
+          position: initialCenter,
+          map,
+          draggable: true,
+          icon: {
+            url: MARKER_ICON_URL,
+            scaledSize: new google.maps.Size(44, 65),
+            anchor: new google.maps.Point(22, 63),
+          },
+        });
 
-    // Update coordinates on map click
-    map.on("click", (e) => {
-      marker.setLatLng(e.latlng);
-      onChange(e.latlng.lat, e.latlng.lng);
-    });
+        marker.addListener("dragend", () => {
+          const position = marker.getPosition();
+          if (position) onChangeRef.current(position.lat(), position.lng());
+        });
 
-    mapRef.current = map;
-    markerRef.current = marker;
+        map.addListener("click", (event: google.maps.MapMouseEvent) => {
+          if (!event.latLng) return;
+          marker.setPosition(event.latLng);
+          onChangeRef.current(event.latLng.lat(), event.latLng.lng());
+        });
 
-    // The map is created inside a next/dynamic(ssr:false) client component, so its
-    // container size can be off by a frame on first paint; recalculate once mounted
-    // (same fix already used by ExploreMap.tsx elsewhere in this app).
-    const invalidateTimeout = setTimeout(() => map.invalidateSize(), 100);
+        mapRef.current = map;
+        markerRef.current = marker;
+        setMapStatus("ready");
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Google Maps failed to load:", error);
+          setMapStatus("error");
+        }
+      }
+    })();
 
     return () => {
-      clearTimeout(invalidateTimeout);
-      map.remove();
-      mapRef.current = null;
-      markerRef.current = null;
+      cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update marker position if lat/lng props change from outside (geocode result,
-  // location search, or a resolved address). The very first real position update zooms
-  // in from the broad default view; later updates (including manual drag/click, which
-  // also flow through this prop) preserve whatever zoom the user is currently at.
+  // Places selection, or a resolved address). The very first real position update
+  // zooms in from the broad default view; later updates (including manual
+  // drag/click, which also flow through this prop) preserve whatever zoom the user
+  // is currently at.
   useEffect(() => {
-    if (mapRef.current && markerRef.current) {
-      const currentPos = markerRef.current.getLatLng();
-      if (currentPos.lat !== lat || currentPos.lng !== lng) {
-        const newPos = L.latLng(lat, lng);
-        markerRef.current.setLatLng(newPos);
-        const targetZoom = hasZoomedToResolvedRef.current ? mapRef.current.getZoom() : 16;
-        hasZoomedToResolvedRef.current = true;
-        mapRef.current.setView(newPos, targetZoom);
-      }
+    const map = mapRef.current;
+    const marker = markerRef.current;
+    if (!map || !marker) return;
+
+    const currentPos = marker.getPosition();
+    if (!currentPos || currentPos.lat() !== lat || currentPos.lng() !== lng) {
+      const newPos = { lat, lng };
+      marker.setPosition(newPos);
+      const targetZoom = hasZoomedToResolvedRef.current ? map.getZoom() ?? RESOLVED_ZOOM : RESOLVED_ZOOM;
+      hasZoomedToResolvedRef.current = true;
+      map.setCenter(newPos);
+      map.setZoom(targetZoom);
     }
   }, [lat, lng]);
 
-  // Fullscreen toggles the *same* map container's CSS size (never a second Leaflet
-  // instance), so all state — center, zoom, marker — carries over automatically. Leaflet
-  // only needs to be told the container size changed after the layout settles.
+  // Fullscreen toggles the *same* map container's CSS size (never a second Maps
+  // instance), so all state — center, zoom, marker — carries over automatically.
+  // Google Maps only needs to be told the container size changed after the layout
+  // settles (the `resize` event), then recentered since a resize can visually shift
+  // the viewport around the same center point.
   useEffect(() => {
-    if (!mapRef.current) return;
-    const invalidateTimeout = setTimeout(() => mapRef.current?.invalidateSize(), 250);
-    return () => clearTimeout(invalidateTimeout);
+    const map = mapRef.current;
+    if (!map) return;
+    const resizeTimeout = setTimeout(() => {
+      const center = map.getCenter();
+      google.maps.event.trigger(map, "resize");
+      if (center) map.setCenter(center);
+    }, 250);
+    return () => clearTimeout(resizeTimeout);
   }, [isFullscreen]);
 
   useEffect(() => {
@@ -149,30 +196,72 @@ export default function BusinessMap({
     };
   }, [isFullscreen]);
 
-  const handleSearchSubmit = async () => {
-    if (!searchQuery.trim() || searching) return;
+  // Debounced Places suggestions. Skips blank/too-short queries entirely (no request
+  // at all) and discards a response that arrives for a query the user has since
+  // changed away from — the SDK has no true request cancellation, so this is a
+  // cooperative staleness guard instead.
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < MIN_SUGGESTION_QUERY_LENGTH) {
+      // Synchronous bail-out clearing suggestion state for a too-short query — same
+      // established pattern as the map-status bail-out above.
+      /* eslint-disable react-hooks/set-state-in-effect */
+      setSuggestions([]);
+      setIsSuggestionsOpen(false);
+      setActiveSuggestionIndex(-1);
+      /* eslint-enable react-hooks/set-state-in-effect */
+      return;
+    }
 
-    setSearching(true);
+    const timeoutId = setTimeout(() => {
+      latestSuggestionQueryRef.current = trimmed;
+      setIsSearching(true);
+      void (async () => {
+        const results = await fetchPlaceSuggestions(trimmed);
+        if (latestSuggestionQueryRef.current !== trimmed) return; // a newer query has since started
+        setIsSearching(false);
+        setSuggestions(results);
+        setActiveSuggestionIndex(-1);
+        setIsSuggestionsOpen(true);
+      })();
+    }, SUGGESTION_DEBOUNCE_MS);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
+  const selectSuggestion = async (suggestion: PlaceSuggestion) => {
+    setIsSuggestionsOpen(false);
+    setIsResolvingSelection(true);
     try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=cy&q=${encodeURIComponent(
-          searchQuery
-        )}`
-      );
-      const data = await response.json();
-      if (data && data.length > 0) {
-        const firstResult = data[0];
-        const newLat = parseFloat(firstResult.lat);
-        const newLng = parseFloat(firstResult.lon);
-        onChange(newLat, newLng);
+      const coordinates = await suggestion.resolveCoordinates();
+      if (coordinates) {
+        onSearchChange(suggestion.primaryText);
+        onChangeRef.current(coordinates.lat, coordinates.lng);
       } else {
-        toast.error("Location not found. Please try a different search.");
+        toast.error("Could not resolve that location. Please try again.");
       }
-    } catch (error) {
-      console.error("Search error:", error);
-      toast.error("Could not search for that location. Please try again.");
     } finally {
-      setSearching(false);
+      setIsResolvingSelection(false);
+    }
+  };
+
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "ArrowDown") {
+      if (!isSuggestionsOpen || suggestions.length === 0) return;
+      event.preventDefault();
+      setActiveSuggestionIndex((prev) => (prev + 1) % suggestions.length);
+    } else if (event.key === "ArrowUp") {
+      if (!isSuggestionsOpen || suggestions.length === 0) return;
+      event.preventDefault();
+      setActiveSuggestionIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      if (isSuggestionsOpen && suggestions.length > 0) {
+        const suggestion = suggestions[activeSuggestionIndex] ?? suggestions[0];
+        void selectSuggestion(suggestion);
+      }
+    } else if (event.key === "Escape") {
+      setIsSuggestionsOpen(false);
     }
   };
 
@@ -186,7 +275,7 @@ export default function BusinessMap({
       (position) => {
         const userLat = position.coords.latitude;
         const userLng = position.coords.longitude;
-        onChange(userLat, userLng);
+        onChangeRef.current(userLat, userLng);
       },
       (error) => {
         console.error("Geolocation error:", error);
@@ -216,38 +305,89 @@ export default function BusinessMap({
         }
       >
       {/* Map Element */}
-      <div ref={mapContainerRef} className="w-full h-full z-0" />
+      <div ref={mapContainerRef} className="w-full h-full z-0 bg-[#E8E8E4]" />
+
+      {/* Map load/config failure — the rest of the form (including manual address
+          entry) stays fully usable regardless; coordinates are optional at submit
+          time, so this must never block onboarding. */}
+      {mapStatus !== "ready" && (
+        <div className="absolute inset-0 z-[5] flex items-center justify-center bg-[#FCFAF9] pointer-events-none">
+          {mapStatus === "loading" ? (
+            <div className="text-center">
+              <div className="w-10 h-10 border-4 border-[#8EBAC5] border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+              <p className="text-sm text-[#4D4D4D]">Loading map engine...</p>
+            </div>
+          ) : (
+            <div className="text-center px-6">
+              <p className="text-sm text-[#4D4D4D]">
+                Map is temporarily unavailable. You can still fill in your address manually below.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Floating Search Bar */}
-      <div
-        className="absolute top-4 left-4 z-10 flex items-center bg-white border border-[#D3D1C7] rounded-lg px-3 py-1.5 shadow-md w-full max-w-[280px] gap-2 transition-all duration-200 focus-within:border-[#8EBAC5] focus-within:ring-2 focus-within:ring-[#8EBAC5]/20"
-      >
-        <svg
-          className="w-5 h-5 text-[#4E5F78]"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
+      <div className="absolute top-4 left-4 z-10 w-full max-w-[280px]">
+        <div
+          className="flex items-center bg-white border border-[#D3D1C7] rounded-lg px-3 py-1.5 shadow-md gap-2 transition-all duration-200 focus-within:border-[#8EBAC5] focus-within:ring-2 focus-within:ring-[#8EBAC5]/20"
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+          <svg
+            className="w-5 h-5 text-[#4E5F78] shrink-0"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            onFocus={() => {
+              if (suggestions.length > 0) setIsSuggestionsOpen(true);
+            }}
+            onBlur={() => {
+              // Delay so a click on a suggestion (below) registers before the list unmounts.
+              setTimeout(() => setIsSuggestionsOpen(false), 150);
+            }}
+            placeholder="Location"
+            className="w-full bg-transparent text-sm text-[#1A1A1A] placeholder-[#1A1A1A]/50 focus:outline-none"
           />
-        </svg>
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              handleSearchSubmit();
-            }
-          }}
-          placeholder="Location"
-          className="w-full bg-transparent text-sm text-[#1A1A1A] placeholder-[#1A1A1A]/50 focus:outline-none"
-        />
+          {(isSearching || isResolvingSelection) && (
+            <div className="w-4 h-4 border-2 border-[#8EBAC5] border-t-transparent rounded-full animate-spin shrink-0" />
+          )}
+        </div>
+
+        {/* Suggestions dropdown — plain Bookly-styled list driven by suggestion data
+            only (Places' own drop-in autocomplete UI is intentionally not used, so
+            this input/list keeps its existing design). */}
+        {isSuggestionsOpen && suggestions.length > 0 && (
+          <div className="mt-1 bg-white border border-[#D3D1C7] rounded-lg shadow-md overflow-hidden max-h-[220px] overflow-y-auto">
+            {suggestions.map((suggestion, index) => (
+              <button
+                key={suggestion.id}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()} // keep focus on input so onBlur doesn't fire first
+                onClick={() => void selectSuggestion(suggestion)}
+                className={`w-full text-left px-3 py-2 text-sm border-b border-[#F0EFE9] last:border-b-0 hover:bg-[#F5F5F0] transition-colors ${
+                  index === activeSuggestionIndex ? "bg-[#F5F5F0]" : ""
+                }`}
+              >
+                <div className="text-[#1A1A1A] font-medium truncate">{suggestion.primaryText}</div>
+                {suggestion.secondaryText && (
+                  <div className="text-[#767676] text-xs truncate">{suggestion.secondaryText}</div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Floating GPS Button */}

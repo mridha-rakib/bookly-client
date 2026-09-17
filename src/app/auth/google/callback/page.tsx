@@ -107,17 +107,16 @@ function GoogleCallbackContent() {
   }, [waitingForSession, restoreSession]);
 
   // Professional onboarding: hand straight off to the existing signup flow, in `provider=google`
-  // mode, carrying the RegistrationSession id + visit type the backend signed into the redirect.
+  // mode, carrying the RegistrationSession id the backend signed into the redirect. Visit type is
+  // no longer threaded through here — it's a later onboarding step (/professional/visit-type),
+  // collected well after this OAuth round trip.
   useEffect(() => {
     if (!professionalOnboarding || redirectedRef.current) {
       return;
     }
     redirectedRef.current = true;
     const sessionId = searchParams.get("sessionId") ?? "";
-    const type = searchParams.get("visitType") ?? "travel";
-    router.replace(
-      `/professional/signup?provider=google&sessionId=${encodeURIComponent(sessionId)}&type=${encodeURIComponent(type)}`,
-    );
+    router.replace(`/professional/signup?provider=google&sessionId=${encodeURIComponent(sessionId)}`);
   }, [professionalOnboarding, searchParams, router]);
 
   // Safety net: never spin forever on a success return.

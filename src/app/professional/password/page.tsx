@@ -12,19 +12,14 @@ import { InputField } from "@/components/auth/InputField";
 import SocialButton from "@/components/auth/SocialButton";
 import SuccessModal from "@/components/auth/SuccessModal";
 import { Spinner } from "@/components/ui/spinner";
-import type { VisitType } from "@/lib/api/auth";
 import { useProfessionalGoogleAuthMutation, useProfessionalLoginMutation } from "@/lib/auth/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
 import { getAuthenticatedUserHomePath } from "@/lib/auth/routes";
-
-const toBackendVisitType = (visitType: string): VisitType =>
-  visitType === "location" ? "AT_BUSINESS_LOCATION" : "TRAVEL_TO_CUSTOMER";
 
 function PasswordPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const email = searchParams.get("email") || "";
-  const visitType = searchParams.get("type") || "travel";
 
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
@@ -51,7 +46,7 @@ function PasswordPageContent() {
   };
 
   return (
-    <AuthLayout onBack={() => router.push(`/professional/auth?email=${encodeURIComponent(email)}&type=${visitType}`)} imageSrc="/img/authImg2.png">
+    <AuthLayout onBack={() => router.push(`/professional/auth?email=${encodeURIComponent(email)}`)} imageSrc="/img/authImg2.png">
       <AuthCard
         title="Enter your password to login to your account"
       >
@@ -71,7 +66,7 @@ function PasswordPageContent() {
           <div className="text-left">
             <button
               type="button"
-              onClick={() => router.push(`/professional/forgot-password?email=${encodeURIComponent(email)}&type=${visitType}`)}
+              onClick={() => router.push(`/professional/forgot-password?email=${encodeURIComponent(email)}`)}
               className="text-sm font-semibold text-[#240183] hover:underline cursor-pointer"
             >
               Forgot your password?
@@ -97,7 +92,7 @@ function PasswordPageContent() {
         <SocialButton
           provider="google"
           label={googleAuth.isPending ? "Redirecting to Google…" : "Continue With Google"}
-          onClick={() => googleAuth.mutate(toBackendVisitType(visitType))}
+          onClick={() => googleAuth.mutate()}
           disabled={googleAuth.isPending}
           aria-busy={googleAuth.isPending}
         />

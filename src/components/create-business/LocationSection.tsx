@@ -3,19 +3,40 @@
 import React from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Search01Icon } from "@hugeicons/core-free-icons";
+import BusinessProfileMap, { type ProfileMarkerMediaState } from "./BusinessProfileMap";
 
 interface LocationSectionProps {
   searchLocation: string;
   setSearchLocation: (v: string) => void;
-  mapUrl: string;
   handleLocationSearch: (e: React.FormEvent) => void;
+  /** The persisted business coordinate — undefined only when the business genuinely
+   * has no stored location yet (a real edge case, not the normal loaded state). */
+  lat?: number;
+  lng?: number;
+  /** What the circular marker should currently show — loading/ready/empty, derived by
+   * DashboardCreateBusiness from useBusinessMediaQuery's own loading state (see
+   * BusinessProfileMap's ProfileMarkerMediaState doc). */
+  profileMedia: ProfileMarkerMediaState;
+  /** Temporary, display-only recenter target from the Search button — never a real
+   * location change (see BusinessProfileMap/DashboardCreateBusiness). */
+  previewCenter?: { lat: number; lng: number } | null;
+  /** For the marker hover popup — the actual business name and its resolved
+   * human-readable address, decoupled from whatever the search field currently shows
+   * (see `resolvedLocationLabel` in DashboardCreateBusiness). */
+  businessName?: string;
+  displayAddress?: string;
 }
 
 export default function LocationSection({
   searchLocation,
   setSearchLocation,
-  mapUrl,
-  handleLocationSearch
+  handleLocationSearch,
+  lat,
+  lng,
+  profileMedia,
+  previewCenter,
+  businessName,
+  displayAddress,
 }: LocationSectionProps) {
   return (
     <div className="flex flex-col gap-4 w-full">
@@ -37,19 +58,25 @@ export default function LocationSection({
           <button type="submit" className="text-xs font-semibold hover:text-[#0F6E56]">Search</button>
         </form>
 
-        {/* Real Map Iframe (embedded dynamically based on search) */}
+        {/* Read-only Google Map — same footprint the previous Embed iframe used. Only
+            shown when the business actually has a persisted coordinate; a business
+            with none yet gets a plain placeholder rather than a misleading blank/default
+            map. */}
         <div className="relative w-full h-[450px] rounded-xl overflow-hidden border border-neutral-200">
-          <iframe
-            src={mapUrl}
-            width="100%"
-            height="100%"
-            style={{ border: 0 }}
-            allowFullScreen={false}
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-            title="Larnaca, Cyprus Map"
-            className="absolute inset-0"
-          />
+          {lat !== undefined && lng !== undefined ? (
+            <BusinessProfileMap
+              lat={lat}
+              lng={lng}
+              profileMedia={profileMedia}
+              previewCenter={previewCenter}
+              businessName={businessName}
+              displayAddress={displayAddress}
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center bg-[#EAE8E4]">
+              <p className="text-xs text-neutral-500 px-6 text-center">No location set for this business yet.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

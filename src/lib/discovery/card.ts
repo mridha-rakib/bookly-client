@@ -10,6 +10,7 @@ import type { Recommendation } from "@/components/ServiceCard";
  *     "Price on request". Cents -> whole units, matching the card's `$` prefix.
  *   - `image` is the signed cover-photo URL, or null => the card's own initials placeholder.
  *   - `travelsToYou` is the real `visitType`.
+ *   - `coordinates` is the real persisted `Business.location`, or undefined — never fabricated.
  * Deliberately NOT set: `distance` (no visitor coordinates exist anywhere in the product, so a
  * distance string would be fabricated) and `hasDiamond`/`noDeposit` (no real per-business
  * backing — they were invented in the old homepage mock).
@@ -21,6 +22,7 @@ export const discoveryCardToRecommendation = (card: DiscoveryBusinessCard): Reco
   reviews: card.reviewCount,
   categories: [card.category, ...card.subcategories],
   location: card.city,
+  coordinates: card.location,
   startingPrice:
     card.startingPriceCents !== null ? Math.round(card.startingPriceCents / 100) : null,
   startingPriceSuffix:

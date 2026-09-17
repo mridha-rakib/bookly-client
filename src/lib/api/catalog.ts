@@ -62,6 +62,9 @@ export interface CatalogBusiness {
   visitType: CatalogVisitType;
   timezone: string;
   address: CatalogBusinessAddress;
+  /** Real persisted business coordinate — undefined when the business has none. Never
+   * geocoded/fabricated client-side. */
+  location?: { lat: number; lng: number };
   openStatus: CatalogOpenStatus;
   hours: CatalogBusinessHoursDay[];
   media: CatalogMedia[];

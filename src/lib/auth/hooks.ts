@@ -12,7 +12,6 @@ import {
   professionalFacebookAuthStartUrl,
   professionalGoogleAuthStartUrl,
   staffInvitationGoogleStartUrl,
-  type VisitType,
 } from "@/lib/api/auth";
 import { useAuthStore } from "@/lib/auth/store";
 
@@ -39,15 +38,15 @@ export const useProfessionalEntryMutation = () =>
 
 /**
  * Phase 2C — Business Owner "Continue with Google". Navigation-only, same idiom as
- * useCustomerGoogleAuthMutation, but the professional start endpoint requires `visitType`
- * (it is signed into the OAuth state server-side). No User or session is created here — the
- * backend redirects back to /auth/google/callback?flow=professional&status=… and, for a new
- * owner, hands back a RegistrationSession id to resume the existing onboarding.
+ * useCustomerGoogleAuthMutation. No User or session is created here — the backend redirects back
+ * to /auth/google/callback?flow=professional&status=… and, for a new owner, hands back a
+ * RegistrationSession id to resume the existing onboarding (visit type is collected later, after
+ * profile/phone verification — it is no longer needed up front).
  */
 export const useProfessionalGoogleAuthMutation = () =>
   useMutation({
-    mutationFn: async (visitType: VisitType) => {
-      window.location.assign(professionalGoogleAuthStartUrl(visitType));
+    mutationFn: async () => {
+      window.location.assign(professionalGoogleAuthStartUrl());
       await new Promise<void>(() => {});
     },
   });
@@ -68,11 +67,11 @@ export const useCustomerFacebookAuthMutation = () =>
   });
 
 /** Business Owner "Continue with Facebook". Navigation-only, same idiom as
- * useProfessionalGoogleAuthMutation — `visitType` is signed into the OAuth state server-side. */
+ * useProfessionalGoogleAuthMutation. */
 export const useProfessionalFacebookAuthMutation = () =>
   useMutation({
-    mutationFn: async (visitType: VisitType) => {
-      window.location.assign(professionalFacebookAuthStartUrl(visitType));
+    mutationFn: async () => {
+      window.location.assign(professionalFacebookAuthStartUrl());
       await new Promise<void>(() => {});
     },
   });
@@ -92,11 +91,12 @@ export const useCustomerAppleAuthMutation = () =>
     },
   });
 
-/** Business Owner "Continue with Apple". Navigation-only — `visitType` signed into the state. */
+/** Business Owner "Continue with Apple". Navigation-only, same idiom as
+ * useProfessionalGoogleAuthMutation. */
 export const useProfessionalAppleAuthMutation = () =>
   useMutation({
-    mutationFn: async (visitType: VisitType) => {
-      window.location.assign(professionalAppleAuthStartUrl(visitType));
+    mutationFn: async () => {
+      window.location.assign(professionalAppleAuthStartUrl());
       await new Promise<void>(() => {});
     },
   });
@@ -209,6 +209,17 @@ export const useResendProfessionalPhoneOtpMutation = () =>
 
 export const useVerifyProfessionalPhoneOtpMutation = () =>
   useMutation({ mutationFn: authApi.verifyProfessionalPhoneOtp });
+
+// Onboarding-only recovery: replace an unverified registration phone and send a fresh code to it
+// in one call — see AuthService.changeProfessionalPhone. Rejected server-side once verified.
+export const useChangeProfessionalPhoneMutation = () =>
+  useMutation({ mutationFn: authApi.changeProfessionalPhone });
+
+// Post-phone-verification, pre-Business-Form onboarding step. Same allow-list on the backend
+// (PHONE_VERIFIED or, idempotently, VISIT_TYPE_SELECTED) as a resume/confirm — see
+// AuthService.saveProfessionalVisitType.
+export const useSaveProfessionalVisitTypeMutation = () =>
+  useMutation({ mutationFn: authApi.saveProfessionalVisitType });
 
 export const useSaveBusinessDetailsMutation = () =>
   useMutation({ mutationFn: authApi.saveBusinessDetails });

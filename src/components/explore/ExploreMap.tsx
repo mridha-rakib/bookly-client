@@ -1,134 +1,301 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
-import L from "leaflet";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+
+import { isGoogleMapsConfigured, loadGoogleMapsLibrary } from "@/lib/maps/googleMapsLoader";
 import { Recommendation } from "@/components/ServiceCard";
 
 interface ExploreMapProps {
   services: Recommendation[];
 }
 
-// Map coordinates for mock locations in Cyprus
-const mockCoordinates: { [key: string]: [number, number] } = {
-  "Larnaca": [34.922, 33.623],
-  "Limassol": [34.678, 33.041],
-  "Nicosia": [35.185, 33.382],
-  "Paphos": [34.776, 32.421],
-  "Protaras": [35.012, 34.054],
-  "Ayia Napa": [34.981, 33.999],
+// Cyprus-wide fallback viewport used ONLY when there are no valid business coordinates to show.
+// Never treated as — and never persisted as — a business location.
+const DEFAULT_CENTER: google.maps.LatLngLiteral = { lat: 34.922, lng: 33.623 }; // Larnaca
+const DEFAULT_ZOOM = 9;
+const SINGLE_MARKER_ZOOM = 13;
+const MIN_ZOOM = 3;
+
+interface MarkerOverlayData {
+  labelText: string;
+  title: string;
+  ratingText: string;
+  priceText: string | null;
+}
+
+interface MarkerOverlayInstance {
+  setMap(map: google.maps.Map | null): void;
+  open(): void;
+  close(): void;
+  isOpen(): boolean;
+}
+
+/**
+ * Built lazily from the already-loaded Maps JS library (same reasoning as
+ * BusinessProfileMap's overlay factory — `google.maps.OverlayView` doesn't exist as a global
+ * until the script has loaded, so the class can't extend it at module scope). A plain DOM
+ * overlay, not `AdvancedMarkerElement`, so no Map ID is required — consistent with the rest of
+ * this project's Google Maps usage.
+ *
+ * Renders the always-visible "title + rating" tag the legacy Leaflet divIcon showed, plus a
+ * click-to-toggle popup card with the same fields the old `bindPopup` HTML showed (title,
+ * rating/reviews, starting price).
+ */
+function createMarkerOverlayClass(mapsLibrary: google.maps.MapsLibrary) {
+  return class ExploreMarkerOverlay
+    extends mapsLibrary.OverlayView
+    implements MarkerOverlayInstance
+  {
+    private wrapper: HTMLDivElement | null = null;
+    private popup: HTMLDivElement | null = null;
+    private open_ = false;
+
+    constructor(
+      private position: google.maps.LatLng,
+      private data: MarkerOverlayData,
+      private onClick: () => void,
+    ) {
+      super();
+    }
+
+    onAdd(): void {
+      const wrapper = document.createElement("div");
+      wrapper.style.cssText =
+        "position:absolute;transform:translate(-50%,-100%);cursor:pointer;";
+
+      const liftGroup = document.createElement("div");
+      liftGroup.style.cssText = "display:flex;flex-direction:column;align-items:center;";
+
+      const tag = document.createElement("div");
+      tag.style.cssText = `
+        padding:6px 12px; background:rgba(15,15,20,0.9); color:#FFFFFF; border-radius:15px;
+        font-family:Poppins, sans-serif; font-size:12px; font-weight:500; white-space:nowrap;
+        box-shadow:0 2px 6px rgba(0,0,0,0.25); user-select:none;
+      `;
+      tag.textContent = this.data.labelText;
+      liftGroup.appendChild(tag);
+
+      const pointer = document.createElement("div");
+      pointer.style.cssText = `
+        width:0; height:0; margin-top:-2px;
+        border-left:6px solid transparent; border-right:6px solid transparent;
+        border-top:8px solid rgba(15,15,20,0.9);
+      `;
+      liftGroup.appendChild(pointer);
+      wrapper.appendChild(liftGroup);
+
+      const popup = document.createElement("div");
+      popup.style.cssText = `
+        position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%);
+        background:#FFFFFF; color:#111111; border-radius:10px; padding:10px 14px;
+        box-shadow:0 6px 20px rgba(0,0,0,0.2); white-space:nowrap;
+        font-family:Poppins, sans-serif; display:none; z-index:1;
+      `;
+      const titleEl = document.createElement("strong");
+      titleEl.style.cssText = "display:block; margin-bottom:4px; font-size:13px;";
+      titleEl.textContent = this.data.title;
+      const ratingEl = document.createElement("span");
+      ratingEl.style.cssText = "color:#E49D12; font-size:12px;";
+      ratingEl.textContent = this.data.ratingText;
+      popup.appendChild(titleEl);
+      popup.appendChild(ratingEl);
+      if (this.data.priceText) {
+        const priceEl = document.createElement("div");
+        priceEl.style.cssText = "margin-top:6px; font-weight:700; font-size:12px;";
+        priceEl.textContent = this.data.priceText;
+        popup.appendChild(priceEl);
+      }
+      wrapper.appendChild(popup);
+
+      wrapper.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.onClick();
+      });
+
+      this.wrapper = wrapper;
+      this.popup = popup;
+      this.getPanes()?.overlayMouseTarget.appendChild(wrapper);
+    }
+
+    open(): void {
+      if (!this.popup) return;
+      this.popup.style.display = "block";
+      this.open_ = true;
+    }
+
+    close(): void {
+      if (!this.popup) return;
+      this.popup.style.display = "none";
+      this.open_ = false;
+    }
+
+    isOpen(): boolean {
+      return this.open_;
+    }
+
+    draw(): void {
+      if (!this.wrapper) return;
+      const point = this.getProjection()?.fromLatLngToDivPixel(this.position);
+      if (!point) return;
+      this.wrapper.style.left = `${point.x}px`;
+      this.wrapper.style.top = `${point.y}px`;
+    }
+
+    onRemove(): void {
+      this.wrapper?.parentNode?.removeChild(this.wrapper);
+      this.wrapper = null;
+      this.popup = null;
+    }
+  };
+}
+
+/** Only a service with a finite lat/lng inside real geographic ranges is eligible for a marker —
+ * never a fabricated/offset position. Businesses without one are simply skipped, never given a
+ * fallback location. */
+const hasValidCoordinates = (
+  service: Recommendation,
+): service is Recommendation & { coordinates: { lat: number; lng: number } } => {
+  const coords = service.coordinates;
+  if (!coords) return false;
+  const { lat, lng } = coords;
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+  );
 };
 
 export default function ExploreMap({ services }: ExploreMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const markersRef = useRef<L.Marker[]>([]);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const overlayClassRef = useRef<ReturnType<typeof createMarkerOverlayClass> | null>(null);
+  const overlaysRef = useRef<Map<string, MarkerOverlayInstance>>(new Map());
+  const [mapStatus, setMapStatus] = useState<"loading" | "ready" | "error">("loading");
 
-  // Load Leaflet CSS dynamically
-  useEffect(() => {
-    if (!document.getElementById("leaflet-css")) {
-      const link = document.createElement("link");
-      link.id = "leaflet-css";
-      link.rel = "stylesheet";
-      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-      document.head.appendChild(link);
-    }
+  const handleMarkerClick = useCallback((id: string) => {
+    const overlays = overlaysRef.current;
+    const clicked = overlays.get(id);
+    if (!clicked) return;
+    const wasOpen = clicked.isOpen();
+    overlays.forEach((overlay) => overlay.close());
+    if (!wasOpen) clicked.open();
   }, []);
 
-  // Initialize and update Map
+  // Initialize the map once. SSR-safe (Maps JS is only ever loaded client-side) and
+  // missing-key-safe (falls straight to the "error" state, same convention as
+  // BusinessMap/BusinessProfileMap) without breaking the rest of the Explore page.
   useEffect(() => {
-    if (!mapContainerRef.current) return;
+    if (!mapContainerRef.current || mapRef.current) return;
 
-    // Center map around Larnaca or Cyprus center initially
-    const center: L.LatLngExpression = [34.922, 33.623];
-
-    if (!mapRef.current) {
-      const map = L.map(mapContainerRef.current, {
-        center,
-        zoom: 9,
-        minZoom: 3,
-        zoomControl: true,
-      });
-
-      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
-        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom',
-      }).addTo(map);
-
-      mapRef.current = map;
+    if (!isGoogleMapsConfigured()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMapStatus("error");
+      return;
     }
 
-    const map = mapRef.current;
+    let cancelled = false;
 
-    // Clear old markers
-    markersRef.current.forEach(marker => marker.remove());
-    markersRef.current = [];
+    (async () => {
+      try {
+        const mapsLibrary = await loadGoogleMapsLibrary("maps");
+        if (cancelled || !mapContainerRef.current) return;
 
-    // Add markers for services
-    services.forEach(service => {
-      // Find matching coordinates based on location travel locations or location text
-      let coords: [number, number] = mockCoordinates["Larnaca"]; // default fallback
+        const map = new mapsLibrary.Map(mapContainerRef.current, {
+          center: DEFAULT_CENTER,
+          zoom: DEFAULT_ZOOM,
+          minZoom: MIN_ZOOM,
+          zoomControl: true,
+          clickableIcons: false,
+        });
 
-      if (service.travelsToYou && service.travelLocations && service.travelLocations.length > 0) {
-        const firstLoc = service.travelLocations[0];
-        if (mockCoordinates[firstLoc]) coords = mockCoordinates[firstLoc];
-      } else if (service.location) {
-        const matched = Object.keys(mockCoordinates).find(key => service.location?.includes(key));
-        if (matched) coords = mockCoordinates[matched];
+        mapRef.current = map;
+        overlayClassRef.current = createMarkerOverlayClass(mapsLibrary);
+        setMapStatus("ready");
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Google Maps failed to load:", error);
+          setMapStatus("error");
+        }
       }
+    })();
 
-      // Add a small randomized offset so multiple pins in the same city don't stack directly on top of each other
-      const latOffset = (Math.random() - 0.5) * 0.03;
-      const lngOffset = (Math.random() - 0.5) * 0.03;
-      const finalCoords: L.LatLngExpression = [coords[0] + latOffset, coords[1] + lngOffset];
+    return () => {
+      cancelled = true;
+      // Intentionally read at cleanup time, not captured earlier — this must clear whatever
+      // overlays exist at unmount, not whatever existed when the effect first ran (empty).
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      const overlays = overlaysRef.current;
+      overlays.forEach((overlay) => overlay.setMap(null));
+      overlays.clear();
+    };
+  }, []);
 
-      // Custom divIcon matching address label styling: "Soho Vintage 4.5"
+  // Rebuild markers whenever the visible result set changes. Only real, valid persisted
+  // coordinates ever produce a marker — a business with none is simply skipped (it can still
+  // appear in the card list; this component never sees or cares about that list, only about
+  // which of the businesses handed to it have a plottable location).
+  useEffect(() => {
+    const map = mapRef.current;
+    const OverlayClass = overlayClassRef.current;
+    if (mapStatus !== "ready" || !map || !OverlayClass) return;
+
+    overlaysRef.current.forEach((overlay) => overlay.setMap(null));
+    overlaysRef.current.clear();
+
+    const validServices = services.filter(hasValidCoordinates);
+    const bounds = new google.maps.LatLngBounds();
+
+    validServices.forEach((service) => {
+      const position = new google.maps.LatLng(service.coordinates.lat, service.coordinates.lng);
+      bounds.extend(position);
+
       const ratingLabel = service.rating !== null ? String(service.rating) : "New";
       const labelText = `${service.title.split("|")[0].trim().substring(0, 14)} ${ratingLabel}`;
+      const ratingText =
+        service.rating !== null
+          ? `★ ${service.rating} (${service.reviews} reviews)`
+          : "New — no reviews yet";
+      const priceText =
+        service.startingPrice !== null ? `Starting from $${service.startingPrice}` : null;
 
-      const customIcon = L.divIcon({
-        className: "custom-map-address-pin",
-        html: `
-          <div class="flex flex-col items-center select-none cursor-pointer">
-            <!-- Address text tag -->
-            <div class="px-3 py-1.5 bg-[#0F0F14]/90 text-white rounded-[15px] font-sans text-xs font-medium whitespace-nowrap shadow-md flex items-center gap-1">
-              <span>${labelText}</span>
-            </div>
-            <!-- Pin Arrow pointing down -->
-            <div class="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-[#0F0F14]/90 -mt-0.5"></div>
-          </div>
-        `,
-        iconSize: [120, 40],
-        iconAnchor: [60, 36],
-      });
-
-      const marker = L.marker(finalCoords, { icon: customIcon })
-        .addTo(map)
-        .bindPopup(`
-          <div style="font-family: Poppins, sans-serif; padding: 2px;">
-            <strong style="display: block; margin-bottom: 4px;">${service.title}</strong>
-            <span style="color: #E49D12;">${service.rating !== null ? `★ ${service.rating} (${service.reviews} reviews)` : "New — no reviews yet"}</span>
-            ${service.startingPrice !== null ? `<div style="margin-top: 6px; font-weight: bold;">Starting from $${service.startingPrice}</div>` : ""}
-          </div>
-        `);
-
-      markersRef.current.push(marker);
+      const overlay = new OverlayClass(position, { labelText, title: service.title, ratingText, priceText }, () =>
+        handleMarkerClick(service.id),
+      );
+      overlay.setMap(map);
+      overlaysRef.current.set(service.id, overlay);
     });
 
-    // If we have markers, fit bounds to them
-    if (markersRef.current.length > 0) {
-      const group = L.featureGroup(markersRef.current);
-      map.fitBounds(group.getBounds().pad(0.15));
+    if (validServices.length >= 2) {
+      map.fitBounds(bounds, 48);
+    } else if (validServices.length === 1) {
+      map.setCenter({ lat: validServices[0].coordinates.lat, lng: validServices[0].coordinates.lng });
+      map.setZoom(SINGLE_MARKER_ZOOM);
+    } else {
+      map.setCenter(DEFAULT_CENTER);
+      map.setZoom(DEFAULT_ZOOM);
     }
-
-    // Force Leaflet to recalculate size after render
-    setTimeout(() => {
-      map.invalidateSize();
-    }, 100);
-
-  }, [services]);
+  }, [services, mapStatus, handleMarkerClick]);
 
   return (
     <div className="w-full h-full relative rounded-2xl overflow-hidden border border-[#E5E5E5]/50 shadow-sm min-h-[500px] bg-[#d4e6ec]">
-      <div ref={mapContainerRef} className="w-full h-full min-h-[500px] z-0 bg-[#d4e6ec]" />
+      <div ref={mapContainerRef} className="w-full h-full min-h-[500px] bg-[#d4e6ec]" />
+
+      {mapStatus !== "ready" && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#d4e6ec] pointer-events-none">
+          {mapStatus === "loading" ? (
+            <span className="text-sm text-gray-600 animate-pulse font-medium">
+              Loading Map Engine...
+            </span>
+          ) : (
+            <p className="text-xs text-neutral-600 px-6 text-center">
+              Map is temporarily unavailable.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

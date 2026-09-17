@@ -15,7 +15,6 @@ function NewPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const email = searchParams.get("email") || "";
-  const visitType = searchParams.get("type") || "travel";
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -41,7 +40,7 @@ function NewPasswordContent() {
   };
 
   return (
-    <AuthLayout onBack={() => router.push(`/professional/verify?email=${encodeURIComponent(email)}&flow=reset&type=${visitType}`)} imageSrc="/img/authImg2.png">
+    <AuthLayout onBack={() => router.push(`/professional/verify?email=${encodeURIComponent(email)}&flow=reset`)} imageSrc="/img/authImg2.png">
       <AuthCard
         title="New Password"
         subtitle="Set your new password to continue"
@@ -105,7 +104,7 @@ function NewPasswordContent() {
 
             {/* Back to Login link */}
             <button
-              onClick={() => router.push(`/professional/auth?type=${visitType}`)}
+              onClick={() => router.push("/professional/auth")}
               className="flex items-center justify-center gap-1.5 w-full h-12 border border-[#EBE8FF] hover:bg-[#F5F3FF] text-[#240183] font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer"
             >
               <HugeiconsIcon icon={ArrowLeft02Icon} size={16} />

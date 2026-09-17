@@ -25,6 +25,9 @@ export interface DiscoveryBusinessCard {
   startingPricingMode: DiscoveryPricingMode | null;
   imageUrl?: string;
   isAvailable: boolean;
+  /** Real persisted business coordinate — undefined when the business has none. Never
+   * geocoded/fabricated client-side. */
+  location?: { lat: number; lng: number };
 }
 
 export interface DiscoveryListResult {

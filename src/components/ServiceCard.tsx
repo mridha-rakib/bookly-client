@@ -13,6 +13,9 @@ export interface Recommendation {
   reviews: number;
   categories: string[];
   location?: string;
+  /** Real persisted business coordinate (Business.location) — undefined when the business has
+   * none. Never fabricated/geocoded client-side; a map must render no marker when absent. */
+  coordinates?: { lat: number; lng: number };
   distance?: string;
   lastVisited?: string;
   startingPrice: number | null;

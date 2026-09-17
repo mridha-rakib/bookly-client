@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Mail01Icon } from "@hugeicons/core-free-icons";
 
@@ -11,7 +11,6 @@ import AuthCard from "@/components/auth/AuthCard";
 import { InputField } from "@/components/auth/InputField";
 import SocialButton from "@/components/auth/SocialButton";
 import { Spinner } from "@/components/ui/spinner";
-import type { VisitType } from "@/lib/api/auth";
 import {
   useProfessionalAppleAuthMutation,
   useProfessionalEntryMutation,
@@ -20,15 +19,11 @@ import {
   useSendProfessionalEmailOtpMutation,
 } from "@/lib/auth/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
+import { professionalResumeRoute } from "@/lib/auth/resume-routing";
 import { saveRegistrationSession } from "@/lib/auth/registration-session";
-
-const toBackendVisitType = (visitType: string): VisitType =>
-  visitType === "location" ? "AT_BUSINESS_LOCATION" : "TRAVEL_TO_CUSTOMER";
 
 function ProfessionalAuthContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const visitType = searchParams.get("type") || "travel";
 
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
@@ -52,11 +47,10 @@ function ProfessionalAuthContent() {
     setEmailError("");
 
     try {
-      const backendVisitType = toBackendVisitType(visitType);
-      const result = await professionalEntry.mutateAsync({ email, visitType: backendVisitType });
+      const result = await professionalEntry.mutateAsync({ email });
 
       if (result.nextStep === "PASSWORD_LOGIN") {
-        router.push(`/professional/password?email=${encodeURIComponent(email)}&type=${visitType}`);
+        router.push(`/professional/password?email=${encodeURIComponent(email)}`);
         return;
       }
 
@@ -75,18 +69,28 @@ function ProfessionalAuthContent() {
         email,
         sessionId: result.sessionId,
         currentStep: result.currentStep,
-        visitType: backendVisitType,
       });
+
+      // A brand-new session starts at EMAIL_ENTRY — send the first OTP and go verify. Any other
+      // currentStep means `entry` reused an existing, already-advanced session (the user is
+      // resuming, not starting over): route it to wherever it actually left off instead of
+      // restarting at email verification. This is the fix for the audited resume bug — reusing
+      // an advanced session used to be forced back through an early visit-type guard and fail
+      // with "Please complete the previous step first."
+      if (result.currentStep && result.currentStep !== "EMAIL_ENTRY") {
+        router.push(professionalResumeRoute(result.currentStep, { email, sessionId: result.sessionId }));
+        return;
+      }
+
       await sendEmailOtp.mutateAsync(result.sessionId);
       saveRegistrationSession({
         portal: "professional",
         email,
         sessionId: result.sessionId,
         currentStep: "EMAIL_OTP_SENT",
-        visitType: backendVisitType,
       });
       router.push(
-        `/professional/verify?email=${encodeURIComponent(email)}&type=${visitType}&sessionId=${encodeURIComponent(result.sessionId)}`,
+        `/professional/verify?email=${encodeURIComponent(email)}&sessionId=${encodeURIComponent(result.sessionId)}`,
       );
     } catch (error) {
       setEmailError(toUserMessage(error));
@@ -94,7 +98,7 @@ function ProfessionalAuthContent() {
   };
 
   return (
-    <AuthLayout onBack={() => router.push(`/professional?type=${visitType}`)} imageSrc="/img/authImg2.png">
+    <AuthLayout onBack={() => router.push("/")} imageSrc="/img/authImg2.png">
       <AuthCard
         title="Bookly for professionals"
         subtitle="Create an account or log in to manage your business."
@@ -133,21 +137,21 @@ function ProfessionalAuthContent() {
           <SocialButton
             provider="google"
             label={googleAuth.isPending ? "Redirecting to Google…" : "Continue With Google"}
-            onClick={() => googleAuth.mutate(toBackendVisitType(visitType))}
+            onClick={() => googleAuth.mutate()}
             disabled={googleAuth.isPending}
             aria-busy={googleAuth.isPending}
           />
           <SocialButton
             provider="apple"
             label={appleAuth.isPending ? "Redirecting to Apple…" : "Continue With Apple"}
-            onClick={() => appleAuth.mutate(toBackendVisitType(visitType))}
+            onClick={() => appleAuth.mutate()}
             disabled={appleAuth.isPending}
             aria-busy={appleAuth.isPending}
           />
           <SocialButton
             provider="facebook"
             label={facebookAuth.isPending ? "Redirecting to Facebook…" : "Continue With Facebook"}
-            onClick={() => facebookAuth.mutate(toBackendVisitType(visitType))}
+            onClick={() => facebookAuth.mutate()}
             disabled={facebookAuth.isPending}
             aria-busy={facebookAuth.isPending}
           />

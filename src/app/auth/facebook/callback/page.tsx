@@ -94,16 +94,15 @@ function FacebookCallbackContent() {
     }
   }, [waitingForSession, restoreSession]);
 
+  // Visit type is no longer threaded through here — it's a later onboarding step
+  // (/professional/visit-type), collected well after this OAuth round trip.
   useEffect(() => {
     if (!professionalOnboarding || redirectedRef.current) {
       return;
     }
     redirectedRef.current = true;
     const sessionId = searchParams.get("sessionId") ?? "";
-    const type = searchParams.get("visitType") ?? "travel";
-    router.replace(
-      `/professional/signup?provider=facebook&sessionId=${encodeURIComponent(sessionId)}&type=${encodeURIComponent(type)}`,
-    );
+    router.replace(`/professional/signup?provider=facebook&sessionId=${encodeURIComponent(sessionId)}`);
   }, [professionalOnboarding, searchParams, router]);
 
   useEffect(() => {

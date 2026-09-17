@@ -14,7 +14,6 @@ function ForgotPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const emailParam = searchParams.get("email") || "";
-  const visitType = searchParams.get("type") || "travel";
 
   const [email, setEmail] = useState(emailParam);
   const [emailError, setEmailError] = useState("");
@@ -30,12 +29,11 @@ function ForgotPasswordContent() {
       return;
     }
     setEmailError("");
-    // Redirect to verify code with flow=reset and preserve visitType
-    router.push(`/professional/verify?email=${encodeURIComponent(email)}&flow=reset&type=${visitType}`);
+    router.push(`/professional/verify?email=${encodeURIComponent(email)}&flow=reset`);
   };
 
   return (
-    <AuthLayout onBack={() => router.push(`/professional/password?email=${encodeURIComponent(email)}&type=${visitType}`)} imageSrc="/img/authImg2.png">
+    <AuthLayout onBack={() => router.push(`/professional/password?email=${encodeURIComponent(email)}`)} imageSrc="/img/authImg2.png">
       <AuthCard
         title="Forgot your password?"
         subtitle="Enter your email address to reset password"
@@ -63,7 +61,7 @@ function ForgotPasswordContent() {
           <div className="flex justify-center mt-2">
             <button
               type="button"
-              onClick={() => router.push(`/professional/password?email=${encodeURIComponent(email)}&type=${visitType}`)}
+              onClick={() => router.push(`/professional/password?email=${encodeURIComponent(email)}`)}
               className="flex items-center gap-1.5 text-xs font-semibold text-[#240183] hover:underline cursor-pointer"
             >
               <HugeiconsIcon icon={ArrowLeft02Icon} size={14} />

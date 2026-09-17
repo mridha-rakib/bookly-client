@@ -15,6 +15,7 @@ import TimeStep from "./components/TimeStep";
 import PaymentStep from "./components/PaymentStep";
 import ConfirmedStep from "./components/ConfirmedStep";
 import CheckoutSummaryAside from "./components/CheckoutSummaryAside";
+import VenueLocationMap from "./components/VenueLocationMap";
 
 import { Suspense } from "react";
 
@@ -1035,25 +1036,24 @@ function VenueDetailsContent() {
                       )}
                     </div>
 
-                    {/* Google Maps embed of the real Business address */}
+                    {/* Google Maps of the real persisted Business location — a Business with no
+                        valid stored coordinate gets an address-only fallback, never a
+                        fabricated/geocoded pin (see VenueLocationMap). */}
                     {business && (
                       <div className="w-full h-[320px] bg-[#EAE8E4] rounded-xl relative overflow-hidden shadow-inner border border-neutral-200">
-                        <iframe
-                          width="100%"
-                          height="100%"
-                          frameBorder="0"
-                          style={{ border: 0 }}
-                          src={`https://maps.google.com/maps?q=${encodeURIComponent(venueLocationText)}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
-                          allowFullScreen
-                        />
-                        {/* Center Pin overlay */}
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10 pointer-events-none">
-                          <div className="bg-[#1C1B1C] text-white px-3 py-1.5 rounded-lg text-xs font-semibold font-poppins shadow-md whitespace-nowrap">
-                            {business.name}
+                        {business.location ? (
+                          <VenueLocationMap
+                            lat={business.location.lat}
+                            lng={business.location.lng}
+                            label={business.name}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center px-6 text-center">
+                            <p className="text-sm text-neutral-500">
+                              Map location not available for this business yet.
+                            </p>
                           </div>
-                          {/* Down arrow caret */}
-                          <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-[#1C1B1C]" />
-                        </div>
+                        )}
 
                         <div className="absolute left-4 bottom-4 bg-[#FFFFFF] border border-[#ACAAB4] rounded-lg p-3 shadow-md">
                           <span className="font-bold text-sm block">{business.name}</span>

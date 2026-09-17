@@ -24,6 +24,7 @@ import {
 } from "@/lib/auth/registration-session";
 import { getAuthenticatedUserHomePath } from "@/lib/auth/routes";
 import { toast } from "@/components/ui/sonner";
+import { geocodeAddress } from "@/lib/maps/googleGeocoding";
 
 // The map needs *some* center before a real address is resolved; Larnaca, Cyprus matches
 // the default used elsewhere in the app. This is only ever a display fallback — it is
@@ -62,6 +63,16 @@ function BusinessFormContent() {
   const [resolvedCoordinates, setResolvedCoordinates] = useState<{ lat: number; lng: number } | null>(
     null,
   );
+  // Display-only city recenter: set when the user picks a City before any real location
+  // has been resolved, so the map visibly moves to the right part of Cyprus. Deliberately
+  // kept separate from `resolvedCoordinates` — a city centroid is never precise enough to
+  // be a real business location, so it must never be submitted, never treated as a
+  // confirmed marker placement, and never override a coordinate the user actually chose
+  // (see the map-center fallback chain below, and the gating on `resolvedCoordinates`
+  // inside the effect that sets this).
+  const [cityPreviewCenter, setCityPreviewCenter] = useState<{ lat: number; lng: number } | null>(
+    null,
+  );
   const [searchQuery, setSearchQuery] = useState("");
 
   // Step 2 Selection State
@@ -76,10 +87,12 @@ function BusinessFormContent() {
 
   // Address -> map sync: debounced so it doesn't fire per keystroke, gated on `area` being
   // filled in (city always has a non-empty default, so it alone isn't a meaningful signal
-  // that the user is entering a real address). AbortController + the effect's own cleanup
-  // guarantee a stale response from an older address can never overwrite a newer one, and a
-  // failed/no-match lookup silently leaves the last resolved pin (or no pin) alone instead
-  // of moving it to a fabricated location.
+  // that the user is entering a real address). The Google Maps JS SDK has no request-level
+  // abort, so the effect's own `cancelled` closure flag is a cooperative staleness guard
+  // instead of `AbortController`: it's captured fresh by each effect run and flipped by
+  // that run's own cleanup, so a response for an older address can never overwrite a newer
+  // one. A failed/no-match lookup silently leaves the last resolved pin (or no pin) alone
+  // instead of moving it to a fabricated location.
   useEffect(() => {
     const trimmedArea = area.trim();
     if (!trimmedArea) return;
@@ -87,33 +100,59 @@ function BusinessFormContent() {
     const streetPart = [streetNumber.trim(), streetName.trim()].filter(Boolean).join(" ");
     const query = [streetPart, trimmedArea, city, "Cyprus"].filter(Boolean).join(", ");
 
-    const controller = new AbortController();
+    let cancelled = false;
     const timeoutId = setTimeout(() => {
       void (async () => {
-        try {
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=cy&q=${encodeURIComponent(query)}`,
-            { signal: controller.signal },
-          );
-          const results: Array<{ lat: string; lon: string }> = await response.json();
-          if (controller.signal.aborted) return;
-
-          if (results.length > 0) {
-            setResolvedCoordinates({ lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) });
-          }
-        } catch (error) {
-          if (!controller.signal.aborted) {
-            console.error("Address geocoding failed:", error);
-          }
+        const coordinates = await geocodeAddress(query);
+        if (cancelled) return;
+        if (coordinates) {
+          setResolvedCoordinates(coordinates);
         }
       })();
     }, 800);
 
     return () => {
-      controller.abort();
+      cancelled = true;
       clearTimeout(timeoutId);
     };
   }, [city, area, streetName, streetNumber]);
+
+  // City -> map recenter: fires only while there's no real address yet (`area` empty) and
+  // no location has already been confirmed — the moment either becomes true, the effect
+  // above (or a Places/click/drag/GPS selection) is the sole source of truth and this one
+  // has nothing useful left to contribute, so it no-ops rather than fighting them. This
+  // means a city-only recenter and the full-address geocode can never both be in flight for
+  // the same field state — they're mutually exclusive by construction, not by a race check.
+  // Larnaca is special-cased to skip the network call entirely since `DEFAULT_MAP_CENTER`
+  // already *is* Larnaca's centroid, and it's the form's default city on every fresh load.
+  useEffect(() => {
+    if (resolvedCoordinates) return;
+    if (area.trim()) return;
+
+    if (city === "Larnaca") {
+      // Synchronous bail-out reporting external (constant) state, not derived React
+      // state — same established pattern used elsewhere in this codebase.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCityPreviewCenter(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = setTimeout(() => {
+      void (async () => {
+        const coordinates = await geocodeAddress(`${city}, Cyprus`);
+        if (cancelled) return;
+        if (coordinates) {
+          setCityPreviewCenter(coordinates);
+        }
+      })();
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [city, area, resolvedCoordinates]);
 
   const getSessionId = () =>
     sessionIdParam || getRegistrationSession("professional", emailParam)?.sessionId || "";
@@ -381,7 +420,7 @@ function BusinessFormContent() {
           setAptRoom={setAptRoom}
           briefDesc={briefDesc}
           setBriefDesc={handleBriefDescChange}
-          coordinates={resolvedCoordinates ?? DEFAULT_MAP_CENTER}
+          coordinates={resolvedCoordinates ?? cityPreviewCenter ?? DEFAULT_MAP_CENTER}
           setCoordinates={setResolvedCoordinates}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}

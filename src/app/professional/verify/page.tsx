@@ -8,7 +8,6 @@ import AuthLayout from "@/components/auth/AuthLayout";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/sonner";
 import { useOtpInput } from "@/hooks/useOtpInput";
-import type { VisitType } from "@/lib/api/auth";
 import {
   useResendProfessionalEmailOtpMutation,
   useVerifyProfessionalEmailOtpMutation,
@@ -19,14 +18,10 @@ import {
   saveRegistrationSession,
 } from "@/lib/auth/registration-session";
 
-const toBackendVisitType = (visitType: string): VisitType =>
-  visitType === "location" ? "AT_BUSINESS_LOCATION" : "TRAVEL_TO_CUSTOMER";
-
 function ProfessionalVerifyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const email = searchParams.get("email") || "";
-  const visitType = searchParams.get("type") || "travel";
   const sessionIdParam = searchParams.get("sessionId") || "";
   const flow = searchParams.get("flow") || "";
 
@@ -44,7 +39,7 @@ function ProfessionalVerifyContent() {
     const otpValue = otp.value;
     if (otpValue.length === 4) {
       if (flow === "reset") {
-        router.push(`/professional/new-password?email=${encodeURIComponent(email)}&type=${visitType}`);
+        router.push(`/professional/new-password?email=${encodeURIComponent(email)}`);
       } else {
         const sessionId = getSessionId();
 
@@ -60,10 +55,9 @@ function ProfessionalVerifyContent() {
             email,
             sessionId,
             currentStep: "EMAIL_VERIFIED",
-            visitType: toBackendVisitType(visitType),
           });
           router.push(
-            `/professional/signup?email=${encodeURIComponent(email)}&type=${visitType}&sessionId=${encodeURIComponent(sessionId)}`,
+            `/professional/signup?email=${encodeURIComponent(email)}&sessionId=${encodeURIComponent(sessionId)}`,
           );
         } catch (error) {
           toast.error(toUserMessage(error));
@@ -90,9 +84,9 @@ function ProfessionalVerifyContent() {
 
   const handleBack = () => {
     if (flow === "reset") {
-      router.push(`/professional/forgot-password?email=${encodeURIComponent(email)}&type=${visitType}`);
+      router.push(`/professional/forgot-password?email=${encodeURIComponent(email)}`);
     } else {
-      router.push(`/professional/auth?type=${visitType}`);
+      router.push("/professional/auth");
     }
   };
 

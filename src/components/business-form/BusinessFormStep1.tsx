@@ -6,7 +6,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { BUSINESS_CITIES } from "@/lib/constants/cities";
 
-// Dynamically import the map to avoid SSR issues with Leaflet
+// Dynamically import the map to avoid SSR issues with the Google Maps JS SDK, which
+// requires `window`/`document` and can only run in the browser.
 const BusinessMap = dynamic(() => import("./BusinessMap"), {
   ssr: false,
   loading: () => (

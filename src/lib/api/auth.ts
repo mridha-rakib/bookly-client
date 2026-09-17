@@ -169,6 +169,21 @@ export interface RegistrationProgress {
   firstName?: string;
   lastName?: string;
   phone?: { countryCode: string; nationalNumber: string };
+  // PROFESSIONAL only — present once the visit-type step has been completed (or, for a legacy
+  // in-flight session created before the visit-type step moved, if it was captured earlier).
+  // Lets a resumed session pre-select/preserve the existing choice instead of asking again.
+  businessVisitType?: VisitType;
+}
+
+export interface SaveVisitTypeInput {
+  sessionId: string;
+  visitType: VisitType;
+}
+
+export interface ChangePhoneInput {
+  sessionId: string;
+  countryCode: string;
+  nationalNumber: string;
 }
 
 export interface ProfileInput {
@@ -220,13 +235,13 @@ export const customerGoogleAuthStartUrl = (): string =>
 
 /**
  * Absolute URL of the backend's Business Owner "Continue with Google" entry point. Same
- * full-page-redirect contract as `customerGoogleAuthStartUrl`, but the professional flow needs
- * the `visitType` up front — it is signed into the OAuth state server-side (never trusted from
- * the callback query). On return the backend redirects to
+ * full-page-redirect contract as `customerGoogleAuthStartUrl`. Visit type is no longer needed up
+ * front — it is now a post-phone-verification onboarding step collected well after this OAuth
+ * round trip. On return the backend redirects to
  * `/auth/google/callback?flow=professional&status=...` on THIS app.
  */
-export const professionalGoogleAuthStartUrl = (visitType: VisitType): string =>
-  `${apiBaseUrl}/auth/professional/oauth/google/start?visitType=${encodeURIComponent(visitType)}`;
+export const professionalGoogleAuthStartUrl = (): string =>
+  `${apiBaseUrl}/auth/professional/oauth/google/start`;
 
 /**
  * Absolute URL of the backend's Staff/Supervisor invitation "Continue with Google" entry point
@@ -259,12 +274,12 @@ export const customerFacebookAuthStartUrl = (): string =>
 
 /**
  * Absolute URL of the backend's Business Owner "Continue with Facebook" entry point. Like the
- * Google equivalent, `visitType` is required up front and signed into the OAuth state
- * server-side. On return the backend redirects to
+ * Google equivalent, visit type is no longer required up front — it's collected later in
+ * onboarding. On return the backend redirects to
  * `/auth/facebook/callback?flow=professional&status=...` on THIS app.
  */
-export const professionalFacebookAuthStartUrl = (visitType: VisitType): string =>
-  `${apiBaseUrl}/auth/professional/oauth/facebook/start?visitType=${encodeURIComponent(visitType)}`;
+export const professionalFacebookAuthStartUrl = (): string =>
+  `${apiBaseUrl}/auth/professional/oauth/facebook/start`;
 
 /**
  * Absolute URL of the backend's Customer "Continue with Apple" entry point. Same
@@ -275,10 +290,11 @@ export const professionalFacebookAuthStartUrl = (visitType: VisitType): string =
 export const customerAppleAuthStartUrl = (): string =>
   `${apiBaseUrl}/auth/customer/oauth/apple/start`;
 
-/** Business Owner "Continue with Apple". `visitType` is required and signed into the OAuth state
- * server-side; return lands on `/auth/apple/callback?flow=professional&status=...`. */
-export const professionalAppleAuthStartUrl = (visitType: VisitType): string =>
-  `${apiBaseUrl}/auth/professional/oauth/apple/start?visitType=${encodeURIComponent(visitType)}`;
+/** Business Owner "Continue with Apple". Visit type is no longer required up front — it's
+ * collected later in onboarding; return lands on
+ * `/auth/apple/callback?flow=professional&status=...`. */
+export const professionalAppleAuthStartUrl = (): string =>
+  `${apiBaseUrl}/auth/professional/oauth/apple/start`;
 
 export const authApi = {
   customerEntry: (email: string) =>
@@ -288,7 +304,7 @@ export const authApi = {
       data: { email },
     }),
 
-  professionalEntry: (input: { email: string; visitType: VisitType }) =>
+  professionalEntry: (input: { email: string }) =>
     apiRequest<EntryResponse>({
       method: "POST",
       url: "/auth/professional/entry",
@@ -549,6 +565,23 @@ export const authApi = {
     apiRequest<StepResponse>({
       method: "POST",
       url: "/auth/professional/register/verify-phone-otp",
+      data: input,
+    }),
+
+  // Onboarding-only: replaces an UNVERIFIED registration phone and sends a code to it in one
+  // call. Rejected server-side once PHONE_VERIFIED — editing a verified phone belongs to
+  // Settings, not this flow.
+  changeProfessionalPhone: (input: ChangePhoneInput) =>
+    apiRequest<StepResponse>({
+      method: "POST",
+      url: "/auth/professional/register/change-phone",
+      data: input,
+    }),
+
+  saveProfessionalVisitType: (input: SaveVisitTypeInput) =>
+    apiRequest<StepResponse>({
+      method: "POST",
+      url: "/auth/professional/register/visit-type",
       data: input,
     }),
 
