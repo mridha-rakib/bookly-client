@@ -20,6 +20,7 @@ import {
 
 import BusinessInfoSection from "../create-business/BusinessInfoSection";
 import AddressSection from "../create-business/AddressSection";
+import ServiceLocationTypeSection from "../create-business/ServiceLocationTypeSection";
 import LocationSection from "../create-business/LocationSection";
 import type { ProfileMarkerMediaState } from "../create-business/BusinessProfileMap";
 import ServiceCategorySection, { serviceCategoryOptions } from "../create-business/ServiceCategorySection";
@@ -1005,6 +1006,9 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
           timezone={timezone}
           setTimezone={setTimezone}
         />
+
+        {/* Service location type — read-only, set during onboarding (/professional/visit-type) */}
+        {mode !== "create" && <ServiceLocationTypeSection visitType={business?.visitType} />}
 
         {/* 4. Location & Real Map Section */}
         <LocationSection
