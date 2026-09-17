@@ -101,6 +101,55 @@ export const useProfessionalAppleAuthMutation = () =>
     },
   });
 
+/**
+ * Customer "Continue with Facebook" — LOGIN (and, email permitting, signup). Navigation-only,
+ * exact same idiom as useCustomerGoogleAuthMutation: a synchronous full-page redirect to the
+ * backend `start` endpoint, which owns the whole OAuth handshake and sets the CSRF nonce cookie.
+ * No session is created here — the backend redirects back to /auth/facebook/callback?status=…
+ * This is NOT the Settings "Link Facebook" flow and never hits its authenticated route.
+ */
+export const useCustomerFacebookAuthMutation = () =>
+  useMutation({
+    mutationFn: async () => {
+      window.location.assign(customerFacebookAuthStartUrl());
+      await new Promise<void>(() => {});
+    },
+  });
+
+/** Business Owner "Continue with Facebook". Navigation-only, same idiom as
+ * useProfessionalGoogleAuthMutation — `visitType` is signed into the OAuth state server-side. */
+export const useProfessionalFacebookAuthMutation = () =>
+  useMutation({
+    mutationFn: async (visitType: VisitType) => {
+      window.location.assign(professionalFacebookAuthStartUrl(visitType));
+      await new Promise<void>(() => {});
+    },
+  });
+
+/**
+ * Customer "Continue with Apple" — LOGIN. Navigation-only, identical idiom to
+ * useCustomerFacebookAuthMutation: a synchronous full-page redirect to the backend `start`
+ * endpoint. The backend 302s to Apple; Apple POSTs its callback (form_post) to the backend, which
+ * redirects to /auth/apple/callback?status=… No session, no cookie handled here. This is NOT the
+ * Settings "Link Apple" flow.
+ */
+export const useCustomerAppleAuthMutation = () =>
+  useMutation({
+    mutationFn: async () => {
+      window.location.assign(customerAppleAuthStartUrl());
+      await new Promise<void>(() => {});
+    },
+  });
+
+/** Business Owner "Continue with Apple". Navigation-only — `visitType` signed into the state. */
+export const useProfessionalAppleAuthMutation = () =>
+  useMutation({
+    mutationFn: async (visitType: VisitType) => {
+      window.location.assign(professionalAppleAuthStartUrl(visitType));
+      await new Promise<void>(() => {});
+    },
+  });
+
 export const useCustomerLoginMutation = () => {
   const setAuth = useAuthStore((state) => state.setAuth);
   return useMutation({
