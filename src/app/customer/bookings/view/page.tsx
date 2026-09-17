@@ -18,6 +18,7 @@ import { useCustomerBookingDetailQuery, useCancelByCustomerMutation } from "@/li
 import { useBusinessCatalogQuery } from "@/lib/catalog/hooks";
 import {
   bookingClientBadge,
+  buildBookingDirectionsUrl,
   formatBookingDate,
   formatBookingMoney,
   formatBookingTimeRange,
@@ -233,7 +234,7 @@ function BookingViewContent() {
                   </div>
 
                   <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`}
+                    href={buildBookingDirectionsUrl({ location: location?.location, addressText: mapQuery })}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-[#2E9DA7] font-semibold hover:underline"
@@ -243,7 +244,7 @@ function BookingViewContent() {
                   </a>
 
                   {showMap ? (
-                    <BookingLocationMap address={mapQuery} />
+                    <BookingLocationMap coordinates={location?.location} address={mapQuery} />
                   ) : (
                     <div
                       onClick={() => setShowMap(true)}

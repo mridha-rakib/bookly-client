@@ -20,6 +20,7 @@ import {
   BOOKING_STATUS_LABELS,
   BOOKING_STATUS_TONE,
   bookingClientBadge,
+  buildBookingDirectionsUrl,
   formatBookingDate,
   formatBookingMoney,
   formatBookingTimeRange,
@@ -47,8 +48,11 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
   const router = useRouter();
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
+  // Name/image/visit-type display only — the booking's own historical fulfilmentLocation
+  // snapshot (never this live query) is the source of truth for address/Directions below.
   const catalogQuery = useBusinessCatalogQuery(booking.businessId);
   const business = catalogQuery.data?.business;
+  const fulfilmentLocation = booking.fulfilmentLocation;
   const detailQuery = useCustomerBookingDetailQuery(isDetailOpen ? booking.id : undefined);
   const detail = detailQuery.data;
 
@@ -92,9 +96,9 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
             )}
           </div>
 
-          {business && (
+          {fulfilmentLocation && (
             <div className="flex flex-wrap items-center gap-2 text-sm text-[#111111] font-manrope">
-              {business.visitType === "TRAVEL_TO_CUSTOMER" ? (
+              {fulfilmentLocation.mode === "TRAVEL_TO_CUSTOMER" ? (
                 <div className="flex items-center gap-1.5">
                   <HugeiconsIcon icon={Car04Icon} className="w-4 h-4 text-[#111111]" />
                   <span className="font-normal">Traveling to you</span>
@@ -104,12 +108,15 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
                   <div className="flex items-center gap-1.5">
                     <HugeiconsIcon icon={Location01Icon} className="w-4 h-4 text-[#111111]" />
                     <span className="font-normal">
-                      {business.address.streetName} {business.address.streetNumber}, {business.address.area}
+                      {fulfilmentLocation.address.streetName} {fulfilmentLocation.address.streetNumber}, {fulfilmentLocation.address.area}
                     </span>
                   </div>
                   <span className="text-gray-400">•</span>
                   <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${business.address.streetName} ${business.address.streetNumber}, ${business.address.area}, ${business.address.city}`)}`}
+                    href={buildBookingDirectionsUrl({
+                      location: fulfilmentLocation.location,
+                      addressText: `${fulfilmentLocation.address.streetName} ${fulfilmentLocation.address.streetNumber}, ${fulfilmentLocation.address.area}, ${fulfilmentLocation.address.city}`,
+                    })}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-[#2E9DA7] font-normal hover:underline flex items-center gap-1"

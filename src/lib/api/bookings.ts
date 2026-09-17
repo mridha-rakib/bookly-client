@@ -63,6 +63,10 @@ export interface BookingLocationSnapshotDto {
   streetNumber: string;
   floorUnit?: string;
   aptRoom?: string;
+  /** The historical coordinate frozen at booking-creation time, when a real one was available
+   * then — NEVER the Business's current location. Absent for a Booking created before this
+   * field existed, or where no valid source coordinate existed; never fabricated/backfilled. */
+  location?: { lat: number; lng: number };
 }
 
 export interface BookingTravelAddressSnapshotDto extends BookingLocationSnapshotDto {
@@ -136,6 +140,22 @@ export interface BookingDetail {
   updatedAt: string;
 }
 
+/** The Booking's own historical fulfilment snapshot — matches
+ * api/src/modules/booking/booking.dto.ts's BookingListFulfilmentLocationDto exactly. Never the
+ * Business's current address/location. */
+export interface BookingListFulfilmentLocation {
+  mode: "AT_BUSINESS_LOCATION" | "TRAVEL_TO_CUSTOMER";
+  address: {
+    city: string;
+    area: string;
+    streetName: string;
+    streetNumber: string;
+    floorUnit?: string;
+    aptRoom?: string;
+  };
+  location?: { lat: number; lng: number };
+}
+
 export interface BookingListItem {
   id: string;
   /** Batch 9 — lets the cross-business customer "My Bookings" list identify/link to each
@@ -153,6 +173,9 @@ export interface BookingListItem {
   totalCents: number;
   depositCents: number;
   currency: string;
+  /** The Booking's own historical fulfilment snapshot — see BookingListFulfilmentLocation's own
+   * doc comment. Never the Business's current address/location. */
+  fulfilmentLocation?: BookingListFulfilmentLocation;
   /** First-vs-returning display only — see booking.dto.ts's own doc comment. Meaningless when
    * `source === "MANUAL"` (always 0); branch on `source` first. */
   platformFeeCents: number;
