@@ -274,12 +274,21 @@ export const customerFacebookAuthStartUrl = (): string =>
 
 /**
  * Absolute URL of the backend's Business Owner "Continue with Facebook" entry point. Like the
+<<<<<<< HEAD
  * Google equivalent, visit type is no longer required up front — it's collected later in
  * onboarding. On return the backend redirects to
  * `/auth/facebook/callback?flow=professional&status=...` on THIS app.
  */
 export const professionalFacebookAuthStartUrl = (): string =>
   `${apiBaseUrl}/auth/professional/oauth/facebook/start`;
+=======
+ * Google equivalent, `visitType` is required up front and signed into the OAuth state
+ * server-side. On return the backend redirects to
+ * `/auth/facebook/callback?flow=professional&status=...` on THIS app.
+ */
+export const professionalFacebookAuthStartUrl = (visitType: VisitType): string =>
+  `${apiBaseUrl}/auth/professional/oauth/facebook/start?visitType=${encodeURIComponent(visitType)}`;
+>>>>>>> ca126a4f6ff14aa988c44ea73c30011f535d0663
 
 /**
  * Absolute URL of the backend's Customer "Continue with Apple" entry point. Same
@@ -290,11 +299,18 @@ export const professionalFacebookAuthStartUrl = (): string =>
 export const customerAppleAuthStartUrl = (): string =>
   `${apiBaseUrl}/auth/customer/oauth/apple/start`;
 
+<<<<<<< HEAD
 /** Business Owner "Continue with Apple". Visit type is no longer required up front — it's
  * collected later in onboarding; return lands on
  * `/auth/apple/callback?flow=professional&status=...`. */
 export const professionalAppleAuthStartUrl = (): string =>
   `${apiBaseUrl}/auth/professional/oauth/apple/start`;
+=======
+/** Business Owner "Continue with Apple". `visitType` is required and signed into the OAuth state
+ * server-side; return lands on `/auth/apple/callback?flow=professional&status=...`. */
+export const professionalAppleAuthStartUrl = (visitType: VisitType): string =>
+  `${apiBaseUrl}/auth/professional/oauth/apple/start?visitType=${encodeURIComponent(visitType)}`;
+>>>>>>> ca126a4f6ff14aa988c44ea73c30011f535d0663
 
 export const authApi = {
   customerEntry: (email: string) =>
