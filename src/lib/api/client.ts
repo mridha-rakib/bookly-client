@@ -5,6 +5,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from "axios";
 
+import type { AuthUser } from "@/lib/api/auth";
 import { clearAccessToken, getAccessToken, setAccessToken } from "@/lib/auth/token-memory";
 
 export interface ApiEnvelope<T> {
@@ -33,12 +34,7 @@ interface RetryableRequestConfig extends InternalAxiosRequestConfig {
 interface RefreshAuthResponse {
   accessToken: string;
   accessTokenExpiresAt: string;
-  user: {
-    id: string;
-    email: string;
-    role: string;
-    status: string;
-  };
+  user: AuthUser;
 }
 
 export class BooklyApiError extends Error {
@@ -84,21 +80,111 @@ export const setOnSessionExpired = (handler: () => void): void => {
   onSessionExpired = handler;
 };
 
+// Bumped by the auth store on every logout (local, or learned from another tab) so a refresh
+// that was already in flight at that moment can never apply its result afterwards and silently
+// resurrect a session that has just been deliberately ended. See invalidateInFlightAuth().
+let authGeneration = 0;
+
+export class StaleAuthGenerationError extends Error {
+  public constructor() {
+    super("Discarded a refresh result because a logout happened while it was in flight.");
+    this.name = "StaleAuthGenerationError";
+  }
+}
+
+/** Call on any logout (local `logout()`, a terminal refresh failure, or an AUTH_LOGGED_OUT /
+ * AUTH_SESSION_CHANGED event from another tab) — see auth/store.ts. */
+export const invalidateInFlightAuth = (): void => {
+  authGeneration += 1;
+  refreshPromise = null;
+};
+
+const REFRESH_LOCK_NAME = "bookly-auth-refresh";
+
+/** Same-browser-profile tabs share the refresh cookie but not JS memory, so the module-level
+ * refreshPromise below only dedupes refreshes within one tab. The Web Locks API additionally
+ * serializes the actual HTTP call across tabs: whichever tab acquires "bookly-auth-refresh"
+ * sends the refresh request first; by the time a second tab acquires the lock, the shared
+ * cookie has already rotated, so its request naturally uses the current token instead of
+ * racing the same old one. Browsers without Web Locks (older Safari/Firefox) simply fall back
+ * to the existing same-tab-only single-flight — no deadlock risk, since the lock (when used) is
+ * held only for the duration of one HTTP request-response and always released via `using`
+ * semantics internal to `navigator.locks.request`. */
+const withCrossTabRefreshLock = <T>(run: () => Promise<T>): Promise<T> => {
+  if (typeof navigator !== "undefined" && "locks" in navigator && navigator.locks) {
+    // The generic callback type here doesn't let TS prove T can't itself be a Promise, so it
+    // refuses to unify `() => Promise<T>` with `LockGrantedCallback<T>` on its own — this cast is
+    // just working around that inference limit, not weakening the actual runtime behavior.
+    return navigator.locks.request(REFRESH_LOCK_NAME, run) as Promise<T>;
+  }
+  return run();
+};
+
 let refreshPromise: Promise<RefreshAuthResponse> | null = null;
 
-const refreshAccessToken = async (): Promise<RefreshAuthResponse> => {
-  refreshPromise ??= apiClient
-    .post<ApiEnvelope<RefreshAuthResponse>>("/auth/refresh")
-    .then((response) => {
-      const auth = response.data.data;
-      setAccessToken(auth.accessToken);
-      return auth;
-    })
-    .finally(() => {
-      refreshPromise = null;
-    });
+/**
+ * THE canonical frontend entry point for POST /auth/refresh. Every caller — the response
+ * interceptor below and `useAuthStore.restoreSession()` — must go through this function so
+ * there is exactly one same-tab in-flight refresh (refreshPromise) and, where supported,
+ * exactly one cross-tab in-flight refresh (the Web Locks request). Do not call
+ * `authApi.refresh()` directly anywhere else.
+ */
+export const refreshSession = async (): Promise<RefreshAuthResponse> => {
+  const generationAtStart = authGeneration;
 
-  return refreshPromise;
+  refreshPromise ??= withCrossTabRefreshLock(() =>
+    apiClient
+      .post<ApiEnvelope<RefreshAuthResponse>>("/auth/refresh")
+      .then((response) => response.data.data),
+  ).finally(() => {
+    refreshPromise = null;
+  });
+
+  const auth = await refreshPromise;
+
+  if (generationAtStart !== authGeneration) {
+    // A logout (this tab or another) happened while the request was in flight. The new token
+    // this response carries is real and valid, but applying it now would silently re-authenticate
+    // a tab the user (or another tab) just logged out — discard it instead.
+    throw new StaleAuthGenerationError();
+  }
+
+  setAccessToken(auth.accessToken);
+  return auth;
+};
+
+type RefreshFailureClass = "TERMINAL" | "REUSED" | "TRANSIENT" | "STALE";
+
+/**
+ * Classifies a refresh failure so the interceptor can react proportionately instead of treating
+ * every failure as an unrecoverable session loss (the root cause identified by the auto-logout
+ * audit):
+ * - STALE: this tab's own logout raced the request; already handled, nothing more to do.
+ * - TRANSIENT: no response reached us at all, or the server 5xx'd — this proves nothing about
+ *   whether the session is still valid, so it must never clear auth.
+ * - REUSED: the backend's atomic rotation rejected this exact token as already-used. This is
+ *   indistinguishable, from here, between a genuine stolen-token replay and this request simply
+ *   having lost a legitimate same-cookie refresh race (another tab, or another call site in this
+ *   tab, rotated first). Callers get exactly one bounded retry against the now-current cookie.
+ * - TERMINAL: an explicit, unambiguous session-ending response (expired, revoked family,
+ *   suspended, deleted, missing cookie, etc).
+ */
+const classifyRefreshFailure = (error: unknown): RefreshFailureClass => {
+  if (error instanceof StaleAuthGenerationError) {
+    return "STALE";
+  }
+
+  const normalized = normalizeApiError(error);
+
+  if (normalized.status === undefined || normalized.status >= 500) {
+    return "TRANSIENT";
+  }
+
+  if (normalized.status === 401 && normalized.code === "REFRESH_TOKEN_REUSED") {
+    return "REUSED";
+  }
+
+  return "TERMINAL";
 };
 
 apiClient.interceptors.request.use((config) => {
@@ -123,11 +209,30 @@ apiClient.interceptors.response.use(
       config._retry = true;
 
       try {
-        await refreshAccessToken();
+        await refreshSession();
         return apiClient(config);
-      } catch {
-        clearAccessToken();
-        onSessionExpired?.();
+      } catch (firstRefreshError) {
+        const failureClass = classifyRefreshFailure(firstRefreshError);
+
+        if (failureClass === "REUSED") {
+          try {
+            await refreshSession();
+            return apiClient(config);
+          } catch (secondRefreshError) {
+            const secondFailureClass = classifyRefreshFailure(secondRefreshError);
+            // A second consecutive REUSED is treated as terminal too — no unbounded retrying.
+            if (secondFailureClass === "TRANSIENT" || secondFailureClass === "STALE") {
+              return Promise.reject(normalizeApiError(error));
+            }
+            clearAccessToken();
+            onSessionExpired?.();
+          }
+        } else if (failureClass === "TERMINAL") {
+          clearAccessToken();
+          onSessionExpired?.();
+        }
+        // TRANSIENT: leave auth state untouched — a later request gets its own refresh attempt.
+        // STALE: a logout already handled this; nothing more to do here.
       }
     }
 
