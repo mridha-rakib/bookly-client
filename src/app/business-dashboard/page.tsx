@@ -70,11 +70,17 @@ function BusinessDashboardContent() {
 
   const setActiveTab = useCallback(
     (tab: string) => {
+      const nextSlug = dashboardSectionToSlug(tab);
+      const isAlreadyActive = sectionParam
+        ? sectionParam === nextSlug
+        : tab === DEFAULT_DASHBOARD_SECTION;
+      if (isAlreadyActive) return;
+
       const params = new URLSearchParams(searchParams.toString());
-      params.set("section", dashboardSectionToSlug(tab));
+      params.set("section", nextSlug);
       router.push(`${pathname}?${params.toString()}`);
     },
-    [router, pathname, searchParams]
+    [sectionParam, router, pathname, searchParams]
   );
 
   useEffect(() => {
