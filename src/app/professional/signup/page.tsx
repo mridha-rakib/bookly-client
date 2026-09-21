@@ -22,7 +22,9 @@ import {
   useSubmitProfessionalProfileMutation,
   useVerifyProfessionalPhoneOtpMutation,
 } from "@/lib/auth/hooks";
+import { BooklyApiError, normalizeApiError } from "@/lib/api/client";
 import { toUserMessage } from "@/lib/auth/messages";
+import { isPlausiblePhoneNumber } from "@/lib/auth/phone";
 import {
   getRegistrationSession,
   saveRegistrationSession,
@@ -52,6 +54,7 @@ function ProfessionalSignupContent() {
   const [password, setPassword] = useState("");
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [passwordError, setPasswordError] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
   // "Change phone number" — a small edit sub-view of the phone stage (step 2), never the profile
   // form. Local edit fields are separate from countryCode/phone so an abandoned edit (Cancel)
@@ -121,12 +124,10 @@ function ProfessionalSignupContent() {
   const resumeSyncedForSessionRef = useRef<string | null>(null);
   const sentPhoneOtpForResumeRef = useRef<string | null>(null);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    const progress = registrationProgress.data;
-    if (!progress || resumeSyncedForSessionRef.current === progress.sessionId) return;
-    resumeSyncedForSessionRef.current = progress.sessionId;
-
+  // Shared by the mount-time resume-sync effect below AND by handleFinishSignupSubmit's own
+  // INVALID_REGISTRATION_STEP recovery (a race where the session advanced server-side between
+  // this page's last known step and the click) — one routing table, not two.
+  const applyProgressStep = (progress: NonNullable<typeof registrationProgress.data>) => {
     if (progress.currentStep === "EMAIL_VERIFIED") {
       setStep(1);
       return;
@@ -140,9 +141,9 @@ function ProfessionalSignupContent() {
     }
 
     if (progress.currentStep === "PROFILE_SUBMITTED") {
-      // Profile succeeded but the automatic post-submit sendPhoneOtp never completed (e.g. the
-      // tab closed between the two calls) — no code has actually been sent for this session yet,
-      // so this is a genuine first send, not a duplicate resend.
+      // Profile succeeded but the phone OTP send never completed (e.g. the tab closed, or the
+      // send itself failed — see handleFinishSignupSubmit) — no code has actually been sent for
+      // this session yet, so this is a genuine first send, not a duplicate resend.
       setStep(2);
       if (sentPhoneOtpForResumeRef.current !== progress.sessionId) {
         sentPhoneOtpForResumeRef.current = progress.sessionId;
@@ -170,9 +171,15 @@ function ProfessionalSignupContent() {
         sessionId: progress.sessionId,
       }),
     );
+  };
+
+  useEffect(() => {
+    const progress = registrationProgress.data;
+    if (!progress || resumeSyncedForSessionRef.current === progress.sessionId) return;
+    resumeSyncedForSessionRef.current = progress.sessionId;
+    applyProgressStep(progress);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [registrationProgress.data]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleFinishSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,6 +194,15 @@ function ProfessionalSignupContent() {
       }
     }
     setPasswordError("");
+
+    // UX-only pre-check — mirrors the backend's authoritative validateAndNormalizePhoneNumber so
+    // an obviously malformed number (wrong length/format for the selected country) never reaches
+    // submitProfile at all. The backend still re-validates independently either way.
+    if (!isPlausiblePhoneNumber(countryCode, phone)) {
+      setPhoneError("Please enter a valid mobile number.");
+      return;
+    }
+    setPhoneError("");
 
     const sessionId = getSessionId();
 
@@ -218,6 +234,42 @@ function ProfessionalSignupContent() {
         ...(isGoogle ? {} : { password }),
         agreeTerms,
       });
+    } catch (error) {
+      const apiError = error instanceof BooklyApiError ? error : normalizeApiError(error);
+      // The session moved past EMAIL_VERIFIED between our last known step and this click (another
+      // tab, or a resumed session) — the backend correctly rejected the resubmit. Reconcile against
+      // the real step instead of leaving the user stuck on a form that will only ever 409 again.
+      if (apiError.code === "INVALID_REGISTRATION_STEP") {
+        const refetched = await registrationProgress.refetch();
+        if (refetched.data) {
+          applyProgressStep(refetched.data);
+          return;
+        }
+      }
+      // Only reachable if the client-side isPlausiblePhoneNumber check above disagreed with the
+      // backend's authoritative validateAndNormalizePhoneNumber (or was bypassed) — show it next
+      // to the phone field either way, not the password field.
+      if (apiError.code === "INVALID_PHONE_NUMBER") {
+        setPhoneError(toUserMessage(error));
+        return;
+      }
+      setPasswordError(toUserMessage(error));
+      return;
+    }
+
+    // submitProfile succeeded — the backend is now at PROFILE_SUBMITTED regardless of what
+    // happens next, so the UI must commit to step 2 here rather than after sendPhoneOtp too:
+    // submitProfile can never be safely retried from this point on (see ensureStep server-side),
+    // so staying on/returning to step 1 after this point would only produce a dead end.
+    saveRegistrationSession({
+      portal: "professional",
+      email: emailParam,
+      sessionId,
+      currentStep: "PROFILE_SUBMITTED",
+    });
+    setStep(2);
+
+    try {
       await sendPhoneOtp.mutateAsync(sessionId);
       saveRegistrationSession({
         portal: "professional",
@@ -225,9 +277,10 @@ function ProfessionalSignupContent() {
         sessionId,
         currentStep: "PHONE_OTP_SENT",
       });
-      setStep(2);
     } catch (error) {
-      setPasswordError(toUserMessage(error));
+      // Same failure surface as the existing "Resend code" action on this stage — the user is
+      // already on step 2, where "Change phone number" is reachable if the number was the problem.
+      toast.error(toUserMessage(error));
     }
   };
 
@@ -289,6 +342,12 @@ function ProfessionalSignupContent() {
     e.preventDefault();
     if (!editPhone) {
       setChangePhoneError("Please enter your mobile number");
+      return;
+    }
+    // Same UX-only pre-check as the profile-step phone field — the backend's
+    // changeProfessionalPhone re-validates independently either way.
+    if (!isPlausiblePhoneNumber(editCountryCode, editPhone)) {
+      setChangePhoneError("Please enter a valid mobile number.");
       return;
     }
     setChangePhoneError("");
@@ -392,10 +451,17 @@ function ProfessionalSignupContent() {
               <PhoneInputField
                 label="Mobile number"
                 countryCode={countryCode}
-                onCountryCodeChange={setCountryCode}
+                onCountryCodeChange={(code) => {
+                  setCountryCode(code);
+                  setPhoneError("");
+                }}
                 placeholder="123456666"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => {
+                  setPhone(e.target.value);
+                  setPhoneError("");
+                }}
+                error={phoneError}
                 required
               />
 

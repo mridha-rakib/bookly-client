@@ -173,6 +173,16 @@ export interface RegistrationProgress {
   // in-flight session created before the visit-type step moved, if it was captured earlier).
   // Lets a resumed session pre-select/preserve the existing choice instead of asking again.
   businessVisitType?: VisitType;
+  // PROFESSIONAL only — present once a category selection has been saved, so a resumed Business
+  // Form restores it instead of silently discarding it (previously never returned at all). A
+  // legacy pre-taxonomy draft resolves its parent category best-effort but never fabricates a
+  // subcategory match — see the backend's resolveCategorySelectionForResume.
+  categorySelection?: {
+    categoryKey: string;
+    categoryLabel: string;
+    subcategoryKeys: string[];
+    subcategoryLabels: string[];
+  };
 }
 
 export interface SaveVisitTypeInput {
@@ -220,8 +230,8 @@ export interface BusinessDetailsInput {
 
 export interface CategorySelectionInput {
   sessionId: string;
-  selectedCategory: string;
-  selectedSubcategories: string[];
+  selectedCategoryKey: string;
+  selectedSubcategoryKeys: string[];
 }
 
 /**

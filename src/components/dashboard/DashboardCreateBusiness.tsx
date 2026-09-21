@@ -23,7 +23,8 @@ import AddressSection from "../create-business/AddressSection";
 import ServiceLocationTypeSection from "../create-business/ServiceLocationTypeSection";
 import LocationSection from "../create-business/LocationSection";
 import type { ProfileMarkerMediaState } from "../create-business/BusinessProfileMap";
-import ServiceCategorySection, { serviceCategoryOptions } from "../create-business/ServiceCategorySection";
+import ServiceCategorySection from "../create-business/ServiceCategorySection";
+import { subcategoriesFor, useBusinessTaxonomyQuery } from "@/lib/business-taxonomy/hooks";
 import PhotosSection from "../create-business/PhotosSection";
 import OpeningHoursSection from "../create-business/OpeningHoursSection";
 import BookingTimeControlSection from "../create-business/BookingTimeControlSection";
@@ -121,20 +122,34 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     { name: "United States", code: "+1", flag: "us" }
   ];
 
-  // Category selection (select one)
-  const [selectedCategory, setSelectedCategory] = useState("BEAUTY & WELLNESS");
-  const categories = [
-    "BEAUTY & WELLNESS",
-    "HEALTH & FITNESS",
-    "SPORTS & ACTIVITIES",
-    "EXPERIENCE & TOURS",
-    "ENTERTAINMENT & EVENTS",
-    "PETS & HOME",
-    "AUTOMOTIVE"
-  ];
+  // Category/subcategory options come from the canonical taxonomy (the same one used at
+  // registration) — never a hardcoded array. This screen still sends plain display LABELS to
+  // `PATCH /business/:businessId` (that endpoint has no canonical-key concept, unlike the
+  // registration onboarding API), so `selectedCategory`/`selectedSubcategories` stay label
+  // strings; only their SOURCE list changed.
+  const businessTaxonomyQuery = useBusinessTaxonomyQuery();
+  const categories = (businessTaxonomyQuery.data ?? []).map((category) => category.label);
 
-  // Subcategories selection (max 5)
-  const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>(["BEAUTY & WELLNESS"]);
+  // Category selection (select one)
+  const [selectedCategory, setSelectedCategory] = useState("");
+
+  // Subcategories selection (max 5) — scoped to whichever parent category is currently
+  // selected (fixes the previous bug where "subcategories" were really just the other parent
+  // category names reused).
+  const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
+  const selectedTaxonomyCategory = businessTaxonomyQuery.data?.find(
+    (category) => category.label.toUpperCase() === selectedCategory.toUpperCase(),
+  );
+  const subcategoryOptions = subcategoriesFor(
+    businessTaxonomyQuery.data,
+    selectedTaxonomyCategory?.key,
+  ).map((sub) => sub.label);
+
+  const handleSelectedCategoryChange = (category: string) => {
+    setSelectedCategory(category);
+    // Changing the parent invalidates any subcategories selected under the OLD parent.
+    setSelectedSubcategories([]);
+  };
 
   const toggleSubcategory = (sub: string) => {
     if (selectedSubcategories.includes(sub)) {
@@ -494,8 +509,13 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     }
   }, [isBusinessHoursError, businessHoursError]);
 
+  // Best-effort match against the canonical taxonomy's labels; an existing Business whose
+  // stored value doesn't match any canonical label (a legacy/pre-taxonomy value) falls back to
+  // displaying the raw stored string rather than hiding it.
   const matchCategoryOption = (value: string): string =>
-    serviceCategoryOptions.find((option) => option.toUpperCase() === value.toUpperCase()) ?? value;
+    categories.find((option) => option.toUpperCase() === value.toUpperCase()) ?? value;
+  const matchSubcategoryOption = (value: string, options: string[]): string =>
+    options.find((option) => option.toUpperCase() === value.toUpperCase()) ?? value;
 
   // Prefilling independently-editable local form state from an async detail fetch is not the
   // "derived state" anti-pattern the set-state-in-effect rule targets; it can only run once the
@@ -521,8 +541,18 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     setRoomNo(business.address.aptRoom ?? "");
     setBusinessDescription(business.briefDescription);
     setTimezone(business.timezone);
-    setSelectedCategory(matchCategoryOption(business.category));
-    setSelectedSubcategories(business.subcategories.map(matchCategoryOption));
+    const matchedCategoryLabel = matchCategoryOption(business.category);
+    setSelectedCategory(matchedCategoryLabel);
+    const matchedTaxonomyCategory = businessTaxonomyQuery.data?.find(
+      (category) => category.label.toUpperCase() === matchedCategoryLabel.toUpperCase(),
+    );
+    const scopedSubcategoryLabels = subcategoriesFor(
+      businessTaxonomyQuery.data,
+      matchedTaxonomyCategory?.key,
+    ).map((sub) => sub.label);
+    setSelectedSubcategories(
+      business.subcategories.map((value) => matchSubcategoryOption(value, scopedSubcategoryLabels)),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [business?.id]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -1025,8 +1055,10 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
 
         {/* 5, 6, 7. Service Categories Section */}
         <ServiceCategorySection
+          categories={categories}
           selectedCategory={selectedCategory}
-          setSelectedCategory={setSelectedCategory}
+          setSelectedCategory={handleSelectedCategoryChange}
+          subcategories={subcategoryOptions}
           selectedSubcategories={selectedSubcategories}
           toggleSubcategory={toggleSubcategory}
           customCategories={customCategories}

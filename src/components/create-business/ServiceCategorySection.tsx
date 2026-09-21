@@ -2,21 +2,18 @@
 
 import React from "react";
 
-// Shared with DashboardCreateBusiness prefill mapping so real backend
-// category/subcategory values can be matched to these exact option labels.
-export const serviceCategoryOptions = [
-  "BEAUTY & WELLNESS",
-  "HEALTH & FITNESS",
-  "SPORTS & ACTIVITIES",
-  "EXPERIENCE & TOURS",
-  "ENTERTAINMENT & EVENTS",
-  "PETS & HOME",
-  "AUTOMOTIVE"
-];
-
 interface ServiceCategorySectionProps {
+  /** The 9 canonical parent category labels — fetched from the taxonomy by the parent
+   * (useBusinessTaxonomyQuery), never hardcoded here. This is the Business.category /
+   * Business.subcategories editor — a DIFFERENT concept from the "Service Category (Custom
+   * Tabs)" section further down this same component, which is the real, business-scoped
+   * ServiceCategory feature and is untouched. */
+  categories: string[];
   selectedCategory: string;
   setSelectedCategory: (v: string) => void;
+  /** ONLY the selected parent category's real subcategories — never the full cross-category
+   * list (that was the bug: subcategories used to just be the other parent category names). */
+  subcategories: string[];
   selectedSubcategories: string[];
   toggleSubcategory: (sub: string) => void;
   customCategories: string[];
@@ -35,8 +32,10 @@ interface ServiceCategorySectionProps {
 }
 
 export default function ServiceCategorySection({
+  categories,
   selectedCategory,
   setSelectedCategory,
+  subcategories,
   selectedSubcategories,
   toggleSubcategory,
   customCategories,
@@ -49,8 +48,8 @@ export default function ServiceCategorySection({
   onReactivateCategory,
   reactivatingCategory = null
 }: ServiceCategorySectionProps) {
-  const mainCategories = serviceCategoryOptions;
-  const subCategories = serviceCategoryOptions;
+  const mainCategories = categories;
+  const subCategories = subcategories;
 
   return (
     <div className="flex flex-col gap-6 w-full">
@@ -85,25 +84,29 @@ export default function ServiceCategorySection({
         <span className="font-poppins text-xs font-semibold text-[#111111]">
           Sub Category <span className="text-[#E24B4A]">*</span> <span className="font-normal text-neutral-400">(select max 5 sub-categories)</span>
         </span>
-        <div className="flex flex-wrap gap-3 select-none">
-          {subCategories.map((cat) => {
-            const isSelected = selectedSubcategories.includes(cat);
-            return (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => toggleSubcategory(cat)}
-                className={`px-4 py-2.5 rounded-full text-xs font-medium uppercase tracking-[0.05em] transition-all border ${
-                  isSelected
-                    ? "bg-[#1C1B1C] text-white border-transparent"
-                    : "bg-white text-[#1C1B1C] border-[#1C1B1C] hover:bg-neutral-50"
-                }`}
-              >
-                {cat}
-              </button>
-            );
-          })}
-        </div>
+        {subCategories.length === 0 ? (
+          <p className="text-xs text-neutral-400">Select a category above to see its sub-categories.</p>
+        ) : (
+          <div className="flex flex-wrap gap-3 select-none">
+            {subCategories.map((cat) => {
+              const isSelected = selectedSubcategories.includes(cat);
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => toggleSubcategory(cat)}
+                  className={`px-4 py-2.5 rounded-full text-xs font-medium uppercase tracking-[0.05em] transition-all border ${
+                    isSelected
+                      ? "bg-[#1C1B1C] text-white border-transparent"
+                      : "bg-white text-[#1C1B1C] border-[#1C1B1C] hover:bg-neutral-50"
+                  }`}
+                >
+                  {cat}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 7. Service Category (Custom Tabs) */}
