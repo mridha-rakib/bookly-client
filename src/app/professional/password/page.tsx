@@ -10,8 +10,8 @@ import AuthLayout from "@/components/auth/AuthLayout";
 import AuthCard from "@/components/auth/AuthCard";
 import { InputField } from "@/components/auth/InputField";
 import SocialButton from "@/components/auth/SocialButton";
-import SuccessModal from "@/components/auth/SuccessModal";
 import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/components/ui/sonner";
 import { useProfessionalGoogleAuthMutation, useProfessionalLoginMutation } from "@/lib/auth/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
 import { getAuthenticatedUserHomePath } from "@/lib/auth/routes";
@@ -23,8 +23,6 @@ function PasswordPageContent() {
 
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
-  const [isSuccessOpen, setIsSuccessOpen] = useState(false);
-  const [successRedirectPath, setSuccessRedirectPath] = useState("/");
   const login = useProfessionalLoginMutation();
   const googleAuth = useProfessionalGoogleAuthMutation();
 
@@ -38,8 +36,8 @@ function PasswordPageContent() {
 
     try {
       const auth = await login.mutateAsync({ email, password });
-      setSuccessRedirectPath(getAuthenticatedUserHomePath(auth.user));
-      setIsSuccessOpen(true);
+      toast.success("Welcome back! You're signed in.");
+      router.push(getAuthenticatedUserHomePath(auth.user));
     } catch (error) {
       setPasswordError(toUserMessage(error));
     }
@@ -97,16 +95,6 @@ function PasswordPageContent() {
           aria-busy={googleAuth.isPending}
         />
       </AuthCard>
-
-      {/* Login success modal */}
-      <SuccessModal
-        isOpen={isSuccessOpen}
-        onClose={() => setIsSuccessOpen(false)}
-        onContinue={() => {
-          setIsSuccessOpen(false);
-          router.push(successRedirectPath);
-        }}
-      />
     </AuthLayout>
   );
 }
