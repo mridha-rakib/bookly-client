@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   BellIcon,
@@ -50,9 +51,41 @@ import DashboardSettings from "@/components/dashboard/DashboardSettings";
 import ContactSupport from "@/components/support/ContactSupport";
 import { CancelBookingModal, CompleteModal, NoShowModal } from "@/components/dashboard/CalendarActionModals";
 import WaiveChargeModal from "@/components/dashboard/WaiveChargeModal";
+import {
+  DEFAULT_DASHBOARD_SECTION,
+  dashboardSectionToSlug,
+  slugToDashboardSection,
+} from "@/lib/dashboard/sections";
 
 function BusinessDashboardContent() {
-  const [activeTab, setActiveTab] = useState("Calendar");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // The URL is the source of truth for the active dashboard section (?section=<slug>), so it
+  // survives a refresh. An absent param means the default section; an unrecognized one is
+  // normalized back to the default below rather than rendering blank content.
+  const sectionParam = searchParams.get("section");
+  const activeTab = slugToDashboardSection(sectionParam) ?? DEFAULT_DASHBOARD_SECTION;
+
+  const setActiveTab = useCallback(
+    (tab: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("section", dashboardSectionToSlug(tab));
+      router.push(`${pathname}?${params.toString()}`);
+    },
+    [router, pathname, searchParams]
+  );
+
+  useEffect(() => {
+    if (sectionParam && !slugToDashboardSection(sectionParam)) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("section");
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname);
+    }
+  }, [sectionParam, searchParams, router, pathname]);
+
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showFooterMenu, setShowFooterMenu] = useState(false);
   const footerMenuRef = useRef<HTMLDivElement>(null);
@@ -78,6 +111,7 @@ function BusinessDashboardContent() {
     if (new URLSearchParams(window.location.search).get("settingsTab") === "Integration") {
       setActiveTab("Settings");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount to consume the OAuth redirect's query string only
   }, []);
 
   // Clients — real Client Management data/hooks live in ClientsPage; this page only resolves
@@ -372,7 +406,9 @@ export default function BusinessDashboard() {
   return (
     <RequireBusinessOwner>
       <BusinessDashboardApprovalGate>
-        <BusinessDashboardContent />
+        <Suspense fallback={null}>
+          <BusinessDashboardContent />
+        </Suspense>
       </BusinessDashboardApprovalGate>
     </RequireBusinessOwner>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   DashboardSquare01Icon,
@@ -26,6 +26,8 @@ import {
 
 import { useAuthStore } from "@/lib/auth/store";
 import { useCurrentUserQuery } from "@/lib/auth/hooks";
+import { useMyBusinessProfileQuery } from "@/lib/business/hooks";
+import { useStaffListQuery } from "@/lib/staff/hooks";
 
 interface DashboardSidebarProps {
   isCollapsed: boolean;
@@ -46,35 +48,25 @@ export default function DashboardSidebar({
   setShowFooterMenu,
   footerMenuRef
 }: DashboardSidebarProps) {
-  const [profileImage, setProfileImage] = useState("/businessDashboard/downLogo.png");
   const logout = useAuthStore((state) => state.logout);
   const isLoggingOut = useAuthStore((state) => state.isLoggingOut);
   const meQuery = useCurrentUserQuery();
   const businessName = meQuery.data?.business?.name ?? meQuery.data?.profile?.fullName ?? "";
   const userEmail = meQuery.data?.user.email ?? "";
 
+  // Real, persisted Owner avatar — same StaffAvatar-backed staffKeys.list(businessId) source
+  // Settings and the Staff page's Owner card read, so an upload in Settings refreshes this
+  // sidebar too via normal React Query cache invalidation. No localStorage, no custom event.
+  const businessProfileQuery = useMyBusinessProfileQuery();
+  const businessId = businessProfileQuery.data?.primary?.id;
+  const staffListQuery = useStaffListQuery(businessId);
+  const profileImage =
+    staffListQuery.data?.members.find((m) => m.isOwner)?.avatarUrl || "/businessDashboard/downLogo.png";
+
   const handleLogout = () => {
     setShowFooterMenu(false);
     void logout();
   };
-
-  useEffect(() => {
-    const loadProfileImage = () => {
-      const saved = localStorage.getItem("settingsProfileImage");
-      if (saved) {
-        setProfileImage(saved);
-      } else {
-        setProfileImage("/businessDashboard/downLogo.png");
-      }
-    };
-
-    loadProfileImage();
-
-    window.addEventListener("settingsProfileUpdate", loadProfileImage);
-    return () => {
-      window.removeEventListener("settingsProfileUpdate", loadProfileImage);
-    };
-  }, []);
 
   // Helper for rendering menu button items with tooltip on hover when collapsed
   const renderMenuItem = (

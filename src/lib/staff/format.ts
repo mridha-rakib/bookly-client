@@ -140,14 +140,21 @@ const formatHourGroup = (group: HourGroup): string =>
 /**
  * Card-sized weekly schedule summary. Never fabricates uniform hours across days that
  * actually differ — mixed-hours groups render as separate segments (joined with "; " since
- * the card has only one line), each internally truthful.
+ * the card has only one line), each internally truthful. `offDays` (explicit recurring
+ * Weekend/Off days — never overlaps `days`) appends a trailing "Weekend: ..." segment when
+ * present; omitting it (or passing []) reproduces the exact pre-existing output.
  */
-export const summarizeScheduleForCard = (days: ScheduleDay[]): string => {
-  if (days.length === 0) {
-    return "Not set yet";
+export const summarizeScheduleForCard = (days: ScheduleDay[], offDays: DayOfWeek[] = []): string => {
+  const segments: string[] = [];
+
+  if (days.length > 0) {
+    segments.push(...groupByHours(days).map(formatHourGroup));
+  }
+  if (offDays.length > 0) {
+    segments.push(`Weekend: ${compressDayRanges(offDays)}`);
   }
 
-  return groupByHours(days).map(formatHourGroup).join("; ");
+  return segments.length > 0 ? segments.join("; ") : "Not set yet";
 };
 
 /**
@@ -196,13 +203,22 @@ const compressDayRanges = (days: DayOfWeek[]): string => {
     .join(", ");
 };
 
-/** One line per hour-group for the Availability table, e.g. "Sat–Mon • 9:00 AM–5:00 PM". */
-export const summarizeScheduleForTable = (days: ScheduleDay[]): string[] => {
-  if (days.length === 0) {
-    return ["Not set yet"];
+/**
+ * One line per hour-group for the Availability table, e.g. "Sat–Mon • 9:00 AM–5:00 PM", plus
+ * a trailing "Weekend: Sat, Sun" line when explicit off days are set. Omitting `offDays` (or
+ * passing []) reproduces the exact pre-existing output.
+ */
+export const summarizeScheduleForTable = (days: ScheduleDay[], offDays: DayOfWeek[] = []): string[] => {
+  const segments: string[] = [];
+
+  if (days.length > 0) {
+    segments.push(...groupByHours(days).map(formatHourGroup));
+  }
+  if (offDays.length > 0) {
+    segments.push(`Weekend: ${compressDayRanges(offDays)}`);
   }
 
-  return groupByHours(days).map(formatHourGroup);
+  return segments.length > 0 ? segments : ["Not set yet"];
 };
 
 /** Availability table's Time Off cell — first entry plus a "+N more" suffix when applicable. */
