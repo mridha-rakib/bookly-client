@@ -17,6 +17,7 @@ import {
 
 // Reused component
 import RequireBusinessOwner from "@/components/auth/RequireBusinessOwner";
+import BusinessDashboardApprovalGate from "@/components/dashboard/BusinessDashboardApprovalGate";
 import { useManagedBusinessContext, useMyBusinessProfileQuery } from "@/lib/business/hooks";
 import {
   useBookingDetailQuery,
@@ -370,7 +371,9 @@ function BusinessDashboardContent() {
 export default function BusinessDashboard() {
   return (
     <RequireBusinessOwner>
-      <BusinessDashboardContent />
+      <BusinessDashboardApprovalGate>
+        <BusinessDashboardContent />
+      </BusinessDashboardApprovalGate>
     </RequireBusinessOwner>
   );
 }

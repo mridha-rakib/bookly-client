@@ -16,6 +16,12 @@ import { Tag01Icon } from "@hugeicons/core-free-icons";
  * Assets live in `client/public/Icons/categories/` and are used verbatim; each SVG
  * already carries its own `#EDE3DE` rounded 32×32 container, so callers render it at
  * 32×32 with no extra background wrapper.
+ *
+ * The canonical taxonomy (api/src/modules/platform-settings/business-taxonomy.ts) has 9
+ * parent categories; only 7 have an approved icon asset today. "Creative & Education" and
+ * "Professional Services/ Consulting & Coaching" have none yet — both correctly fall through
+ * to `UNKNOWN_BUSINESS_CATEGORY_ICON` below rather than a fabricated icon. Add their entries
+ * here once real approved assets exist; do not invent placeholder art in the meantime.
  */
 export const BUSINESS_CATEGORY_ICON_SRC: Record<string, string> = {
   "Beauty & Wellness": "/Icons/categories/beauty_wellness.svg",

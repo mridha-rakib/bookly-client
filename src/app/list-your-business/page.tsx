@@ -18,6 +18,50 @@ import ListYourBusinessFeatures from "@/components/list-your-business/ListYourBu
 import ListYourBusinessBuiltForCyprus from "@/components/list-your-business/ListYourBusinessBuiltForCyprus";
 import ListYourBusinessTrusted from "@/components/list-your-business/ListYourBusinessTrusted";
 import ListYourBusinessAddHome from "@/components/list-your-business/ListYourBusinessAddHome";
+import { useBusinessTaxonomyQuery } from "@/lib/business-taxonomy/hooks";
+
+// Marketing-only copy (description + hero image), keyed by the canonical taxonomy's category
+// key — NOT a competing category list. The display TITLE always comes from the fetched
+// canonical taxonomy (useBusinessTaxonomyQuery below); this only supplies the extra marketing
+// copy the taxonomy response itself doesn't carry.
+const MARKETING_COPY_BY_CATEGORY_KEY: Record<string, { desc: string; image: string }> = {
+  BEAUTY_WELLNESS: {
+    desc: "Hair salons, barbers, nails, spa, massage, aesthetics, makeup and more.",
+    image: "/img/beauty_wellness.png",
+  },
+  HEALTH_FITNESS: {
+    desc: "Physiotherapy, personal trainers, yoga, pilates, swimming coaches.",
+    image: "/img/health_fitness.png",
+  },
+  SPORTS_ACTIVITIES: {
+    desc: "Tennis, padel, squash, go-karting, escape rooms, archery, paintball.",
+    image: "/img/sports_activities.png",
+  },
+  EXPERIENCES_TOURS: {
+    desc: "Jeep safaris, boat trips, wine tasting, cooking classes, scuba diving.",
+    image: "/img/experiences_tours.png",
+  },
+  ENTERTAINMENT_EVENTS: {
+    desc: "DJs, magicians, children's entertainers, face painters, balloon artists.",
+    image: "/img/entertainment_events.png",
+  },
+  CREATIVE_EDUCATION: {
+    desc: "Photographers, videographers, music lessons, dance classes, language tutors.",
+    image: "/img/creative_education.png",
+  },
+  PETS_HOME: {
+    desc: "Pet grooming, dog trainers, pet sitters, mobile groomers, pet walkers.",
+    image: "/img/pets_home.png",
+  },
+  AUTOMOTIVE: {
+    desc: "Car detailing, window tinting, vehicle wrapping, mobile mechanics.",
+    image: "/img/automotive.png",
+  },
+  PROFESSIONAL_SERVICES_CONSULTING_COACHING: {
+    desc: "Life coaches, business consultants, career advisors, tutors.",
+    image: "/img/consulting_coaching.png",
+  },
+};
 
 export default function ListYourBusinessPage() {
   const router = useRouter();
@@ -88,54 +132,17 @@ export default function ListYourBusinessPage() {
     { id: 12, name: "PhysioPlus", location: "Larnaca", role: "Founding Partners", image: "/Icons/trustedOne.svg" },
   ];
 
-  // Business Category Grid list
-  const businessCategories = [
-    {
-      title: "Beauty & Wellness",
-      desc: "Hair salons, barbers, nails, spa, massage, aesthetics, makeup and more.",
-      image: "/img/beauty_wellness.png"
-    },
-    {
-      title: "Health & Fitness",
-      desc: "Physiotherapy, personal trainers, yoga, pilates, swimming coaches.",
-      image: "/img/health_fitness.png"
-    },
-    {
-      title: "Sports & Activities",
-      desc: "Tennis, padel, squash, go-karting, escape rooms, archery, paintball.",
-      image: "/img/sports_activities.png"
-    },
-    {
-      title: "Entertainment & Events",
-      desc: "DJs, magicians, children's entertainers, face painters, balloon artists.",
-      image: "/img/entertainment_events.png"
-    },
-    {
-      title: "Experiences & Tours",
-      desc: "Jeep safaris, boat trips, wine tasting, cooking classes, scuba diving.",
-      image: "/img/experiences_tours.png"
-    },
-    {
-      title: "Creative & Education",
-      desc: "Photographers, videographers, music lessons, dance classes, language tutors.",
-      image: "/img/creative_education.png"
-    },
-    {
-      title: "Pets & Home",
-      desc: "Pet grooming, dog trainers, pet sitters, mobile groomers, pet walkers.",
-      image: "/img/pets_home.png"
-    },
-    {
-      title: "Automotive",
-      desc: "Car detailing, window tinting, vehicle wrapping, mobile mechanics.",
-      image: "/img/automotive.png"
-    },
-    {
-      title: "Consulting & Coaching",
-      desc: "Life coaches, business consultants, career advisors, tutors.",
-      image: "/img/consulting_coaching.png"
-    }
-  ];
+  // Business Category Grid list — labels come from the canonical taxonomy (the ONE source of
+  // truth shared with registration); desc/image are marketing-only copy keyed by category key
+  // (see MARKETING_COPY_BY_CATEGORY_KEY above). A category with no marketing copy configured
+  // yet is skipped here rather than rendered with blank text/a broken image.
+  const taxonomyQuery = useBusinessTaxonomyQuery();
+  const businessCategories = (taxonomyQuery.data ?? [])
+    .map((category) => {
+      const copy = MARKETING_COPY_BY_CATEGORY_KEY[category.key];
+      return copy ? { title: category.label, desc: copy.desc, image: copy.image } : null;
+    })
+    .filter((entry): entry is { title: string; desc: string; image: string } => entry !== null);
 
   return (
     <div className="min-h-screen font-poppins relative overflow-x-hidden text-[#1C1B1C]">

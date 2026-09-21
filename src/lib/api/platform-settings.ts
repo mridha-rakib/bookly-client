@@ -18,6 +18,7 @@ export const platformCategoryKeys = [
   "EXPERIENCES_TOURS",
   "ENTERTAINMENT_EVENTS",
   "CREATIVE_EDUCATION",
+  "PROFESSIONAL_SERVICES_CONSULTING_COACHING",
 ] as const;
 export type PlatformCategoryKey = (typeof platformCategoryKeys)[number];
 
@@ -58,6 +59,24 @@ export interface PublicBookingConfig {
   maxServicesPerBooking: number;
 }
 
+/**
+ * THE canonical Business Owner registration category + subcategory taxonomy — see
+ * api/src/modules/platform-settings/business-taxonomy.ts. Platform-owned, read-only: there is
+ * no create/update/delete for it anywhere in the product. Every frontend surface that shows
+ * business categories (registration, the marketing list-your-business page, the category icon
+ * map) should derive from this fetched data rather than keeping its own hardcoded array.
+ */
+export interface BusinessTaxonomySubcategory {
+  key: string;
+  label: string;
+}
+
+export interface BusinessTaxonomyCategory {
+  key: PlatformCategoryKey;
+  label: string;
+  subcategories: BusinessTaxonomySubcategory[];
+}
+
 export const platformSettingsApi = {
   get: () =>
     apiRequest<PlatformSettings>({ method: "GET", url: "/super-admin/settings/platform" }),
@@ -72,4 +91,11 @@ export const platformSettingsApi = {
   /** Anonymous — used by the customer / business booking UIs to mirror the server limit. */
   getPublicBookingConfig: () =>
     apiRequest<PublicBookingConfig>({ method: "GET", url: "/platform/booking-config" }),
+
+  /** Anonymous, read-only — GET only, no admin mutation exists for this taxonomy. */
+  getBusinessTaxonomy: () =>
+    apiRequest<BusinessTaxonomyCategory[]>({
+      method: "GET",
+      url: "/platform/business-taxonomy",
+    }),
 };

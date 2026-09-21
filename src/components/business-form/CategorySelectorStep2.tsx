@@ -9,28 +9,31 @@ import {
   getBusinessCategoryIconSrc,
 } from "@/lib/business-category/categoryIcon";
 
-export interface Category {
-  name: string;
+export interface TaxonomyOption {
+  key: string;
   label: string;
-  containerWidth: string;
-  textWidth: string;
 }
 
 export interface CategorySelectorStep2Props {
-  categories: Category[];
-  selectedCategory: string;
-  setSelectedCategory: (cat: string) => void;
-  selectedSubcategories: string[];
-  handleSubcategoryToggle: (sub: string) => void;
+  /** All canonical parent categories (fetched from the taxonomy — never hardcoded here). */
+  categories: TaxonomyOption[];
+  selectedCategoryKey: string;
+  setSelectedCategoryKey: (key: string) => void;
+  /** ONLY the selected parent's subcategories — never the full cross-category list. Empty
+   * until a category is selected. */
+  subcategories: TaxonomyOption[];
+  selectedSubcategoryKeys: string[];
+  handleSubcategoryToggle: (key: string) => void;
   onDone: () => void;
   error?: string;
 }
 
 export default function CategorySelectorStep2({
   categories,
-  selectedCategory,
-  setSelectedCategory,
-  selectedSubcategories,
+  selectedCategoryKey,
+  setSelectedCategoryKey,
+  subcategories,
+  selectedSubcategoryKeys,
   handleSubcategoryToggle,
   onDone,
   error,
@@ -45,17 +48,24 @@ export default function CategorySelectorStep2({
       </div>
 
       {/* Category Cards */}
-      <div className="w-full flex flex-wrap md:flex-row md:flex-nowrap items-center justify-center md:justify-between gap-4 md:gap-6 min-h-[108px] py-4 md:py-0">
+      {/* min-h (not the plain fixed height every card used before) is sized for the longest
+          canonical label ("Professional Services/ Consulting & Coaching", 4 wrapped lines at this
+          card width) so every card — long label or short — shares the same box; a short label
+          just centers with more surrounding space instead of the grid growing one isolated card
+          taller than its row neighbors. */}
+      <div className="w-full flex flex-wrap items-center justify-center gap-4 md:gap-6 min-h-[152px] py-4 md:py-0">
         {categories.map((cat) => {
-          const isSelected = selectedCategory === cat.name;
+          const isSelected = selectedCategoryKey === cat.key;
           // Approved Business Category SVG — the shared map, identical to the homepage bar.
-          const iconSrc = getBusinessCategoryIconSrc(cat.name);
+          // Categories with no approved icon yet (e.g. newly-added ones) fall back to the
+          // generic glyph below rather than a broken image.
+          const iconSrc = getBusinessCategoryIconSrc(cat.label);
           return (
             <button
-              key={cat.name}
+              key={cat.key}
               type="button"
-              onClick={() => setSelectedCategory(cat.name)}
-              className={`w-[185.6px] h-[108px] rounded-xl flex flex-col items-center justify-center p-[12px_20px] gap-2 cursor-pointer transition-all duration-200 border ${isSelected
+              onClick={() => setSelectedCategoryKey(cat.key)}
+              className={`w-[185.6px] min-h-[152px] rounded-xl flex flex-col items-center justify-center p-[12px_20px] gap-2 cursor-pointer transition-all duration-200 border ${isSelected
                 ? "bg-[#111111] text-white border-transparent shadow-lg"
                 : "bg-white text-[#817469] border-[#E8E8E4] hover:bg-[#FAF9F7]"
                 }`}
@@ -76,8 +86,10 @@ export default function CategorySelectorStep2({
                   <HugeiconsIcon icon={UNKNOWN_BUSINESS_CATEGORY_ICON} size={24} />
                 </div>
               )}
-              {/* Text */}
-              <span className="text-sm font-medium tracking-[0.7px] uppercase text-center leading-5 w-[145.6px]">
+              {/* Text — break-words is a safety net (not a design change for the current 9
+                  labels): none of them contain an unbreakable run this long, but it guarantees a
+                  future long label wraps instead of overflowing the card. */}
+              <span className="text-sm font-medium tracking-[0.7px] uppercase text-center leading-5 w-[145.6px] break-words">
                 {cat.label}
               </span>
             </button>
@@ -85,34 +97,40 @@ export default function CategorySelectorStep2({
         })}
       </div>
 
-      {/* Sub Categories Selector */}
+      {/* Sub Categories Selector — ONLY the selected parent's children */}
       <div className="w-full flex flex-col gap-3">
         <label className="text-xs font-normal text-[#111111] flex items-center justify-center md:justify-start gap-1">
           Sub Category <span className="text-[#E24B4A]">*</span> (select max 5 sub-category)
         </label>
-        <div className="flex flex-wrap md:flex-row items-center justify-center md:justify-between w-full gap-4 md:gap-0">
-          {categories.map((cat) => {
-            const isActive = selectedSubcategories.includes(cat.name);
-            return (
-              <button
-                key={cat.name}
-                type="button"
-                onClick={() => handleSubcategoryToggle(cat.name)}
-                className={`flex flex-row justify-center items-center py-3 px-[18px] gap-2.5 ${cat.containerWidth} h-11 rounded-[999px] border transition-all duration-150 cursor-pointer ${isActive
-                  ? "bg-[#1C1B1C] border-[#1C1B1C]"
-                  : "bg-transparent border-[#1C1B1C]"
-                  }`}
-              >
-                <span
-                  className={`font-poppins font-medium text-[14px] leading-[20px] flex items-center justify-center tracking-[0.7px] uppercase ${cat.textWidth} h-5 whitespace-nowrap ${isActive ? "text-white" : "text-[#1C1B1C]"
+        {!selectedCategoryKey ? (
+          <p className="text-xs text-[#817469] text-center md:text-left">
+            Select a category above to see its sub-categories.
+          </p>
+        ) : (
+          <div className="flex flex-wrap items-center justify-center md:justify-start w-full gap-3">
+            {subcategories.map((sub) => {
+              const isActive = selectedSubcategoryKeys.includes(sub.key);
+              return (
+                <button
+                  key={sub.key}
+                  type="button"
+                  onClick={() => handleSubcategoryToggle(sub.key)}
+                  className={`flex flex-row justify-center items-center py-3 px-[18px] gap-2.5 h-11 rounded-[999px] border transition-all duration-150 cursor-pointer whitespace-nowrap ${isActive
+                    ? "bg-[#1C1B1C] border-[#1C1B1C]"
+                    : "bg-transparent border-[#1C1B1C]"
                     }`}
                 >
-                  {cat.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                  <span
+                    className={`font-poppins font-medium text-[14px] leading-[20px] flex items-center justify-center tracking-[0.7px] uppercase h-5 whitespace-nowrap ${isActive ? "text-white" : "text-[#1C1B1C]"
+                      }`}
+                  >
+                    {sub.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         {error && (
           <span className="text-xs text-red-500 text-center md:text-left">{error}</span>
         )}

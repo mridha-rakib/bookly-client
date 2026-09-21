@@ -22,10 +22,16 @@ export const businessKeys = {
     [...businessKeys.all, "travel-settings", businessId] as const,
 };
 
+// Business.status is the source of truth for the owner-dashboard approval gate
+// (BusinessDashboardApprovalGate). While the owner's primary business is still PENDING, this
+// query refetches on window focus and on a short interval so admin approval becomes visible
+// without a manual reload or re-login; both stop automatically once status leaves PENDING.
 export const useMyBusinessProfileQuery = () =>
   useQuery({
     queryKey: businessKeys.profile(),
     queryFn: businessApi.getMyProfile,
+    refetchOnWindowFocus: (query) => query.state.data?.primary?.status === "PENDING",
+    refetchInterval: (query) => (query.state.data?.primary?.status === "PENDING" ? 45_000 : false),
   });
 
 export const useBusinessQuery = (businessId: string | undefined) =>

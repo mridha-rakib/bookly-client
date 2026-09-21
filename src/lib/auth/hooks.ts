@@ -198,11 +198,33 @@ export const useResendProfessionalEmailOtpMutation = () =>
 export const useVerifyProfessionalEmailOtpMutation = () =>
   useMutation({ mutationFn: authApi.verifyProfessionalEmailOtp });
 
-export const useSubmitProfessionalProfileMutation = () =>
-  useMutation({ mutationFn: authApi.submitProfessionalProfile });
+// Backend advances currentStep (EMAIL_VERIFIED -> PROFILE_SUBMITTED) unconditionally on success,
+// independent of whatever happens next (e.g. the phone-OTP send that normally follows) — the
+// cached registrationProgress must be invalidated here too, or a subsequent read of currentStep
+// stays stale at EMAIL_VERIFIED even though a retry would now be rejected server-side.
+export const useSubmitProfessionalProfileMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: authApi.submitProfessionalProfile,
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["professional-registration-progress", data.sessionId],
+      });
+    },
+  });
+};
 
-export const useSendProfessionalPhoneOtpMutation = () =>
-  useMutation({ mutationFn: authApi.sendProfessionalPhoneOtp });
+export const useSendProfessionalPhoneOtpMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: authApi.sendProfessionalPhoneOtp,
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["professional-registration-progress", data.sessionId],
+      });
+    },
+  });
+};
 
 export const useResendProfessionalPhoneOtpMutation = () =>
   useMutation({ mutationFn: authApi.resendProfessionalPhoneOtp });

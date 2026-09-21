@@ -40,6 +40,7 @@ const codeMessages: Record<string, string> = {
     "The staff account was created, but the welcome email could not be sent.",
   INVALID_CURRENT_PASSWORD: "Your current password is incorrect.",
   PHONE_ALREADY_REGISTERED: "That phone number is already registered to another account.",
+  INVALID_PHONE_NUMBER: "Please enter a valid mobile number.",
   CONTACT_UNCHANGED: "That's already your current email or phone number.",
   CONTACT_CHANGE_NOT_FOUND: "That code has expired or was already used. Please request a new one.",
   CUSTOMER_AVATAR_FILE_REQUIRED: "Please choose an image file.",

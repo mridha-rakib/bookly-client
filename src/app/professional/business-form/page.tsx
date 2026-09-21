@@ -25,6 +25,7 @@ import {
 import { getAuthenticatedUserHomePath } from "@/lib/auth/routes";
 import { toast } from "@/components/ui/sonner";
 import { geocodeAddress } from "@/lib/maps/googleGeocoding";
+import { subcategoriesFor, useBusinessTaxonomyQuery } from "@/lib/business-taxonomy/hooks";
 
 // The map needs *some* center before a real address is resolved; Larnaca, Cyprus matches
 // the default used elsewhere in the app. This is only ever a display fallback — it is
@@ -75,15 +76,19 @@ function BusinessFormContent() {
   );
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Step 2 Selection State
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
-  const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
+  // Step 2 Selection State — canonical machine keys, never free-text labels (see the canonical
+  // business taxonomy: api/src/modules/platform-settings/business-taxonomy.ts).
+  const [selectedCategoryKey, setSelectedCategoryKey] = useState<string>("");
+  const [selectedSubcategoryKeys, setSelectedSubcategoryKeys] = useState<string[]>([]);
   const [step1Errors, setStep1Errors] = useState<BusinessFormStep1Errors>({});
   const [categoryError, setCategoryError] = useState<string | undefined>(undefined);
   const saveBusinessDetails = useSaveBusinessDetailsMutation();
   const saveCategories = useSaveCategoriesMutation();
   const completeBusinessOwner = useCompleteBusinessOwnerMutation();
   const [completionRedirectPath, setCompletionRedirectPath] = useState("/business-dashboard");
+  const taxonomyQuery = useBusinessTaxonomyQuery();
+  const categories = taxonomyQuery.data ?? [];
+  const subcategories = subcategoriesFor(taxonomyQuery.data, selectedCategoryKey);
 
   // Address -> map sync: debounced so it doesn't fire per keystroke, gated on `area` being
   // filled in (city always has a non-empty default, so it alone isn't a meaningful signal
@@ -197,39 +202,59 @@ function BusinessFormContent() {
   }, [registrationProgress.data?.sessionId]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  // Resume fix: a returning session (reload / new tab / re-navigation) previously always
+  // restarted at Step 1 with an empty category selection, silently discarding whatever was
+  // already saved server-side. Restore the saved selection AND jump straight to Step 2 once —
+  // scoped to the resolved sessionId, same one-shot pattern as the identity prefill above, so
+  // this never fights the user's own subsequent Back/category clicks.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const progress = registrationProgress.data;
+    if (!progress) return;
+
+    if (
+      progress.currentStep === "BUSINESS_DETAILS_SUBMITTED" ||
+      progress.currentStep === "CATEGORIES_SUBMITTED"
+    ) {
+      setStep(2);
+    }
+
+    if (progress.categorySelection) {
+      setSelectedCategoryKey(progress.categorySelection.categoryKey);
+      setSelectedSubcategoryKeys(progress.categorySelection.subcategoryKeys);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registrationProgress.data?.sessionId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   useEffect(() => {
     if (registrationProgress.isError) {
       toast.error("We couldn't load your registration details. Please restart signup.");
     }
   }, [registrationProgress.isError]);
 
-  // Category Configuration. Icons are resolved from the shared approved Business Category
-  // map (lib/business-category/categoryIcon) inside CategorySelectorStep2 — the same asset
-  // set the homepage category bar uses. `name` is the exact `Business.category` string.
-  const categories = [
-    { name: "Beauty & Wellness", label: "beauty & Wellness", containerWidth: "w-[186px]", textWidth: "w-[150px]" },
-    { name: "Health & Fitness", label: "Health & Fitness", containerWidth: "w-[169px]", textWidth: "w-[133px]" },
-    { name: "Sports & Activities", label: "Sports & Activities", containerWidth: "w-[193px]", textWidth: "w-[157px]" },
-    { name: "Experience & Tours", label: "Experience & Tours", containerWidth: "w-[193px]", textWidth: "w-[157px]" },
-    { name: "Entertainment & Events", label: "Entertainment & Events", containerWidth: "w-[231px]", textWidth: "w-[195px]" },
-    { name: "Pets & Home", label: "pets & home", containerWidth: "w-[134px]", textWidth: "w-[98px]" },
-    { name: "Automotive", label: "automotive", containerWidth: "w-[133px]", textWidth: "w-[97px]" },
-  ];
+  // Categories/subcategories now come from the canonical taxonomy (useBusinessTaxonomyQuery
+  // above) — never a hardcoded array. Icons are resolved from the shared approved Business
+  // Category map (lib/business-category/categoryIcon) inside CategorySelectorStep2, keyed off
+  // the canonical display label — the same asset set the homepage category bar uses.
 
-  const handleSelectedCategoryChange = (cat: string) => {
-    setSelectedCategory(cat);
+  const handleSelectedCategoryChange = (categoryKey: string) => {
+    setSelectedCategoryKey(categoryKey);
+    // Changing the parent category invalidates any previously-selected subcategories that
+    // belonged to the OLD parent — never carry a child from one category over to another.
+    setSelectedSubcategoryKeys([]);
     if (categoryError) setCategoryError(undefined);
   };
 
-  const handleSubcategoryToggle = (sub: string) => {
-    if (selectedSubcategories.includes(sub)) {
-      setSelectedSubcategories(selectedSubcategories.filter((s) => s !== sub));
+  const handleSubcategoryToggle = (subcategoryKey: string) => {
+    if (selectedSubcategoryKeys.includes(subcategoryKey)) {
+      setSelectedSubcategoryKeys(selectedSubcategoryKeys.filter((s) => s !== subcategoryKey));
     } else {
-      if (selectedSubcategories.length >= 5) {
-        alert("You can select up to 5 sub-categories.");
+      if (selectedSubcategoryKeys.length >= 5) {
+        toast.error("You can select up to 5 sub-categories.");
         return;
       }
-      setSelectedSubcategories([...selectedSubcategories, sub]);
+      setSelectedSubcategoryKeys([...selectedSubcategoryKeys, subcategoryKey]);
     }
     if (categoryError) setCategoryError(undefined);
   };
@@ -338,11 +363,11 @@ function BusinessFormContent() {
   };
 
   const handleDone = async () => {
-    if (!selectedCategory) {
+    if (!selectedCategoryKey) {
       setCategoryError("Please select a category");
       return;
     }
-    if (selectedSubcategories.length === 0) {
+    if (selectedSubcategoryKeys.length === 0) {
       setCategoryError("Please select at least one sub-category");
       return;
     }
@@ -358,8 +383,8 @@ function BusinessFormContent() {
     try {
       await saveCategories.mutateAsync({
         sessionId,
-        selectedCategory,
-        selectedSubcategories,
+        selectedCategoryKey,
+        selectedSubcategoryKeys,
       });
       const auth = await completeBusinessOwner.mutateAsync(sessionId);
       setCompletionRedirectPath(getAuthenticatedUserHomePath(auth.user));
@@ -368,7 +393,7 @@ function BusinessFormContent() {
     } catch (error) {
       const fieldErrors = getFieldErrors(error);
       const categoryFieldError =
-        fieldErrors.selectedCategory ?? fieldErrors.selectedSubcategories;
+        fieldErrors.selectedCategoryKey ?? fieldErrors.selectedSubcategoryKeys;
       if (categoryFieldError) {
         setCategoryError(categoryFieldError);
       }
@@ -432,9 +457,10 @@ function BusinessFormContent() {
       {step === 2 && (
         <CategorySelectorStep2
           categories={categories}
-          selectedCategory={selectedCategory}
-          setSelectedCategory={handleSelectedCategoryChange}
-          selectedSubcategories={selectedSubcategories}
+          selectedCategoryKey={selectedCategoryKey}
+          setSelectedCategoryKey={handleSelectedCategoryChange}
+          subcategories={subcategories}
+          selectedSubcategoryKeys={selectedSubcategoryKeys}
           handleSubcategoryToggle={handleSubcategoryToggle}
           onDone={handleDone}
           error={categoryError}
