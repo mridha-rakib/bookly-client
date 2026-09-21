@@ -120,6 +120,22 @@ export const useUploadStaffAvatarMutation = () => {
   });
 };
 
+// Business Owner self-service avatar upload. Invalidates the same staffKeys.list(businessId)
+// cache entry every other Staff mutation does — this is the single shared source that Settings,
+// the dashboard sidebar, and the Staff page's Owner card/table all read from, so one upload
+// refreshes all of them without any separate localStorage or bespoke cache key.
+export const useUploadOwnerAvatarMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ businessId, file }: { businessId: string; file: File }) =>
+      staffApi.uploadOwnerAvatar(businessId, file),
+    onSuccess: (_result, variables) => {
+      void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
+    },
+  });
+};
+
 export const useRemoveStaffMutation = () => {
   const queryClient = useQueryClient();
 

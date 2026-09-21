@@ -20,7 +20,10 @@ import {
 import { SettingsInput } from "../settings/SettingsInput";
 import { SettingsSubSidebar } from "../settings/SettingsSubSidebar";
 import { Security2FAPanel } from "../settings/Security2FAPanel";
+import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/components/ui/sonner";
 import { useCurrentUserQuery } from "@/lib/auth/hooks";
+import { toUserMessage } from "@/lib/auth/messages";
 import {
   useBusinessQuery,
   useConnectGoogleCalendarMutation,
@@ -29,7 +32,7 @@ import {
   useMyBusinessProfileQuery,
   useUpdateBusinessMutation,
 } from "@/lib/business/hooks";
-import { useStaffListQuery } from "@/lib/staff/hooks";
+import { useStaffListQuery, useUploadOwnerAvatarMutation } from "@/lib/staff/hooks";
 import {
   cancellationTiers,
   type CancellationFeeMode,
@@ -132,31 +135,34 @@ export default function DashboardSettings() {
     ? `${meQuery.data.profile.phone.countryCode} ${meQuery.data.profile.phone.nationalNumber}`
     : "";
 
-  const [profileImage, setProfileImage] = useState<string>(
-    () =>
-      (typeof window !== "undefined" && localStorage.getItem("settingsProfileImage")) ||
-      "/businessDashboard/downLogo.png",
-  );
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        setProfileImage(base64String);
-        localStorage.setItem("settingsProfileImage", base64String);
-        window.dispatchEvent(new Event("settingsProfileUpdate"));
-      };
-      reader.readAsDataURL(file);
-    }
-  };
 
   // Role tab — real Staff list (Batch 19), same query the real Staff page uses. Role editing
   // stays on that page (single mutation path — see staff.route.ts); this tab is read-only.
   const staffListQuery = useStaffListQuery(businessId);
   const staffMembers = staffListQuery.data?.members ?? [];
+
+  // Personal photo — the Owner's real, persisted avatar. Same StaffAvatar-backed source and
+  // the same staffKeys.list(businessId) cache entry the Staff page's Owner card and the
+  // dashboard sidebar read, so one upload here refreshes all three surfaces together — no
+  // separate avatar-only query, no localStorage.
+  const ownerAvatarUrl = staffMembers.find((m) => m.isOwner)?.avatarUrl;
+  const uploadOwnerAvatarMutation = useUploadOwnerAvatarMutation();
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Allow re-picking the same file later (onChange won't fire otherwise).
+    e.target.value = "";
+    if (!file || !businessId) return;
+
+    uploadOwnerAvatarMutation.mutate(
+      { businessId, file },
+      {
+        onSuccess: () => toast.success("Profile photo updated."),
+        onError: (error) => toast.error(toUserMessage(error)),
+      },
+    );
+  };
 
   // Cancellation & No-show — real (Batch 19), see business-cancellation-policy-hooks.ts.
   const cancellationPolicyQuery = useCancellationPolicyQuery(businessId);
@@ -263,15 +269,29 @@ export default function DashboardSettings() {
                   </span>
                   <div className="flex items-center gap-4 mt-2">
                     <div className="relative w-20 h-20 rounded-full border border-neutral-200 overflow-hidden bg-neutral-100">
-                      <Image src={profileImage} alt="Profile" className="w-full h-full object-cover" fill />
-                      <button 
+                      <Image
+                        src={ownerAvatarUrl || "/businessDashboard/downLogo.png"}
+                        alt="Profile"
+                        className="w-full h-full object-cover"
+                        fill
+                      />
+                      {uploadOwnerAvatarMutation.isPending && (
+                        <div className="absolute inset-0 rounded-full bg-black/45 flex items-center justify-center">
+                          <Spinner className="size-5 text-white" />
+                          <span className="sr-only" role="status" aria-live="polite">
+                            Uploading photo…
+                          </span>
+                        </div>
+                      )}
+                      <button
                         type="button"
+                        disabled={uploadOwnerAvatarMutation.isPending}
                         onClick={() => fileInputRef.current?.click()}
-                        className="absolute bottom-1 right-1 w-6 h-6 bg-white border border-neutral-300 rounded-full flex items-center justify-center hover:bg-neutral-50 shadow-sm cursor-pointer"
+                        className="absolute bottom-1 right-1 w-6 h-6 bg-white border border-neutral-300 rounded-full flex items-center justify-center hover:bg-neutral-50 shadow-sm cursor-pointer disabled:cursor-not-allowed"
                       >
                         <HugeiconsIcon icon={Camera01Icon} className="w-3.5 h-3.5 text-[#111111]" />
                       </button>
-                      <input 
+                      <input
                         type="file"
                         ref={fileInputRef}
                         onChange={handleImageChange}

@@ -54,6 +54,13 @@ export interface StaffMember {
   createdAt: string;
   /** Empty for the synthesized Owner row — Owner has no schedule in this phase. */
   schedule: ScheduleDay[];
+  /**
+   * Explicit recurring weekly Weekend/Off days — never overlaps `schedule`. Empty for the
+   * synthesized Owner row and for any schedule saved before this concept existed (a weekday
+   * simply absent from `schedule` is NOT the same as an explicit off day here — see
+   * api/src/modules/staff/staff-schedule.model.ts).
+   */
+  offDays: DayOfWeek[];
   /** Empty for the synthesized Owner row — Owner has no time off in this phase. */
   timeOff: StaffTimeOffEntry[];
   avatarUrl?: string;
@@ -100,6 +107,9 @@ export interface UpdateStaffInput {
 
 export interface PutScheduleInput {
   days: ScheduleDay[];
+  /** Explicit recurring weekly Weekend/Off days. Optional — omitting it keeps exactly the
+   * pre-existing behavior (backend defaults it to []). */
+  offDays?: DayOfWeek[];
 }
 
 export interface CreateTimeOffInput {
@@ -164,6 +174,18 @@ export const staffApi = {
     return apiRequest<UploadStaffAvatarResult>({
       method: "PUT",
       url: `/businesses/${businessId}/staff/${staffId}/avatar`,
+      data,
+    });
+  },
+
+  // Business Owner self-service — the Owner has no staffId (never a StaffMembership), so this
+  // hits the dedicated /staff/me/avatar endpoint instead of the staffId-based route above.
+  uploadOwnerAvatar: (businessId: string, file: File) => {
+    const data = new FormData();
+    data.append("file", file);
+    return apiRequest<UploadStaffAvatarResult>({
+      method: "PUT",
+      url: `/businesses/${businessId}/staff/me/avatar`,
       data,
     });
   },

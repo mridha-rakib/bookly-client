@@ -96,7 +96,7 @@ const toDisplayStaff = (member: StaffMember): Staff => ({
   avatarText: initialsFor(member.name),
   avatarBg: avatarBgForRole(member.role),
   servicesAssigned: "Not assigned yet",
-  schedule: summarizeScheduleForCard(member.schedule),
+  schedule: summarizeScheduleForCard(member.schedule, member.offDays),
   status: member.employmentActive ? "Active" : "Inactive",
   email: member.email,
   phone: formatPhone(member.phone),
@@ -118,7 +118,7 @@ const toAvailabilityRow = (member: StaffMember): StaffAvailabilityRow => ({
   role: displayRole(member.role),
   avatarText: initialsFor(member.name),
   avatarBg: avatarBgForRole(member.role),
-  shifts: summarizeScheduleForTable(member.schedule),
+  shifts: summarizeScheduleForTable(member.schedule, member.offDays),
   timeoff: summarizeTimeOffForTable(member.timeOff),
   services: "Not assigned yet",
   accessTitle: accessTitleForRole(member.role),
@@ -157,6 +157,15 @@ export default function DashboardStaffList() {
   // handleRemoveSelectedDaysHours below for how the two interact).
   const [scheduleByDay, setScheduleByDay] = useState<DayScheduleState>({});
   const [selectedDays, setSelectedDays] = useState<DayOfWeek[]>([]);
+  // Explicit recurring weekly Weekend/Off days — a separate list from scheduleByDay (never
+  // overlaps it: a day is WORKING, OFF, or unconfigured, never two of those at once). This,
+  // scheduleByDay and selectedDays together are the one canonical form state that drives the
+  // weekday chip state, the visible schedule summary below, and the save payload.
+  const [offDays, setOffDays] = useState<DayOfWeek[]>([]);
+  // A pending "mark as off" action that would remove one or more days' existing working
+  // hours — held here until the owner/supervisor confirms, so Cancel leaves scheduleByDay
+  // untouched.
+  const [offDayConflict, setOffDayConflict] = useState<DayOfWeek[] | null>(null);
   // Raw draft text ("H:MM"/"HH:MM", no AM/PM) for the Start/End Shift inputs — kept as a
   // single tolerant string per STEP 6 rather than split hour/minute fields, so typing
   // "9" -> "9:" -> "9:2" -> "9:20" is never fought/reformatted mid-keystroke. Strict parsing
@@ -305,6 +314,8 @@ export default function DashboardStaffList() {
   const resetScheduleForm = () => {
     setScheduleByDay({});
     setSelectedDays([]);
+    setOffDays([]);
+    setOffDayConflict(null);
     clearTimeInputs();
     setScheduleFieldError("");
   };
@@ -371,10 +382,41 @@ export default function DashboardStaffList() {
       }
       return next;
     });
+    // Entering working hours for a day always supersedes any explicit Weekend/Off state for
+    // it — OFF -> WORKING needs no confirmation, since OFF carries no hours that could be lost.
+    setOffDays((prev) => prev.filter((day) => !selectedDays.includes(day)));
     // Applied — clear the batch selection so the next click starts a fresh, deliberate
     // selection rather than silently continuing to target the same days.
     setSelectedDays([]);
     clearTimeInputs();
+  };
+
+  // "Mark Weekend/Off": if any selected day currently has working hours, those hours would be
+  // lost — hold the action behind confirmation (offDayConflict) rather than silently deleting
+  // them. Days with no existing shift are marked off immediately (no data to lose).
+  const handleMarkSelectedDaysOff = () => {
+    if (selectedDays.length === 0) return;
+    setScheduleFieldError("");
+    const daysWithExistingShift = selectedDays.filter((day) => scheduleByDay[day]);
+    if (daysWithExistingShift.length > 0) {
+      setOffDayConflict(selectedDays);
+      return;
+    }
+    applySelectedDaysOff(selectedDays);
+  };
+
+  const applySelectedDaysOff = (days: DayOfWeek[]) => {
+    setOffDays((prev) => [...new Set([...prev, ...days])]);
+    setScheduleByDay((prev) => {
+      const next = { ...prev };
+      for (const day of days) {
+        delete next[day];
+      }
+      return next;
+    });
+    setSelectedDays([]);
+    clearTimeInputs();
+    setOffDayConflict(null);
   };
 
   // Explicitly turns off every currently selected weekday that has a configured shift —
@@ -430,6 +472,8 @@ export default function DashboardStaffList() {
       nextSchedule[day.dayOfWeek] = { startTime: day.startTime, endTime: day.endTime };
     }
     setScheduleByDay(nextSchedule);
+    setOffDays(member.offDays ?? []);
+    setOffDayConflict(null);
     // No day is pre-selected as a batch-edit target — the chips accurately show which days
     // are already configured (via color), and the owner chooses which one(s) to edit next.
     setSelectedDays([]);
@@ -610,6 +654,10 @@ export default function DashboardStaffList() {
     const scheduleDays: ScheduleDay[] = Object.entries(effectiveSchedule)
       .filter((entry): entry is [DayOfWeek, { startTime: string; endTime: string }] => Boolean(entry[1]))
       .map(([dayOfWeek, hours]) => ({ dayOfWeek, startTime: hours.startTime, endTime: hours.endTime }));
+    // Defense in depth mirroring the backend's own dedup (staff.service.ts putSchedule): a
+    // working day always wins, so an off day can never be submitted for a day that also ended
+    // up with a shift in this same save.
+    const effectiveOffDays = offDays.filter((day) => !effectiveSchedule[day]);
 
     try {
       // Phase 2D — Create Mode issues an invitation; no User/membership exists yet, so schedule
@@ -651,7 +699,7 @@ export default function DashboardStaffList() {
           await putScheduleMutation.mutateAsync({
             businessId: effectiveBusinessId,
             staffId: targetStaffId,
-            input: { days: scheduleDays }
+            input: { days: scheduleDays, offDays: effectiveOffDays }
           });
         } catch (scheduleError) {
           setFormError(
@@ -741,6 +789,52 @@ export default function DashboardStaffList() {
       onClose={closeAccessChange}
       onConfirm={confirmAccessChange}
     />
+  );
+
+  // Local-only confirmation for a WORKING -> Weekend/Off transition that would remove an
+  // existing shift — reuses the exact same modal chrome/classNames as StaffAccessChangeModal
+  // above (no new custom modal design), but as a plain single-step confirm: this only touches
+  // in-memory draft state, not a server mutation, so Cancel is always perfectly safe and a
+  // two-step wizard would be unnecessary friction.
+  const offDayConflictModal = offDayConflict && (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 select-none font-poppins"
+      onClick={() => setOffDayConflict(null)}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-[380px] max-w-full bg-white rounded-xl shadow-2xl flex flex-col p-5 gap-4 relative animate-fadeIn"
+      >
+        <div className="flex flex-col gap-1">
+          <h3 className="font-poppins font-medium text-[18px] leading-[26px] text-[#09090B]">
+            Mark as Weekend/Off?
+          </h3>
+          <p className="font-poppins font-normal text-[13px] leading-[20px] text-[#525252]">
+            {offDayConflict.map((day) => dayShortLabel[day]).join(", ")} already{" "}
+            {offDayConflict.length === 1 ? "has" : "have"} working hours. Marking{" "}
+            {offDayConflict.length === 1 ? "it" : "them"} as Weekend/Off will remove those
+            hours. Continue?
+          </p>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setOffDayConflict(null)}
+            className="h-[34px] px-4 bg-[#EBEBEB] text-[#757575] font-poppins font-medium text-xs rounded-[8px] hover:bg-[#E2E2E2] transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => applySelectedDaysOff(offDayConflict)}
+            className="h-[34px] px-4 bg-[#1C1B1C] hover:bg-black text-white font-poppins font-medium text-xs rounded-[8px] transition-colors cursor-pointer"
+          >
+            Mark as Off
+          </button>
+        </div>
+      </div>
+    </div>
   );
 
   if (isAdding) {
@@ -953,21 +1047,24 @@ export default function DashboardStaffList() {
             {/* Business Working Hours Column */}
             <div className="flex-1 flex flex-col gap-[12px] w-full max-w-full md:max-w-[455.2px]">
               <span className="font-poppins font-medium text-sm leading-[22px] text-[#101828]">
-                Edit Business Working Hours
+                Staff Working Hours
               </span>
               <div className="box-sizing-border-box flex flex-col items-start p-6 bg-white border border-[#E5E7EB] rounded-[4px] w-full h-auto min-h-[272px] justify-between gap-4">
                 <div className="flex flex-row justify-between w-full px-2 gap-1 overflow-x-auto scrollbar-hide">
                   {dayOrder.map((day) => {
-                    const configured = Boolean(scheduleByDay[day]);
+                    const working = Boolean(scheduleByDay[day]);
+                    const off = offDays.includes(day);
                     const selected = selectedDays.includes(day);
                     return (
-                      <div key={day} className="flex flex-col items-center gap-2 shrink-0">
+                      <div key={day} className="flex flex-col items-center gap-1 shrink-0">
                         <button
                           type="button"
                           onClick={() => toggleDaySelection(day)}
                           className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all cursor-pointer text-xs ${
-                            configured
+                            working
                               ? "bg-[#E1F5EE] border-[#0F6E56]/40 text-[#0F6E56]"
+                              : off
+                              ? "bg-[#E5E7EB] border-[#9CA3AF] text-[#4B5563]"
                               : "bg-white border-[#D1D5DC] text-neutral-500"
                           } ${selected ? "ring-2 ring-[#2E9DA7] ring-offset-1" : ""}`}
                         >
@@ -979,6 +1076,18 @@ export default function DashboardStaffList() {
                         >
                           {dayShortLabel[day]}
                         </span>
+                        {/* Never rely on chip color alone — a short text label carries the
+                            same WORKING/OFF state for anyone who can't distinguish the colors. */}
+                        {working && (
+                          <span className="text-[9px] font-poppins font-medium text-[#0F6E56] leading-none">
+                            Working
+                          </span>
+                        )}
+                        {off && (
+                          <span className="text-[9px] font-poppins font-medium text-[#4B5563] leading-none">
+                            Off
+                          </span>
+                        )}
                       </div>
                     );
                   })}
@@ -1041,7 +1150,7 @@ export default function DashboardStaffList() {
                   {scheduleSelectionCaption()}
                 </span>
 
-                <div className="flex flex-row items-center gap-4 mt-2">
+                <div className="flex flex-row items-center gap-4 mt-2 flex-wrap">
                   <button
                     type="button"
                     onClick={handleAddHours}
@@ -1052,6 +1161,15 @@ export default function DashboardStaffList() {
                     <span className="font-poppins font-medium text-sm leading-[20px]">Add Hours</span>
                   </button>
 
+                  <button
+                    type="button"
+                    onClick={handleMarkSelectedDaysOff}
+                    disabled={selectedDays.length === 0}
+                    className="font-poppins font-medium text-sm leading-[20px] text-[#4B5563] hover:opacity-80 transition-opacity cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Mark Weekend/Off
+                  </button>
+
                   {canRemoveSelectedDaysHours && (
                     <button
                       type="button"
@@ -1060,6 +1178,43 @@ export default function DashboardStaffList() {
                     >
                       Remove hours
                     </button>
+                  )}
+                </div>
+
+                {/* Visible schedule records — driven by the exact same scheduleByDay/offDays
+                    state that will be submitted on Save, so it updates immediately with every
+                    change above and reflects hydrated data as soon as it loads, no reload
+                    needed. */}
+                <div className="w-full border-t border-[#F3F4F6] my-2" />
+                <div className="flex flex-col gap-2 w-full">
+                  <span className="font-poppins font-medium text-[12px] leading-[20px] tracking-[1.5px] uppercase text-[#111111]">
+                    Weekly schedule
+                  </span>
+                  {dayOrder.every((day) => !scheduleByDay[day] && !offDays.includes(day)) ? (
+                    <span className="text-[12px] text-[#888780] font-poppins">
+                      No working hours or Weekend/Off days set yet
+                    </span>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {dayOrder.map((day) => {
+                        const shift = scheduleByDay[day];
+                        const isOff = offDays.includes(day);
+                        if (!shift && !isOff) return null;
+                        return (
+                          <div
+                            key={day}
+                            className="flex items-center justify-between text-[13px] font-poppins"
+                          >
+                            <span className="text-[#1C1B1C] font-medium">{dayShortLabel[day]}</span>
+                            <span className={isOff ? "text-[#6B7280]" : "text-[#364153]"}>
+                              {isOff
+                                ? "Weekend / Off"
+                                : `${formatTime12Hour(shift!.startTime)} – ${formatTime12Hour(shift!.endTime)}`}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               </div>
@@ -1223,6 +1378,7 @@ export default function DashboardStaffList() {
 
       </div>
       {accessChangeModal}
+      {offDayConflictModal}
       <StaffPhotoCropModal
         key={cropSource ?? "closed"}
         open={cropSource !== null}
