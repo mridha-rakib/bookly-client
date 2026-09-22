@@ -428,6 +428,12 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     isError: isBusinessError,
     error: businessError,
   } = useBusinessQuery(mode !== "create" ? businessId : undefined);
+  // Business.visitType is the sole authority for whether Travel Fees is relevant (see
+  // ServiceLocationTypeSection just above this in the form, which reads the same field) — an
+  // AT_BUSINESS_LOCATION Business never travels, so its Travel Fees config has nothing to apply
+  // to. `business` is only loaded outside "create" mode (see isLoadingBusiness gate below), so
+  // this is `false` — never a stale `true` — until the real value is known.
+  const showTravelFees = business?.visitType === "TRAVEL_TO_CUSTOMER";
   const updateBusinessMutation = useUpdateBusinessMutation();
   const {
     data: businessMedia = [],
@@ -705,21 +711,27 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     // version of this handler did send it, which is exactly the stale/wrong
     // `location.searchQuery` class of bug flagged in that effect's own comment.
 
+    // Travel fees are only meaningful for a TRAVEL_TO_CUSTOMER Business (see
+    // `showTravelFees` above) — for AT_BUSINESS_LOCATION, skip both the fee-input
+    // validation and the write entirely rather than persisting/re-persisting
+    // irrelevant city/fee data the Owner can no longer even see or edit here.
     const travelSettingsInput = [];
 
-    for (const row of cityFees) {
-      const feeCents = feeTextToCents(row.fee);
+    if (showTravelFees) {
+      for (const row of cityFees) {
+        const feeCents = feeTextToCents(row.fee);
 
-      if (feeCents === null) {
-        toast.error("Enter a valid travel fee.");
-        return;
+        if (feeCents === null) {
+          toast.error("Enter a valid travel fee.");
+          return;
+        }
+
+        travelSettingsInput.push({
+          city: row.name as BusinessCity,
+          active: row.active,
+          feeCents,
+        });
       }
-
-      travelSettingsInput.push({
-        city: row.name as BusinessCity,
-        active: row.active,
-        feeCents,
-      });
     }
 
     try {
@@ -729,14 +741,16 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
       return;
     }
 
-    try {
-      await updateBusinessTravelSettingsMutation.mutateAsync({
-        businessId,
-        cities: travelSettingsInput,
-      });
-    } catch (error) {
-      toast.error(`Business details saved, but travel fees could not be saved. ${toUserMessage(error)}`);
-      return;
+    if (showTravelFees) {
+      try {
+        await updateBusinessTravelSettingsMutation.mutateAsync({
+          businessId,
+          cities: travelSettingsInput,
+        });
+      } catch (error) {
+        toast.error(`Business details saved, but travel fees could not be saved. ${toUserMessage(error)}`);
+        return;
+      }
     }
 
     const businessHoursDays: BusinessHoursDay[] = days.map((day, index) => ({
@@ -1136,37 +1150,41 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
           updateInfoField={updateInfoField}
         />
 
-        {/* 14. Travel Fees Section */}
-        <TravelFeesSection
-          cityFees={cityFees}
-          toggleCityActive={toggleCityActive}
-          updateCityFee={updateCityFee}
-        />
+        {/* 14. Travel Fees Section + 15. How Travel Fees Work — both only relevant when this
+            Business actually travels to the customer; see `showTravelFees` above. */}
+        {showTravelFees && (
+          <>
+            <TravelFeesSection
+              cityFees={cityFees}
+              toggleCityActive={toggleCityActive}
+              updateCityFee={updateCityFee}
+            />
 
-        {/* 15. How Travel Fees Work Section */}
-        <div className="flex flex-col gap-4 w-full select-none border-t border-neutral-200/55 pt-6">
-          <span className="font-poppins text-xs font-semibold text-neutral-500 uppercase tracking-wider">
-            HOW TRAVEL FEES WORK
-          </span>
+            <div className="flex flex-col gap-4 w-full select-none border-t border-neutral-200/55 pt-6">
+              <span className="font-poppins text-xs font-semibold text-neutral-500 uppercase tracking-wider">
+                HOW TRAVEL FEES WORK
+              </span>
 
-          <div className="flex flex-col gap-3.5 w-full">
-            {[
-              "Customer selects your service and enters their city and address.",
-              "Bookly automatically adds your city travel fee to the total. It is shown as a separate line: \"Travel fee — €20.00\".",
-              "Bookly's commission applies to the service price only — never to your travel fee. You keep 100% of the travel fee.",
-              "Customer pays the full balance including travel fee directly at the time of the visit."
-            ].map((stepText, idx) => (
-              <div key={idx} className="flex items-start gap-3 w-full">
-                <div className="w-[22px] h-[22px] bg-[#E1F5EE] text-[#085041] rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0">
-                  {idx + 1}
-                </div>
-                <p className="text-xs md:text-sm font-medium text-neutral-900 leading-relaxed pt-0.5">
-                  {stepText}
-                </p>
+              <div className="flex flex-col gap-3.5 w-full">
+                {[
+                  "Customer selects your service and enters their city and address.",
+                  "Bookly automatically adds your city travel fee to the total. It is shown as a separate line: \"Travel fee — €20.00\".",
+                  "Bookly's commission applies to the service price only — never to your travel fee. You keep 100% of the travel fee.",
+                  "Customer pays the full balance including travel fee directly at the time of the visit."
+                ].map((stepText, idx) => (
+                  <div key={idx} className="flex items-start gap-3 w-full">
+                    <div className="w-[22px] h-[22px] bg-[#E1F5EE] text-[#085041] rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0">
+                      {idx + 1}
+                    </div>
+                    <p className="text-xs md:text-sm font-medium text-neutral-900 leading-relaxed pt-0.5">
+                      {stepText}
+                    </p>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
+          </>
+        )}
 
       </fieldset>
 
