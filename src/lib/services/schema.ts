@@ -56,15 +56,34 @@ const perPersonPricingSchema = z
     }
   });
 
-const packagePricingSchema = z.object({
-  durationMin: positiveIntSchema,
-  bookingIntervalMin: positiveIntSchema.optional(),
-  bufferAfterMin: nonNegIntSchema.optional(),
-  processingTimeMin: nonNegIntSchema.optional(),
-  sessionsInPackage: positiveIntSchema,
-  bundlePriceCents: centsSchema,
-  discountPercent: discountPercentSchema.optional(),
-});
+const packagePricingSchema = z
+  .object({
+    durationMin: positiveIntSchema,
+    bookingIntervalMin: positiveIntSchema.optional(),
+    bufferAfterMin: nonNegIntSchema.optional(),
+    processingTimeMin: nonNegIntSchema.optional(),
+    sessionsInPackage: positiveIntSchema,
+    bundlePriceCents: centsSchema,
+    discountPercent: discountPercentSchema.optional(),
+    // Optional/nullable — absent on every package Service created before this field existed.
+    // Mirrors api/src/modules/services/service.schema.ts's packagePricingSchema exactly,
+    // including the bundlePriceCents <= normalTotal invariant below (client-side mirror only —
+    // the server remains authoritative and recomputes discountPercent canonically).
+    normalPricePerSessionCents: z.number().int().min(1, "Enter a valid amount.").optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.normalPricePerSessionCents === undefined) {
+      return;
+    }
+    const normalTotalCents = value.normalPricePerSessionCents * value.sessionsInPackage;
+    if (value.bundlePriceCents > normalTotalCents) {
+      context.addIssue({
+        code: "custom",
+        path: ["bundlePriceCents"],
+        message: "Bundle price cannot exceed the normal total (normal price per session x sessions).",
+      });
+    }
+  });
 
 const manualScheduleDaySchema = z.object({
   dayOfWeek: z.enum(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]),
@@ -181,10 +200,33 @@ export const flattenServiceErrors = (error: z.ZodError): ServiceFormErrors => {
 
 export const validateServiceInput = (
   input: ServiceInput,
+  // `isNewPackage`: true only for a brand-new package Service being created for the first
+  // time (mode === "create" && isPackageDeal). The API field stays optional for backward
+  // compatibility with every existing package Service (see service.schema.ts) — this
+  // requiredness is deliberately enforced here, frontend-only, rather than in the shared
+  // create/update API schema.
+  options: { isNewPackage?: boolean } = {},
 ): { success: true; data: ServiceInput } | { success: false; errors: ServiceFormErrors } => {
   const result = serviceInputSchema.safeParse(input);
-  if (result.success) {
-    return { success: true, data: result.data as ServiceInput };
+  if (!result.success) {
+    return { success: false, errors: flattenServiceErrors(result.error) };
   }
-  return { success: false, errors: flattenServiceErrors(result.error) };
+
+  const data = result.data as ServiceInput;
+
+  if (
+    options.isNewPackage &&
+    data.isPackageDeal &&
+    data.packagePricing &&
+    data.packagePricing.normalPricePerSessionCents === undefined
+  ) {
+    return {
+      success: false,
+      errors: {
+        "packagePricing.normalPricePerSessionCents": "Normal price per session is required for new packages.",
+      },
+    };
+  }
+
+  return { success: true, data };
 };

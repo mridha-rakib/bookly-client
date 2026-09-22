@@ -66,7 +66,45 @@ export const formatServiceMinMax = (service: Service): string | undefined => {
 
 export const formatDiscount = (service: Service): string | undefined => {
   const percent = service.packagePricing?.discountPercent ?? service.fixedPricing?.discountPercent;
-  return percent !== undefined ? `${percent}% Discount` : undefined;
+  // A stored 0% is a valid (if pointless) value — don't show a "0% Discount" badge for it.
+  return percent !== undefined && percent > 0 ? `${percent}% Discount` : undefined;
+};
+
+/** Owner-facing original/bundle/savings breakdown for a package Service — only available once
+ * `normalPricePerSessionCents` has been entered (see service.model.ts's own doc comment on that
+ * field). `discountPercent` is read straight from the service, never recomputed client-side: the
+ * backend already computes the canonical, correctly-rounded value whenever
+ * normalPricePerSessionCents is present (service.service.ts's resolvePackagePricing), so re-deriving
+ * it here would risk a rounding mismatch between server and display. Legacy packages (no
+ * normalPricePerSessionCents) return undefined — callers must fall back to the plain
+ * bundle-price-only display, never a fabricated original price. */
+export type PackagePriceBreakdown = {
+  normalTotalCents: number;
+  bundlePriceCents: number;
+  savingsCents: number;
+  discountPercent: number;
+  pricePerSessionCents: number;
+  sessionsInPackage: number;
+};
+
+export const formatPackagePriceBreakdown = (
+  service: ServicePricingFields,
+): PackagePriceBreakdown | undefined => {
+  const pricing = service.packagePricing;
+  if (!service.isPackageDeal || !pricing || pricing.normalPricePerSessionCents === undefined) {
+    return undefined;
+  }
+
+  const normalTotalCents = pricing.normalPricePerSessionCents * pricing.sessionsInPackage;
+
+  return {
+    normalTotalCents,
+    bundlePriceCents: pricing.bundlePriceCents,
+    savingsCents: normalTotalCents - pricing.bundlePriceCents,
+    discountPercent: pricing.discountPercent ?? 0,
+    pricePerSessionCents: pricing.normalPricePerSessionCents,
+    sessionsInPackage: pricing.sessionsInPackage,
+  };
 };
 
 /** Privacy-friendly compact display: "Rakib Mahmud Mridha" -> "Rakib M." (first name + last
@@ -95,10 +133,27 @@ export const formatAssignedStaffSummary = (
   return remaining > 0 ? { primary, suffix: `+${remaining}` } : { primary };
 };
 
-export const formatCitiesSummary = (cities: BusinessCity[]): { primary?: string; suffix?: string } => {
+/** `feeCentsByCity` is a read-only display join against BusinessTravelSettings, passed down from
+ * a single list-level query (see ServicesListPage) — never fetched per-card, and never persisted
+ * onto the Service. Omitted entirely (e.g. no query result yet) still renders the plain city
+ * names, matching the pre-fee-display behavior. */
+export const formatCitiesSummary = (
+  cities: BusinessCity[],
+  feeCentsByCity?: Map<string, number>,
+): {
+  primary?: string;
+  primaryFeeCents?: number;
+  suffix?: string;
+  others: Array<{ city: BusinessCity; feeCents?: number }>;
+} => {
   if (cities.length === 0) {
-    return {};
+    return { others: [] };
   }
   const [first, ...rest] = cities;
-  return rest.length > 0 ? { primary: first, suffix: `+${rest.length}` } : { primary: first };
+  return {
+    primary: first,
+    primaryFeeCents: feeCentsByCity?.get(first),
+    suffix: rest.length > 0 ? `+${rest.length}` : undefined,
+    others: rest.map((city) => ({ city, feeCents: feeCentsByCity?.get(city) })),
+  };
 };

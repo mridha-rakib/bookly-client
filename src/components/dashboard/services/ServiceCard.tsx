@@ -16,6 +16,8 @@ import {
   formatAssignedStaffSummary,
   formatCitiesSummary,
   formatDiscount,
+  formatEuro,
+  formatPackagePriceBreakdown,
   formatServiceDuration,
   formatServiceMinMax,
   formatServicePrice
@@ -36,6 +38,10 @@ interface ServiceCardProps {
   noShowPercentage?: number;
   /** Count of currently-active Add-ons assigned to this Service. Undefined/0 hides the row. */
   addonCount?: number;
+  /** Current active-city -> feeCents map, fetched once at the list level (see
+   * ServicesListPage) — never per-card. Read-only display join against BusinessTravelSettings,
+   * which remains the sole fee source of truth; Service never stores a fee itself. */
+  travelFeeCentsByCity?: Map<string, number>;
   onView: () => void;
   onEdit: () => void;
   onArchive: () => void;
@@ -47,6 +53,7 @@ export default function ServiceCard({
   service,
   noShowPercentage,
   addonCount,
+  travelFeeCentsByCity,
   onView,
   onEdit,
   onArchive,
@@ -54,13 +61,16 @@ export default function ServiceCard({
   isMutating
 }: ServiceCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [travelPopoverOpen, setTravelPopoverOpen] = useState(false);
 
   const price = formatServicePrice(service);
   const duration = formatServiceDuration(service);
   const minMax = formatServiceMinMax(service);
   const staffSummary = formatAssignedStaffSummary(service.assignedStaff);
-  const citiesSummary = formatCitiesSummary(service.servedCities);
+  const citiesSummary = formatCitiesSummary(service.servedCities, travelFeeCentsByCity);
   const discount = formatDiscount(service);
+  const packageBreakdown = formatPackagePriceBreakdown(service);
+  const hasPackageSavings = packageBreakdown !== undefined && packageBreakdown.savingsCents > 0;
   const isDraft = service.status === "DRAFT";
   const isActive = service.status === "ACTIVE";
   const title = service.name;
@@ -123,11 +133,29 @@ export default function ServiceCard({
           </div>
         </div>
 
-        {/* Price row */}
-        <div className="flex items-baseline gap-1 mb-6">
-          <span className="text-2xl font-bold text-[#1C1917] tracking-tight">{price.amount}</span>
-          {price.suffix && <span className="text-xs text-[#757575] font-normal">{price.suffix}</span>}
-        </div>
+        {/* Price row — a struck-through original + savings line only appears once a real
+            normal-price/session has been entered AND it produces an actual discount (Phase 21:
+            never show a duplicate identical price with a 0% badge). Legacy packages without a
+            normal price fall straight through to the plain single-price row below, unchanged. */}
+        {hasPackageSavings && packageBreakdown ? (
+          <div className="flex flex-col gap-1 mb-5">
+            <div className="flex items-baseline gap-2">
+              <span className="text-sm text-neutral-400 line-through">{formatEuro(packageBreakdown.normalTotalCents)}</span>
+              <span className="text-2xl font-bold text-[#1C1917] tracking-tight">{price.amount}</span>
+            </div>
+            <span className="text-xs font-medium text-[#176117]">
+              Save {formatEuro(packageBreakdown.savingsCents)} ({packageBreakdown.discountPercent}% off)
+            </span>
+            <span className="text-xs text-neutral-500">
+              {packageBreakdown.sessionsInPackage} sessions · {formatEuro(packageBreakdown.pricePerSessionCents)}/session
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-baseline gap-1 mb-6">
+            <span className="text-2xl font-bold text-[#1C1917] tracking-tight">{price.amount}</span>
+            {price.suffix && <span className="text-xs text-[#757575] font-normal">{price.suffix}</span>}
+          </div>
+        )}
 
         {/* Detail Rows */}
         <div className="flex flex-col gap-3">
@@ -175,11 +203,37 @@ export default function ServiceCard({
               </div>
               <div className="flex items-center gap-1 font-medium text-[#111111]">
                 <span>{citiesSummary.primary}</span>
+                {citiesSummary.primaryFeeCents !== undefined && (
+                  <span className="text-neutral-500 font-normal">{formatEuro(citiesSummary.primaryFeeCents)}</span>
+                )}
                 {citiesSummary.suffix && (
-                  <>
-                    <span className="w-1 h-1 bg-neutral-400 rounded-full" />
-                    <span>{citiesSummary.suffix}</span>
-                  </>
+                  <div className="relative">
+                    <span className="w-1 h-1 bg-neutral-400 rounded-full inline-block mr-1 align-middle" />
+                    <button
+                      type="button"
+                      onClick={() => setTravelPopoverOpen((open) => !open)}
+                      aria-expanded={travelPopoverOpen}
+                      aria-label={`Show ${citiesSummary.others.length} more served cities and their travel fees`}
+                      className="underline decoration-dotted underline-offset-2 cursor-pointer hover:text-[#2E9DA7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2E9DA7] rounded"
+                    >
+                      {citiesSummary.suffix}
+                    </button>
+                    {travelPopoverOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setTravelPopoverOpen(false)} />
+                        <div className="absolute right-0 top-6 bg-white border border-[#EFEFED] rounded-lg shadow-lg py-2 px-3 z-50 text-xs font-poppins text-[#111111] min-w-[160px]">
+                          <ul className="flex flex-col gap-1.5">
+                            {citiesSummary.others.map(({ city, feeCents }) => (
+                              <li key={city} className="flex items-center justify-between gap-4">
+                                <span>{city}</span>
+                                <span className="font-medium">{feeCents !== undefined ? formatEuro(feeCents) : "—"}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -228,7 +282,10 @@ export default function ServiceCard({
             Featured
           </span>
         )}
-        {service.isPackageDeal && service.packagePricing && (
+        {/* Once the rich price-breakdown row above already states "N sessions · €X/session",
+            repeating it here as a pill is redundant — only shown for the legacy fallback card
+            (no normal price/session entered yet). */}
+        {service.isPackageDeal && service.packagePricing && !hasPackageSavings && (
           <span className="bg-[#F3E9FF] text-[#6B2DC8] text-xs font-normal px-2.5 py-1 rounded-full">
             {service.packagePricing.sessionsInPackage} sessions
           </span>

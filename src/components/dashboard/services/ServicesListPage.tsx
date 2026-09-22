@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Plus as PlusIcon } from "@hugeicons/core-free-icons";
 
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import { toast } from "@/components/ui/sonner";
 import { toUserMessage } from "@/lib/auth/messages";
-import { useMyBusinessProfileQuery } from "@/lib/business/hooks";
+import { useBusinessTravelSettingsQuery, useMyBusinessProfileQuery } from "@/lib/business/hooks";
 import { useCancellationPolicyQuery } from "@/lib/business/cancellation-policy-hooks";
 import { useAddonsQuery } from "@/lib/addons/hooks";
 import {
@@ -39,6 +39,21 @@ export default function ServicesListPage() {
   const servicesQuery = useServicesQuery(businessId || undefined, {});
   const bookingSettingsQuery = useBookingSettingsQuery(businessId || undefined);
   const cancellationPolicyQuery = useCancellationPolicyQuery(businessId || undefined);
+  // One Business Travel Settings fetch for the whole list (same query/key ServiceForm already
+  // uses) — never one request per ServiceCard. BusinessTravelSettings stays the sole fee source
+  // of truth; this is a read-only join for display.
+  const travelSettingsQuery = useBusinessTravelSettingsQuery(
+    businessProfileQuery.data?.primary?.visitType === "TRAVEL_TO_CUSTOMER" ? businessId || undefined : undefined
+  );
+  const travelFeeCentsByCity = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const city of travelSettingsQuery.data?.cities ?? []) {
+      if (city.active) {
+        map.set(city.city, city.feeCents);
+      }
+    }
+    return map;
+  }, [travelSettingsQuery.data]);
   // Single business-scoped fetch of active Add-ons (each carrying its own assignedServices) —
   // avoids issuing one Add-ons request per card.
   const activeAddonsQuery = useAddonsQuery(businessId || undefined, { status: "ACTIVE" });
@@ -181,6 +196,7 @@ export default function ServicesListPage() {
                 service={service}
                 noShowPercentage={noShowPercentage}
                 addonCount={addonCountByServiceId.get(service.id)}
+                travelFeeCentsByCity={travelFeeCentsByCity}
                 onView={() => setView({ mode: "view", serviceId: service.id })}
                 onEdit={() => setView({ mode: "edit", serviceId: service.id })}
                 onArchive={() => setArchivingService(service)}
