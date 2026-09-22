@@ -39,6 +39,8 @@ const codeMessages: Record<string, string> = {
   STAFF_TEMP_PASSWORD_EMAIL_FAILED:
     "The staff account was created, but the welcome email could not be sent.",
   INVALID_CURRENT_PASSWORD: "Your current password is incorrect.",
+  NEW_PASSWORD_SAME_AS_CURRENT: "New password must be different from your current password.",
+  PASSWORD_NOT_CONFIGURED: "Password sign-in is not configured for this account.",
   PHONE_ALREADY_REGISTERED: "That phone number is already registered to another account.",
   INVALID_PHONE_NUMBER: "Please enter a valid mobile number.",
   CONTACT_UNCHANGED: "That's already your current email or phone number.",

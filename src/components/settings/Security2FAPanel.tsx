@@ -1,13 +1,21 @@
 import Image from "next/image";
-import React from "react";
+import React, { useState } from "react";
 
-/** Batch 19 — made honest. No Business-role (Owner/Supervisor/Staff) password-change or 2FA
- * backend exists anywhere in this codebase (only CUSTOMER has PATCH /auth/me/password — see
- * Batch 17/18) — this used to fake a working password button and a working email-OTP 2FA flow
- * with no real verification behind either. Design/layout preserved; both controls are now
- * disabled with an honest note instead of silently doing nothing (password) or fabricating a
- * "verified" state (2FA). */
+import { useCurrentUserQuery } from "@/lib/auth/hooks";
+import UpdatePasswordModal from "./UpdatePasswordModal";
+
+/** Batch 19 — made honest, then Phase 1 made Password real. No Business-role (Owner/Supervisor/
+ * Staff) 2FA backend exists anywhere in this codebase yet — the Email Authentication toggle
+ * below stays disabled with an honest note rather than fabricating a "verified" state. Password
+ * management now reuses the same real PATCH /auth/me/password path CUSTOMER/SUPER_ADMIN already
+ * had (see auth.route.ts), gated per-account on `hasPassword` from GET /auth/me: an OAuth-only
+ * account (no local password) gets a truthful non-interactive message instead of a fake
+ * "Create Password" flow, since no such endpoint exists yet. */
 export const Security2FAPanel: React.FC = () => {
+  const meQuery = useCurrentUserQuery();
+  const hasPassword = meQuery.data?.user.hasPassword ?? false;
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+
   return (
     <div className="flex flex-col gap-[20px] w-full font-poppins">
       <div className="flex flex-col gap-1">
@@ -30,11 +38,19 @@ export const Security2FAPanel: React.FC = () => {
         <div className="p-6 bg-white flex items-center justify-between border-b border-[#F1F5F9]">
           <div className="flex flex-col">
             <span className="font-medium text-sm text-[#111111]">Password</span>
-            <span className="text-xs text-neutral-400 mt-0.5">Password management isn&apos;t available yet.</span>
+            <span className="text-xs text-neutral-400 mt-0.5">
+              {meQuery.isLoading
+                ? "Loading…"
+                : hasPassword
+                  ? "Update your account password."
+                  : "Password sign-in is not configured for this account."}
+            </span>
           </div>
           <button
-            disabled={true}
-            className="px-3.5 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-neutral-400 cursor-not-allowed"
+            type="button"
+            disabled={meQuery.isLoading || !hasPassword}
+            onClick={() => setIsPasswordModalOpen(true)}
+            className="px-3.5 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-[#111111] cursor-pointer disabled:text-neutral-400 disabled:cursor-not-allowed"
           >
             Update Password
           </button>
@@ -79,6 +95,11 @@ export const Security2FAPanel: React.FC = () => {
         </div>
 
       </div>
+
+      <UpdatePasswordModal
+        isOpen={isPasswordModalOpen}
+        onClose={() => setIsPasswordModalOpen(false)}
+      />
     </div>
   );
 };
