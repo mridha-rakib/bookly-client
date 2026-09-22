@@ -72,8 +72,15 @@ interface FormState {
   packageBuffer: string;
   packageProcessing: string;
   packageSessions: string;
+  packageNormalPricePerSession: string;
   packageBundlePrice: string;
   packageDiscount: string;
+  /** Which of Bundle price / Discount % the owner last explicitly edited — drives the
+   * bidirectional package-pricing sync (see recomputePackagePricing below). Defaults to
+   * "BUNDLE": the persisted bundlePriceCents is always the actual charged price, so it stays
+   * authoritative by default, including the first time an owner enters a normal price/session
+   * on a legacy package that already has a bundle price. */
+  packagePricingDriver: "BUNDLE" | "DISCOUNT";
   sessionExpiryEnabled: boolean;
   sessionExpiryMinutes: string;
   scheduleMode: ServiceScheduleMode;
@@ -113,8 +120,10 @@ const initialFormState = (): FormState => ({
   packageBuffer: "",
   packageProcessing: "",
   packageSessions: "",
+  packageNormalPricePerSession: "",
   packageBundlePrice: "",
   packageDiscount: "",
+  packagePricingDriver: "BUNDLE",
   sessionExpiryEnabled: false,
   sessionExpiryMinutes: "",
   scheduleMode: "AUTO",
@@ -162,8 +171,16 @@ const hydrateFromService = (service: Service): FormState => {
     packageBuffer: service.packagePricing?.bufferAfterMin?.toString() ?? "",
     packageProcessing: service.packagePricing?.processingTimeMin?.toString() ?? "",
     packageSessions: service.packagePricing ? String(service.packagePricing.sessionsInPackage) : "",
+    packageNormalPricePerSession:
+      service.packagePricing?.normalPricePerSessionCents !== undefined
+        ? centsToEuroText(service.packagePricing.normalPricePerSessionCents)
+        : "",
     packageBundlePrice: service.packagePricing ? centsToEuroText(service.packagePricing.bundlePriceCents) : "",
     packageDiscount: service.packagePricing?.discountPercent?.toString() ?? "",
+    // The persisted bundlePriceCents is always the actual charged price — stays authoritative
+    // by default on load, for both legacy and already-normal-priced packages (see FormState's
+    // own doc comment on this field).
+    packagePricingDriver: "BUNDLE",
     sessionExpiryEnabled: service.sessionExpiryAlert.enabled,
     sessionExpiryMinutes: service.sessionExpiryAlert.minutesBeforeSessionEnds?.toString() ?? "",
     scheduleMode: service.scheduleMode,
@@ -178,6 +195,78 @@ const toIntOrUndefined = (text: string): number | undefined => {
   if (!trimmed) return undefined;
   const value = Number(trimmed);
   return Number.isFinite(value) ? Math.trunc(value) : undefined;
+};
+
+/** Discount is a percentage, not an integer (e.g. 16.67) — rounded to 2 decimal places here so
+ * a typed value and a synced/derived value always share one precision rule (matches the
+ * backend's own rounding in service.service.ts's resolvePackagePricing). */
+const toDecimalOrUndefined = (text: string): number | undefined => {
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  const value = Number(trimmed);
+  return Number.isFinite(value) ? Math.round(value * 100) / 100 : undefined;
+};
+
+/** Owner-facing live package pricing math, shared by the bidirectional Bundle<->Discount sync
+ * handlers and by the read-only Original total / You save display — one calculation, not
+ * reimplemented per call site. Returns undefined pieces whenever an input isn't a valid,
+ * positive number yet (never divides by zero or shows a fabricated result mid-typing). */
+const computePackagePricingPreview = (
+  form: Pick<
+    FormState,
+    "packageNormalPricePerSession" | "packageSessions" | "packageBundlePrice" | "packageDiscount"
+  >,
+): {
+  normalTotalCents?: number;
+  bundlePriceCents?: number;
+  savingsCents?: number;
+  discountPercent?: number;
+} => {
+  const perSessionCents = euroTextToCents(form.packageNormalPricePerSession);
+  const sessions = toIntOrUndefined(form.packageSessions);
+  const bundlePriceCents = euroTextToCents(form.packageBundlePrice) ?? undefined;
+  const discountPercent = toDecimalOrUndefined(form.packageDiscount);
+
+  if (perSessionCents === null || sessions === undefined || sessions <= 0) {
+    return { bundlePriceCents, discountPercent };
+  }
+
+  const normalTotalCents = perSessionCents * sessions;
+  const savingsCents =
+    bundlePriceCents !== undefined ? normalTotalCents - bundlePriceCents : undefined;
+
+  return { normalTotalCents, bundlePriceCents, savingsCents, discountPercent };
+};
+
+/** Recomputes the non-driving side of Bundle price <-> Discount % from the current
+ * `packagePricingDriver` — called whenever Normal price/session or Sessions changes (the shared
+ * inputs both formulas depend on), so editing them preserves the owner's last explicit pricing
+ * intent instead of silently drifting one side out of sync. Event-driven (called directly from
+ * each onChange), never a useEffect — there is exactly one state update per keystroke, so the
+ * two directions can't fight each other. */
+const recomputePackagePricing = (form: FormState): FormState => {
+  const perSessionCents = euroTextToCents(form.packageNormalPricePerSession);
+  const sessions = toIntOrUndefined(form.packageSessions);
+  if (perSessionCents === null || sessions === undefined || sessions <= 0) {
+    return form;
+  }
+  const normalTotalCents = perSessionCents * sessions;
+
+  if (form.packagePricingDriver === "DISCOUNT") {
+    const discountPercent = toDecimalOrUndefined(form.packageDiscount);
+    if (discountPercent === undefined) {
+      return form;
+    }
+    const bundleCents = Math.max(0, Math.round(normalTotalCents * (1 - discountPercent / 100)));
+    return { ...form, packageBundlePrice: centsToEuroText(bundleCents) };
+  }
+
+  const bundlePriceCents = euroTextToCents(form.packageBundlePrice);
+  if (bundlePriceCents === null) {
+    return form;
+  }
+  const discountPercent = Math.round(((normalTotalCents - bundlePriceCents) / normalTotalCents) * 10000) / 100;
+  return { ...form, packageDiscount: String(discountPercent) };
 };
 
 const buildServiceInput = (form: FormState, status: ServiceInput["status"]): ServiceInput => {
@@ -225,8 +314,11 @@ const buildServiceInput = (form: FormState, status: ServiceInput["status"]): Ser
         : {}),
       sessionsInPackage: toIntOrUndefined(form.packageSessions) ?? 0,
       bundlePriceCents: euroTextToCents(form.packageBundlePrice) ?? -1,
-      ...(toIntOrUndefined(form.packageDiscount) !== undefined
-        ? { discountPercent: toIntOrUndefined(form.packageDiscount) }
+      ...(toDecimalOrUndefined(form.packageDiscount) !== undefined
+        ? { discountPercent: toDecimalOrUndefined(form.packageDiscount) }
+        : {}),
+      ...(euroTextToCents(form.packageNormalPricePerSession) !== null
+        ? { normalPricePerSessionCents: euroTextToCents(form.packageNormalPricePerSession) as number }
         : {})
     };
   } else {
@@ -323,6 +415,7 @@ const FIELD_ERROR_KEYS: Partial<Record<keyof FormState, string[]>> = {
   sessionExpiryMinutes: ["sessionExpiryAlert.minutesBeforeSessionEnds"],
   packageDuration: ["packagePricing.durationMin"],
   packageSessions: ["packagePricing.sessionsInPackage"],
+  packageNormalPricePerSession: ["packagePricing.normalPricePerSessionCents"],
   packageBundlePrice: ["packagePricing.bundlePriceCents"],
   packageDiscount: ["packagePricing.discountPercent"],
   fixedPrice: ["fixedPricing.priceCents"],
@@ -365,6 +458,18 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
     () => (travelSettingsQuery.data?.cities ?? []).filter((city) => city.active).map((city) => city.city),
     [travelSettingsQuery.data]
   );
+  // Read-only display of the current per-city Business Travel Fee next to each toggle — the fee
+  // itself stays owner-editable only in Business Profile > Travel fees; BusinessTravelSettings
+  // remains the sole source of truth, this just surfaces the value that's already being fetched.
+  const travelCityFeeCents = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const city of travelSettingsQuery.data?.cities ?? []) {
+      if (city.active) {
+        map.set(city.city, city.feeCents);
+      }
+    }
+    return map;
+  }, [travelSettingsQuery.data]);
   // Only currently-eligible staff are offered for a NEW assignment — an inactive/removed
   // membership must never become newly selectable (approved rule). A membership that is merely
   // employmentActive: false is still a real, existing row (see staff.model.ts's own removedAt
@@ -420,6 +525,29 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
     }
   };
 
+  // Bundle price and Discount % are two views of the same package pricing — editing either one
+  // recomputes the other from the current Normal price/session x Sessions, and marks itself as
+  // the "last explicit driver" so a later change to Normal price/session or Sessions preserves
+  // the owner's intent (see recomputePackagePricing's own doc comment).
+  const setPackageBundlePrice = (value: string) => {
+    setField("packageBundlePrice", value);
+    setForm((prev) => recomputePackagePricing({ ...prev, packageBundlePrice: value, packagePricingDriver: "BUNDLE" }));
+  };
+  const setPackageDiscount = (value: string) => {
+    setField("packageDiscount", value);
+    setForm((prev) => recomputePackagePricing({ ...prev, packageDiscount: value, packagePricingDriver: "DISCOUNT" }));
+  };
+  const setPackageNormalPricePerSession = (value: string) => {
+    setField("packageNormalPricePerSession", value);
+    setForm((prev) => recomputePackagePricing({ ...prev, packageNormalPricePerSession: value }));
+  };
+  const setPackageSessions = (value: string) => {
+    setField("packageSessions", value);
+    setForm((prev) => recomputePackagePricing({ ...prev, packageSessions: value }));
+  };
+
+  const packagePricingPreview = useMemo(() => computePackagePricingPreview(form), [form]);
+
   const toggleCity = (city: string) => {
     setField(
       "servedCities",
@@ -443,7 +571,7 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
   // so this single validator naturally enforces full requiredness only for ACTIVE/INACTIVE.
   const handleSave = async (status: ServiceInput["status"]) => {
     const input = buildServiceInput(form, status);
-    const validation = validateServiceInput(input);
+    const validation = validateServiceInput(input, { isNewPackage: mode === "create" && form.isPackageDeal });
     if (!validation.success) {
       setErrors(validation.errors);
       toast.error("Please fix the highlighted fields.");
@@ -882,9 +1010,41 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
                 <NumField label="Booking interval (min)" disabled={isReadOnly} value={form.packageBookingInterval} onChange={(v) => setField("packageBookingInterval", v)} placeholder="How often a new slot appears" />
                 <NumField label="Buffer time after service (min)" disabled={isReadOnly} value={form.packageBuffer} onChange={(v) => setField("packageBuffer", v)} placeholder="Hidden break after each appointment" />
                 <NumField label="Processing time (min)" disabled={isReadOnly} value={form.packageProcessing} onChange={(v) => setField("packageProcessing", v)} placeholder="Free time mid-appointment" />
-                <NumField label="Sessions in package" required disabled={isReadOnly} value={form.packageSessions} onChange={(v) => setField("packageSessions", v)} placeholder="e.g. 5" error={errors["packagePricing.sessionsInPackage"]} />
-                <MoneyField label="Bundle price (€)" required disabled={isReadOnly} value={form.packageBundlePrice} onChange={(v) => setField("packageBundlePrice", v)} placeholder="e.g. 150.00" error={errors["packagePricing.bundlePriceCents"]} />
-                <NumField label="Discount (%)" disabled={isReadOnly} value={form.packageDiscount} onChange={(v) => setField("packageDiscount", v)} placeholder="e.g. 10" error={errors["packagePricing.discountPercent"]} />
+                <MoneyField
+                  label="Normal price per session (€)"
+                  required={mode === "create"}
+                  disabled={isReadOnly}
+                  value={form.packageNormalPricePerSession}
+                  onChange={setPackageNormalPricePerSession}
+                  placeholder="e.g. 60.00"
+                  error={errors["packagePricing.normalPricePerSessionCents"]}
+                />
+                <NumField label="Sessions in package" required disabled={isReadOnly} value={form.packageSessions} onChange={setPackageSessions} placeholder="e.g. 3" error={errors["packagePricing.sessionsInPackage"]} />
+                <DerivedMoneyField
+                  label="Original total"
+                  value={packagePricingPreview.normalTotalCents !== undefined ? formatEuro(packagePricingPreview.normalTotalCents) : "—"}
+                />
+                <MoneyField
+                  label="Bundle / discounted price (€)"
+                  required
+                  disabled={isReadOnly}
+                  value={form.packageBundlePrice}
+                  onChange={setPackageBundlePrice}
+                  placeholder="e.g. 150.00"
+                  error={errors["packagePricing.bundlePriceCents"]}
+                />
+                <PercentField
+                  label="Discount (%)"
+                  disabled={isReadOnly}
+                  value={form.packageDiscount}
+                  onChange={setPackageDiscount}
+                  placeholder="e.g. 16.67"
+                  error={errors["packagePricing.discountPercent"]}
+                />
+                <DerivedMoneyField
+                  label="You save"
+                  value={packagePricingPreview.savingsCents !== undefined ? formatEuro(packagePricingPreview.savingsCents) : "—"}
+                />
               </div>
             ) : form.pricingMode === "FIXED" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 w-full">
@@ -936,17 +1096,23 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
               <div className="flex flex-wrap gap-2.5 mt-2">
                 {activeTravelCities.map((city) => {
                   const isSelected = form.servedCities.includes(city);
+                  const feeCents = travelCityFeeCents.get(city);
                   return (
                     <button
                       key={city}
                       type="button"
                       disabled={isReadOnly}
                       onClick={() => toggleCity(city)}
-                      className={`h-[36px] px-4 rounded-full text-xs font-poppins font-medium transition-colors flex items-center justify-center disabled:cursor-not-allowed ${
+                      className={`h-[36px] px-4 rounded-full text-xs font-poppins font-medium transition-colors flex items-center justify-center gap-1.5 disabled:cursor-not-allowed ${
                         isSelected ? "bg-[#2E9DA7] text-white" : "bg-neutral-100 text-[#111111] border border-neutral-200"
                       }`}
                     >
-                      {city}
+                      <span>{city}</span>
+                      {feeCents !== undefined && (
+                        <span className={isSelected ? "text-white/80" : "text-neutral-500"}>
+                          {formatEuro(feeCents)}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -1156,6 +1322,52 @@ const NumField = ({
       disabled={disabled}
       value={value}
       onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ""))}
+      placeholder={placeholder}
+      className={inputClass}
+      aria-invalid={Boolean(error)}
+      aria-describedby={error ? toFieldErrorId(label) : undefined}
+    />
+    {error && (
+      <span id={toFieldErrorId(label)} className="text-xs text-[#D85A30]">
+        {error}
+      </span>
+    )}
+  </div>
+);
+
+/** Read-only computed value (Original total / You save) — visually consistent with the
+ * editable fields around it but never an <input>, so it can't be mistaken for something the
+ * owner can type into directly (see Phase 10's "clearly separate inputs from calculations"). */
+const DerivedMoneyField = ({ label, value }: { label: string; value: string }) => (
+  <div className="flex flex-col gap-2 w-full">
+    <span className={fieldLabelClass}>{label}</span>
+    <div className={`${inputClass} flex items-center bg-neutral-50 text-[#57534D]`}>{value}</div>
+  </div>
+);
+
+const PercentField = ({
+  label,
+  disabled,
+  value,
+  onChange,
+  placeholder,
+  error
+}: {
+  label: string;
+  disabled?: boolean;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  error?: string;
+}) => (
+  <div className="flex flex-col gap-2 w-full">
+    <span className={fieldLabelClass}>{label}</span>
+    <input
+      type="text"
+      inputMode="decimal"
+      disabled={disabled}
+      value={value}
+      onChange={(e) => onChange(e.target.value.replace(/[^\d.]/g, ""))}
       placeholder={placeholder}
       className={inputClass}
       aria-invalid={Boolean(error)}

@@ -51,6 +51,12 @@ export interface ServicePackagePricing {
   sessionsInPackage: number;
   bundlePriceCents: number;
   discountPercent?: number;
+  /** Owner-entered "normal" per-session price, pre-discount. Optional/nullable — absent on every
+   * package Service created before this field existed. Never changes what the customer is
+   * charged: bundlePriceCents remains the sole authoritative booking price. When present, the
+   * backend recomputes discountPercent canonically from it (never trusts a submitted value
+   * verbatim) — see api/src/modules/services/service.service.ts's resolvePackagePricing. */
+  normalPricePerSessionCents?: number;
 }
 
 export interface ServiceManualScheduleDay {
