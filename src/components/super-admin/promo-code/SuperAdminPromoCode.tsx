@@ -12,6 +12,7 @@ import {
   usePromoRedemptionsQuery,
   useSetPromoStatusMutation,
 } from "@/lib/promo/hooks";
+import { formatClockTime12Hour } from "@/lib/staff/format";
 
 interface SuperAdminPromoCodeProps {
   onClientClick?: (customerUserId: string) => void;
@@ -35,6 +36,12 @@ const formatDate = (iso?: string) =>
 
 const formatDiscountLabel = (row: { promoDiscountCents: number }) =>
   `-€${(row.promoDiscountCents / 100).toFixed(2)}`;
+
+const formatRedeemedAt = (iso: string) => {
+  const date = new Date(iso);
+  const datePart = date.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" });
+  return `${datePart}, ${formatClockTime12Hour(date)}`;
+};
 
 export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCodeProps) {
   const [activeTab, setActiveTab] = useState<"All" | "Active" | "Expired" | "Deactivated">("All");
@@ -314,13 +321,7 @@ export default function SuperAdminPromoCode({ onClientClick }: SuperAdminPromoCo
                       {formatDiscountLabel(log)}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500 font-sans whitespace-nowrap">
-                      {new Date(log.redeemedAt).toLocaleString("en-GB", {
-                        weekday: "short",
-                        day: "2-digit",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {formatRedeemedAt(log.redeemedAt)}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-800 font-sans font-medium whitespace-nowrap">{log.businessName}</td>
                   </tr>

@@ -11,6 +11,7 @@ import {
   useSuperAdminSupportTicketQuery,
   useSuperAdminSupportTicketsQuery,
 } from "@/lib/superAdminSupport/hooks";
+import { formatClockTime12Hour } from "@/lib/staff/format";
 
 const PAGE_SIZE = 20;
 const MESSAGE_MAX_LENGTH = 5000;
@@ -38,14 +39,11 @@ const statusBadgeClasses = (status: SupportTicketStatus) => {
   }
 };
 
-const formatDateTime = (iso: string) =>
-  new Date(iso).toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+const formatDateTime = (iso: string) => {
+  const date = new Date(iso);
+  const datePart = date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return `${datePart}, ${formatClockTime12Hour(date)}`;
+};
 
 const initialsFor = (name: string) =>
   name
@@ -386,10 +384,7 @@ export default function SuperAdminSupport() {
                           </div>
 
                           <span className="font-sans font-normal text-[11px] text-[#6B7280]">
-                            {new Date(msg.createdAt).toLocaleTimeString("en-GB", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
+                            {formatClockTime12Hour(new Date(msg.createdAt))}
                           </span>
                         </div>
 

@@ -32,6 +32,7 @@ import { useAvailabilityQuery } from "@/lib/availability/hooks";
 import type { AvailabilitySlot } from "@/lib/api/availability";
 import type { CatalogService } from "@/lib/api/catalog";
 import { formatEuro, formatServiceDuration, formatServicePrice } from "@/lib/services/format";
+import { formatBookingTime } from "@/lib/bookings/format";
 import { BUSINESS_CITIES, type BusinessCity } from "@/lib/constants/cities";
 import { CLIENT_PROPERTY_TYPES } from "@/lib/api/clients";
 import { getFieldErrors, toUserMessage } from "@/lib/auth/messages";
@@ -1059,12 +1060,7 @@ export default function DashboardBookingForm({
                   <span className="text-[10px] uppercase font-semibold text-neutral-400 font-poppins">Time</span>
                   <span className="text-xs font-semibold text-[#1A1A1A] mt-1">
                     {selectedSlot
-                      ? new Intl.DateTimeFormat("en-GB", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          hour12: false,
-                          timeZone: availabilityQuery.data?.timezone ?? "UTC",
-                        }).format(new Date(selectedSlot.startAt))
+                      ? formatBookingTime(selectedSlot.startAt, availabilityQuery.data?.timezone ?? "UTC")
                       : "—"}
                   </span>
                 </div>

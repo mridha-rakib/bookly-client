@@ -1,4 +1,5 @@
 import type { BookingSource, BookingStatus } from "@/lib/api/bookings";
+import { formatTime12Hour } from "@/lib/staff/format";
 
 /** ONE canonical "Get Directions"/"Open in maps" destination builder — always the Booking's OWN
  * historical fulfilment snapshot (address text, or the frozen coordinate when one exists), NEVER
@@ -62,13 +63,19 @@ export const formatBookingDate = (isoInstant: string, timezone: string): string 
     timeZone: timezone,
   }).format(new Date(isoInstant));
 
-export const formatBookingTime = (isoInstant: string, timezone: string): string =>
-  new Intl.DateTimeFormat("en-GB", {
+/** Same instant/timezone conversion as before (via Intl's `timeZone` option, `hour12: false`
+ * only to get a stable "HH:mm" intermediate) — then rendered through the app's one canonical
+ * 12-hour display formatter so every booking surface matches Staff/Business-hours' AM/PM style
+ * ("9:00 AM", never "09:00 AM"). */
+export const formatBookingTime = (isoInstant: string, timezone: string): string => {
+  const canonical = new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
     timeZone: timezone,
   }).format(new Date(isoInstant));
+  return formatTime12Hour(canonical);
+};
 
 export const formatBookingTimeRange = (schedule: { startAt: string; endAt: string; timezone: string }): string =>
   `${formatBookingTime(schedule.startAt, schedule.timezone)}–${formatBookingTime(schedule.endAt, schedule.timezone)}`;

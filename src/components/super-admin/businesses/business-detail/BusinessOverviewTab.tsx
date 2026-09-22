@@ -2,6 +2,13 @@
 
 import React from "react";
 import { useSuperAdminBusinessDetailQuery } from "@/lib/superAdminBusiness/hooks";
+import { formatClockTime12Hour } from "@/lib/staff/format";
+
+const formatAuditTimestamp = (iso: string) => {
+  const date = new Date(iso);
+  const datePart = date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return `${datePart}, ${formatClockTime12Hour(date)}`;
+};
 
 interface BusinessOverviewTabProps {
   businessId: string;
@@ -119,13 +126,7 @@ export default function BusinessOverviewTab({ businessId }: BusinessOverviewTabP
                   </span>
                 </div>
                 <span className="text-gray-400 shrink-0 ml-4">
-                  {new Date(entry.changedAt).toLocaleString("en-GB", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  {formatAuditTimestamp(entry.changedAt)}
                 </span>
               </div>
             ))}

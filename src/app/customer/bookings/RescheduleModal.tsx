@@ -7,7 +7,7 @@ import { Location05Icon, Calendar01Icon, Tick01Icon } from "@hugeicons/core-free
 import { useCustomerBookingDetailQuery, useRescheduleByCustomerMutation } from "@/lib/bookings/hooks";
 import { useBusinessCatalogQuery, useServiceAvailabilityQuery } from "@/lib/catalog/hooks";
 import type { AvailabilitySlot } from "@/lib/api/catalog";
-import { formatBookingDate, formatBookingMoney, formatBookingTimeRange } from "@/lib/bookings/format";
+import { formatBookingDate, formatBookingMoney, formatBookingTime, formatBookingTimeRange } from "@/lib/bookings/format";
 import { toUserMessage } from "@/lib/auth/messages";
 import TimeStep from "../../venue/components/TimeStep";
 
@@ -135,9 +135,7 @@ export default function RescheduleModal({ bookingId, onClose, onSaved }: Resched
                     <span className="text-gray-500">→</span>
                     <span className="text-[#1F8900] font-semibold">
                       {selectedDateIso} •{" "}
-                      {new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: detail.schedule.timezone }).format(
-                        new Date(selectedSlot.startAt),
-                      )}
+                      {formatBookingTime(selectedSlot.startAt, detail.schedule.timezone)}
                     </span>
                   </>
                 )}

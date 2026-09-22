@@ -988,7 +988,7 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
                                   className="flex items-center gap-2 px-3 py-1 bg-[#D1F3FA] rounded-full text-xs font-poppins font-medium text-[#106374]"
                                   title={formatTime12Hour(slot)}
                                 >
-                                  <span>{slot}</span>
+                                  <span>{formatTime12Hour(slot)}</span>
                                   {!isReadOnly && (
                                     <button
                                       type="button"

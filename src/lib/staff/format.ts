@@ -38,6 +38,14 @@ export const formatTime12Hour = (hhmm: string): string => {
   return `${hours12}:${minutes} ${period}`;
 };
 
+/** A plain `Date`'s own local-clock time (browser/runtime default timezone — no `timeZone`
+ * override, matching every call site this replaces) -> 12-hour AM/PM, via the same canonical
+ * formatter as everywhere else. For a Booking's own snapshotted timezone, use
+ * `formatBookingTime` (lib/bookings/format.ts) instead — this is for admin/support/audit
+ * timestamps that have never carried a business timezone. */
+export const formatClockTime12Hour = (date: Date): string =>
+  formatTime12Hour(date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }));
+
 /** 12-hour display input -> canonical "HH:mm". Throws for an out-of-range hour/minute. */
 export const parseTime12HourToCanonical = (
   hour12: number,

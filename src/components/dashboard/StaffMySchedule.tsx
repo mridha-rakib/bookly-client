@@ -5,6 +5,7 @@ import { toUserMessage } from "@/lib/auth/messages";
 import { useCurrentUserQuery } from "@/lib/auth/hooks";
 import { daysOfWeek, type DayOfWeek, type ScheduleDay } from "@/lib/api/staff";
 import { useMyAssignedServicesQuery, useMyScheduleQuery } from "@/lib/staff/hooks";
+import { formatTime12Hour } from "@/lib/staff/format";
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
   MONDAY: "Monday",
@@ -55,7 +56,7 @@ export default function StaffMySchedule() {
                       {DAY_LABELS[dayOfWeek]}
                     </span>
                     <span className="font-poppins text-xs text-[#5F5E5A]">
-                      {day ? `${day.startTime}–${day.endTime}` : "Off"}
+                      {day ? `${formatTime12Hour(day.startTime)}–${formatTime12Hour(day.endTime)}` : "Off"}
                     </span>
                   </div>
                 );

@@ -4,6 +4,13 @@ import React, { useState } from "react";
 
 import { formatBookingMoney } from "@/lib/bookings/format";
 import { useSuperAdminBusinessTransactionsQuery } from "@/lib/superAdminFinance/hooks";
+import { formatClockTime12Hour } from "@/lib/staff/format";
+
+const formatTransactionDateTime = (iso: string) => {
+  const date = new Date(iso);
+  const datePart = date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return `${datePart}, ${formatClockTime12Hour(date)}`;
+};
 
 interface TransactionHistoryTableProps {
   businessId: string;
@@ -82,7 +89,7 @@ export default function TransactionHistoryTable({ businessId }: TransactionHisto
               {rows.map((tx) => (
                 <tr key={tx.id} className="hover:bg-gray-50/30 transition-colors">
                   <td className="p-4 font-normal text-gray-900">
-                    {new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(tx.date))}
+                    {formatTransactionDateTime(tx.date)}
                   </td>
                   <td className="p-4">
                     <div className="flex flex-col gap-1.5 items-start">
