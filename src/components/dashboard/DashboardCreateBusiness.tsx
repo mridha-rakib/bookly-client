@@ -314,24 +314,6 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     setDays(updated);
   };
 
-  // Booking Time Control (Manual/Auto)
-  const [bookingMode, setBookingMode] = useState<"Manual" | "Auto">("Manual");
-  const [manualTimes, setManualTimes] = useState<string[]>(["10:00 AM", "12:00 PM"]);
-  const [newManualTime, setNewManualTime] = useState("10:00");
-  const [newManualAmpm, setNewManualAmpm] = useState("AM");
-  const [durationIncrement, setDurationIncrement] = useState("30 minutes");
-
-  const addManualTime = () => {
-    const formatted = `${newManualTime} ${newManualAmpm}`;
-    if (!manualTimes.includes(formatted)) {
-      setManualTimes([...manualTimes, formatted]);
-    }
-  };
-
-  const removeManualTime = (time: string) => {
-    setManualTimes(manualTimes.filter((t) => t !== time));
-  };
-
   // Closed Periods
   const [closedPeriods, setClosedPeriods] = useState([
     { id: 1, start: "", end: "", note: "e.g. Public holiday (internal note)" }
@@ -1111,20 +1093,22 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
           timeOptions={timeOptions}
         />
 
-        {/* 10. Booking Time Control (Manual vs Auto) */}
-        <BookingTimeControlSection
-          bookingMode={bookingMode}
-          setBookingMode={setBookingMode}
-          durationIncrement={durationIncrement}
-          setDurationIncrement={setDurationIncrement}
-          manualTimes={manualTimes}
-          newManualTime={newManualTime}
-          setNewManualTime={setNewManualTime}
-          newManualPeriod={newManualAmpm as "AM" | "PM"}
-          setNewManualPeriod={setNewManualAmpm}
-          addManualTime={addManualTime}
-          removeManualTime={removeManualTime}
-        />
+        {/* 10. Booking Time Control (Manual vs Auto) — edits the selected Service's real
+            scheduleMode/manualSchedule/bookingIntervalMin; needs a saved Business + its
+            Services, so it's only available once one exists (edit/view), same rule as the
+            other real sections above (see e.g. customCategoriesQuery). */}
+        {mode !== "create" && businessId ? (
+          <BookingTimeControlSection businessId={businessId} />
+        ) : (
+          <div className="flex flex-col gap-3 w-full font-poppins">
+            <h3 className="text-sm font-semibold text-[#111111] border-b border-neutral-100 pb-4">
+              Booking time control
+            </h3>
+            <p className="text-xs text-neutral-500">
+              Save this business first, then configure Manual/Auto booking times for each of its services.
+            </p>
+          </div>
+        )}
 
         {/* 11. Add Closed Period Section */}
         <ClosedPeriodsSection
