@@ -8,6 +8,7 @@ import {
   type ListServicesParams,
   type ServiceInput,
 } from "@/lib/api/services";
+import { availabilityKeys } from "@/lib/availability/hooks";
 
 export const serviceKeys = {
   all: ["services"] as const,
@@ -43,9 +44,15 @@ export const useServiceQuery = (businessId: string | undefined, serviceId: strin
 // All Service list/detail caches for one business are invalidated together on any mutation —
 // a Service mutation can move a row between ACTIVE/INACTIVE/ARCHIVED buckets, so any narrower
 // invalidation would risk leaving a stale list cached under a different filter combination.
+// Also invalidates every cached availability query for this business (any Service, any date
+// range/staff/party-size params) — a schedule edit (from ServiceForm or Business Profile's
+// Booking Time Control) changes what AvailabilityService returns, and availability has its
+// own separate query-key namespace that a Service mutation would otherwise leave stale for
+// the rest of the browser session.
 const invalidateServiceCaches = (queryClient: ReturnType<typeof useQueryClient>, businessId: string) => {
   void queryClient.invalidateQueries({ queryKey: [...serviceKeys.all, "list", businessId] });
   void queryClient.invalidateQueries({ queryKey: [...serviceKeys.all, "detail", businessId] });
+  void queryClient.invalidateQueries({ queryKey: [...availabilityKeys.all, businessId] });
 };
 
 export const useCreateServiceMutation = () => {
