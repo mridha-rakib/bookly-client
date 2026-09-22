@@ -126,6 +126,8 @@ export interface CurrentUserResponse {
   user: AuthUser & {
     emailVerifiedAt?: string;
     phoneVerifiedAt?: string;
+    /** Whether this account has a local password (false for OAuth-only accounts). */
+    hasPassword: boolean;
   };
   profile: AuthProfile | null;
   business: AuthBusiness | null;
