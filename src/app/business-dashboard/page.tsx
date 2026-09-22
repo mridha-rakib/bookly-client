@@ -19,6 +19,7 @@ import {
 // Reused component
 import RequireBusinessOwner from "@/components/auth/RequireBusinessOwner";
 import BusinessDashboardApprovalGate from "@/components/dashboard/BusinessDashboardApprovalGate";
+import { Spinner } from "@/components/ui/spinner";
 import { useManagedBusinessContext, useMyBusinessProfileQuery } from "@/lib/business/hooks";
 import {
   useBookingDetailQuery,
@@ -57,6 +58,15 @@ import {
   slugToDashboardSection,
 } from "@/lib/dashboard/sections";
 
+// Business Profile's nested edit/view screen — like the top-level `section` above, this is
+// URL-backed (?view=edit|view&businessId=<id>) rather than local state, so it survives a
+// refresh. "create" is deliberately not a valid URL value here — this dashboard page never
+// enters DashboardCreateBusiness's create mode (see BusinessDashboardContent's own report).
+type BusinessProfileView = "edit" | "view";
+
+const parseBusinessProfileView = (value: string | null): BusinessProfileView | null =>
+  value === "edit" || value === "view" ? value : null;
+
 function BusinessDashboardContent() {
   const router = useRouter();
   const pathname = usePathname();
@@ -74,10 +84,17 @@ function BusinessDashboardContent() {
       const isAlreadyActive = sectionParam
         ? sectionParam === nextSlug
         : tab === DEFAULT_DASHBOARD_SECTION;
-      if (isAlreadyActive) return;
+      // Business Profile's nested `view`/`businessId` are meaningless once we leave (or
+      // re-enter via the sidebar rather than Back/Forward) — a tab switch always drops them,
+      // even when the target tab is already active (switching Business Profile's edit form
+      // back to its list via the sidebar), so the guard below can't skip that case.
+      const hasNestedBusinessProfileParams = searchParams.has("view") || searchParams.has("businessId");
+      if (isAlreadyActive && !hasNestedBusinessProfileParams) return;
 
       const params = new URLSearchParams(searchParams.toString());
       params.set("section", nextSlug);
+      params.delete("view");
+      params.delete("businessId");
       router.push(`${pathname}?${params.toString()}`);
     },
     [sectionParam, router, pathname, searchParams]
@@ -106,9 +123,6 @@ function BusinessDashboardContent() {
   const [showWaiveFeeModal, setShowWaiveFeeModal] = useState(false);
   const [showNoShowModal, setShowNoShowModal] = useState(false);
   const [showCancelBookingModal, setShowCancelBookingModal] = useState(false);
-  const [isCreatingBusiness, setIsCreatingBusiness] = useState(false);
-  const [businessProfileMode, setBusinessProfileMode] = useState<"create" | "edit" | "view">("create");
-  const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(null);
 
   // Returning here from the Google Calendar OAuth redirect (see integration.controller.ts's
   // frontendSettingsUrl) — land back on Settings so DashboardSettings itself can read the rest
@@ -124,6 +138,82 @@ function BusinessDashboardContent() {
   // the Owner's businessId (same idiom DashboardStaffList already uses).
   const businessProfileQuery = useMyBusinessProfileQuery();
   const clientsBusinessId = businessProfileQuery.data?.primary?.id;
+
+  // Business Profile nested edit/view — URL-derived (see BusinessProfileView above), the same
+  // idiom as `activeTab`/`sectionParam`. `businessProfileQuery` (already fetched above for
+  // Clients) is the same primary/secondary list DashboardBusinessProfile itself renders, so a
+  // `businessId` is only ever trusted once it's confirmed to match a card the current Owner can
+  // actually access — never rendered from an unverified URL value. Editing is primary-only and
+  // viewing is secondary-only, mirroring DashboardBusinessProfile's own Edit/View button split
+  // (only the primary card gets an Edit button; only secondary cards get a View button) — this
+  // does not grant any access the existing cards don't already offer.
+  const viewParam = parseBusinessProfileView(searchParams.get("view"));
+  const businessIdParam = searchParams.get("businessId");
+  const businessProfilePrimary = businessProfileQuery.data?.primary ?? null;
+  const businessProfileSecondary = businessProfileQuery.data?.secondary ?? [];
+  const isValidBusinessProfileNestedView =
+    viewParam !== null &&
+    businessIdParam !== null &&
+    ((viewParam === "edit" && businessIdParam === businessProfilePrimary?.id) ||
+      (viewParam === "view" &&
+        businessProfileSecondary.some((business) => business.id === businessIdParam)));
+
+  const navigateToBusinessProfileView = useCallback(
+    (next: { view: BusinessProfileView; businessId: string } | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("section", dashboardSectionToSlug("Business Profile"));
+      if (next) {
+        params.set("view", next.view);
+        params.set("businessId", next.businessId);
+      } else {
+        params.delete("view");
+        params.delete("businessId");
+      }
+      const nextQuery = params.toString();
+      if (nextQuery === searchParams.toString()) return; // already exactly this URL
+      router.push(`${pathname}?${nextQuery}`);
+    },
+    [searchParams, pathname, router]
+  );
+
+  // Mirrors the section-normalization effect above: an invalid nested Business Profile deep
+  // link (wrong section, unknown/inaccessible businessId, a view/businessId mismatch, or a
+  // stray param with no counterpart) is corrected via replace rather than left to render
+  // something wrong or blank. Crucially, this must NOT fire while `businessProfileQuery` is
+  // still loading — that would erase a perfectly valid deep link before it can be checked — and
+  // must NOT fire on a query error either, since an error is likely transient/retryable and the
+  // render below already falls back to the list view on its own without touching the URL.
+  useEffect(() => {
+    const hasNestedParams = searchParams.has("view") || searchParams.has("businessId");
+    if (!hasNestedParams) return;
+
+    if (activeTab !== "Business Profile") {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("view");
+      params.delete("businessId");
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname);
+      return;
+    }
+
+    if (businessProfileQuery.isLoading || businessProfileQuery.isError) return;
+
+    if (!isValidBusinessProfileNestedView) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("view");
+      params.delete("businessId");
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname);
+    }
+  }, [
+    activeTab,
+    searchParams,
+    pathname,
+    router,
+    businessProfileQuery.isLoading,
+    businessProfileQuery.isError,
+    isValidBusinessProfileNestedView,
+  ]);
 
   // Bookings — the SAME resolved businessId every Booking screen on this page uses (Batch 6).
   const { businessId: bookingsBusinessId } = useManagedBusinessContext();
@@ -141,9 +231,6 @@ function BusinessDashboardContent() {
   }, []);
 
   const handleSetActiveTab = (tab: string) => {
-    if (tab === "Business Profile") {
-      setIsCreatingBusiness(false);
-    }
     setIsCreatingBooking(false);
     setActiveTab(tab);
   };
@@ -266,27 +353,39 @@ function BusinessDashboardContent() {
     }
 
     if (activeTab === "Business Profile") {
-      if (isCreatingBusiness) {
-        return (
-          <DashboardCreateBusiness
-            onBack={() => setIsCreatingBusiness(false)}
-            mode={businessProfileMode}
-            businessId={selectedBusinessId ?? undefined}
-          />
-        );
+      const hasNestedBusinessProfileParams = viewParam !== null || businessIdParam !== null;
+
+      if (hasNestedBusinessProfileParams) {
+        // Still resolving whether this deep link is valid — don't flash the list view (that's
+        // the exact bug this fix corrects) and don't render the edit/view form with an
+        // unverified businessId either; wait for the same query DashboardBusinessProfile itself
+        // depends on.
+        if (businessProfileQuery.isLoading) {
+          return (
+            <main className="flex-1 min-w-0 flex flex-col h-full items-center justify-center bg-[#FCF8F8]">
+              <Spinner className="text-[#111111] size-6" />
+            </main>
+          );
+        }
+
+        if (businessProfileQuery.isSuccess && isValidBusinessProfileNestedView && businessIdParam) {
+          return (
+            <DashboardCreateBusiness
+              onBack={() => navigateToBusinessProfileView(null)}
+              mode={viewParam === "edit" ? "edit" : "view"}
+              businessId={businessIdParam}
+            />
+          );
+        }
+        // Invalid combination (or a query error) falls through to the list view below — the
+        // normalization effect above takes care of cleaning up the URL when it's genuinely
+        // invalid (never on a plain query error, which may just be transient).
       }
+
       return (
         <DashboardBusinessProfile
-          onEditBusiness={(businessId) => {
-            setIsCreatingBusiness(true);
-            setBusinessProfileMode("edit");
-            setSelectedBusinessId(businessId);
-          }}
-          onViewBusiness={(businessId) => {
-            setIsCreatingBusiness(true);
-            setBusinessProfileMode("view");
-            setSelectedBusinessId(businessId);
-          }}
+          onEditBusiness={(businessId) => navigateToBusinessProfileView({ view: "edit", businessId })}
+          onViewBusiness={(businessId) => navigateToBusinessProfileView({ view: "view", businessId })}
         />
       );
     }
