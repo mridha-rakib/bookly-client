@@ -10,6 +10,13 @@ import {
 } from "@/lib/support/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
 import type { SupportTicketStatus } from "@/lib/api/support";
+import { formatClockTime12Hour } from "@/lib/staff/format";
+
+const formatMessageTimestamp = (iso: string) => {
+  const date = new Date(iso);
+  const datePart = date.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return `${datePart}, ${formatClockTime12Hour(date)}`;
+};
 
 const statusPill = (status: SupportTicketStatus) => {
   switch (status) {
@@ -123,7 +130,7 @@ export default function RequesterTicketDetail({ ticketId }: RequesterTicketDetai
                   {message.message}
                 </div>
                 <span className="text-[10px] text-neutral-400 font-poppins">
-                  {new Date(message.createdAt).toLocaleString("en-GB")}
+                  {formatMessageTimestamp(message.createdAt)}
                 </span>
               </div>
             );

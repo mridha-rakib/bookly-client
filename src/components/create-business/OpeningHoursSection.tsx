@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { formatTime12Hour } from "@/lib/staff/format";
 
 interface OpeningHoursSectionProps {
   days: any[];
@@ -81,7 +82,7 @@ export default function OpeningHoursSection({
                         }}
                       >
                         {timeOptions.map((t) => (
-                          <option key={t} value={t}>{t}</option>
+                          <option key={t} value={t}>{formatTime12Hour(t)}</option>
                         ))}
                       </select>
                     </div>
@@ -102,7 +103,7 @@ export default function OpeningHoursSection({
                         }}
                       >
                         {timeOptions.map((t) => (
-                          <option key={t} value={t}>{t}</option>
+                          <option key={t} value={t}>{formatTime12Hour(t)}</option>
                         ))}
                       </select>
                     </div>

@@ -5,6 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon, ArrowRight02Icon, Clock04Icon } from "@hugeicons/core-free-icons";
 
 import type { AvailabilityResult, AvailabilitySlot } from "@/lib/api/catalog";
+import { formatBookingTime } from "@/lib/bookings/format";
 
 interface TimeStepProps {
   timezone: string;
@@ -21,11 +22,6 @@ interface TimeStepProps {
 
 const toDateIso = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-
-const formatLocalTime = (isoInstant: string, timezone: string) =>
-  new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: timezone }).format(
-    new Date(isoInstant),
-  );
 
 /** The Business's own local hour-of-day for a slot — never UTC (a slot at 09:00 local in a
  * UTC+2 business is 07:00 UTC; splitting on raw UTC hours would misclassify it). */
@@ -97,7 +93,7 @@ export default function TimeStep({
           isSelected ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
         }`}
       >
-        {formatLocalTime(slot.startAt, timezone)}
+        {formatBookingTime(slot.startAt, timezone)}
       </button>
     );
   };

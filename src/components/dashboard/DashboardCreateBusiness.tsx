@@ -316,7 +316,7 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
 
   // Booking Time Control (Manual/Auto)
   const [bookingMode, setBookingMode] = useState<"Manual" | "Auto">("Manual");
-  const [manualTimes, setManualTimes] = useState<string[]>(["10:00", "12:00"]);
+  const [manualTimes, setManualTimes] = useState<string[]>(["10:00 AM", "12:00 PM"]);
   const [newManualTime, setNewManualTime] = useState("10:00");
   const [newManualAmpm, setNewManualAmpm] = useState("AM");
   const [durationIncrement, setDurationIncrement] = useState("30 minutes");

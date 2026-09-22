@@ -26,6 +26,7 @@ import {
 } from "@/lib/bookings/hooks";
 import type { BookingCalendarEntry } from "@/lib/api/bookings";
 import { BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingMoney, formatBookingTime } from "@/lib/bookings/format";
+import { formatClockTime12Hour, formatTime12Hour } from "@/lib/staff/format";
 import { toast } from "@/components/ui/sonner";
 import { toUserMessage } from "@/lib/auth/messages";
 
@@ -43,6 +44,14 @@ interface DashboardCalendarProps {
 const GRID_START_HOUR = 8;
 const GRID_END_HOUR = 18; // exclusive
 const PX_PER_MINUTE = 160 / 60;
+
+// Gutter row labels, one per grid hour — derived from GRID_START_HOUR/GRID_END_HOUR so the
+// labels can never drift out of sync with the grid, and rendered via the app's canonical
+// 12-hour formatter (never a hand-picked AM/PM string) so "5:00" can't be misread as either
+// 5am or 5pm.
+const GRID_HOUR_LABELS = Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, idx) =>
+  formatTime12Hour(`${String(GRID_START_HOUR + idx).padStart(2, "0")}:00`),
+);
 
 const TONE_CARD_CLASSNAMES: Record<string, { bg: string; border: string }> = {
   info: { bg: "bg-[#BBEBFF]", border: "border-[#0CC0DF]" },
@@ -208,6 +217,14 @@ export default function DashboardCalendar({
     setOpenDropdownCardId(null);
   };
 
+  /** Date+time for the no-show tooltip — was a locale-default `toLocaleString()` (24h on most
+   * setups); now explicit "en-GB" date + the app's canonical 12-hour AM/PM clock, same instant,
+   * same (browser-local) zone as before. */
+  const formatNoShowTimestamp = (date: Date): string => {
+    const datePart = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(date);
+    return `${datePart}, ${formatClockTime12Hour(date)}`;
+  };
+
   /**
    * The category no-show eligibility window (Batch 21). The backend is authoritative and
    * re-checks on submit; this is a truthful client-side hint only. Legacy bookings (no
@@ -240,9 +257,9 @@ export default function DashboardCalendar({
             disabled={noShow.state !== "open"}
             title={
               noShow.state === "before"
-                ? `No-show opens ${noShow.opensAt?.toLocaleString()}`
+                ? `No-show opens ${noShow.opensAt ? formatNoShowTimestamp(noShow.opensAt) : ""}`
                 : noShow.state === "after"
-                  ? `No-show window closed ${noShow.closesAt?.toLocaleString()}`
+                  ? `No-show window closed ${noShow.closesAt ? formatNoShowTimestamp(noShow.closesAt) : ""}`
                   : undefined
             }
             className={`px-4 py-2 text-left flex items-center gap-2 font-medium ${
@@ -705,7 +722,7 @@ export default function DashboardCalendar({
 
                 {/* Time Column (Left Side Axis) */}
                 <div className="border-r border-[#C6C6CB] bg-[#FCF8F8] flex flex-col shrink-0 relative z-10" style={{ width: "64px" }}>
-                  {["8:00", "9:00", "10:00", "11:00", "12:00", "1:00", "2:00", "3:00", "4:00", "5:00"].map((time, idx) => (
+                  {GRID_HOUR_LABELS.map((time, idx) => (
                     <div key={idx} className="h-40 flex justify-center items-start pt-2">
                       <span className="font-poppins text-[11px] font-semibold text-[#45474B]">{time}</span>
                     </div>

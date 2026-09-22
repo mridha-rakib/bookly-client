@@ -7,6 +7,7 @@ import { toUserMessage } from "@/lib/auth/messages";
 import { useManagedBusinessContext } from "@/lib/business/hooks";
 import { daysOfWeek, type DayOfWeek, type ScheduleDay, type StaffMember } from "@/lib/api/staff";
 import { useStaffListQuery, usePutStaffScheduleMutation } from "@/lib/staff/hooks";
+import { formatTime12Hour } from "@/lib/staff/format";
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
   MONDAY: "Mon",
@@ -217,7 +218,7 @@ export default function SupervisorStaffSchedule() {
                           >
                             {timeOptions.map((time) => (
                               <option key={time} value={time}>
-                                {time}
+                                {formatTime12Hour(time)}
                               </option>
                             ))}
                           </select>
@@ -241,7 +242,7 @@ export default function SupervisorStaffSchedule() {
                           >
                             {timeOptions.map((time) => (
                               <option key={time} value={time}>
-                                {time}
+                                {formatTime12Hour(time)}
                               </option>
                             ))}
                           </select>
@@ -265,7 +266,7 @@ export default function SupervisorStaffSchedule() {
                           key={day.dayOfWeek}
                           className="font-poppins text-xs text-[#111111] bg-[#F5F3EE] rounded-md px-2 py-1"
                         >
-                          {DAY_LABELS[day.dayOfWeek]} {day.startTime}–{day.endTime}
+                          {DAY_LABELS[day.dayOfWeek]} {formatTime12Hour(day.startTime)}–{formatTime12Hour(day.endTime)}
                         </span>
                       ))
                   )}

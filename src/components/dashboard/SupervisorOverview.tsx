@@ -11,6 +11,7 @@ import { buildDashboardSubtitle } from "@/utils/dashboardGreeting";
 import { useDashboardOverviewQuery } from "@/lib/dashboardOverview/hooks";
 import { formatEuro } from "@/lib/services/format";
 import { describeActivity } from "@/utils/dashboardActivity";
+import { formatTime12Hour } from "@/lib/staff/format";
 
 export default function SupervisorOverview() {
   const [timeFilter, setTimeFilter] = useState("Today");
@@ -225,7 +226,7 @@ export default function SupervisorOverview() {
                   <tbody className="divide-y divide-neutral-100">
                     {scheduleData.map((row) => (
                       <tr key={row.bookingId} className="hover:bg-neutral-50/50 transition-colors">
-                        <td className="py-3 px-4 text-xs text-[#888780] font-poppins">{row.time}</td>
+                        <td className="py-3 px-4 text-xs text-[#888780] font-poppins">{formatTime12Hour(row.time)}</td>
                         <td className="py-3 px-4">
                           <div className="flex flex-col">
                             <span className="text-xs font-medium text-[#1A1A1A] font-poppins">{row.customerName}</span>
@@ -282,7 +283,7 @@ export default function SupervisorOverview() {
                 {timelineEvents.map((evt) => (
                   <div key={evt.bookingId} className="flex gap-4 items-start">
                     <span className="bg-[#111111] text-white text-[10px] font-medium px-2 py-1 rounded w-12 text-center shrink-0">
-                      {evt.time}
+                      {formatTime12Hour(evt.time)}
                     </span>
                     <div className="flex flex-col pl-1">
                       <span className="text-xs font-semibold text-[#111111]">{evt.customerName}</span>
