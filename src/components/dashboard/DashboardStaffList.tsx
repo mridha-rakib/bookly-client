@@ -23,6 +23,7 @@ import StaffRolePermissions from "../staff/StaffRolePermissions";
 import { useMyBusinessProfileQuery } from "@/lib/business/hooks";
 import {
   ScheduleDay,
+  ScheduleInterval,
   StaffCreatableRole,
   StaffMember,
   StaffTimeOffEntry,
@@ -44,16 +45,19 @@ import {
 import {
   dayOrder,
   dayShortLabel,
+  formatIntervalsList,
   formatTime12Hour,
   parseTime12HourToCanonical,
+  parseTime12HourInputFromCanonical,
   parseTimeInputText,
-  sanitizeTimeDraftInput,
+  buildShiftTimeSelectOptions,
   timeOffTypeLabels,
   formatTimeOffRange,
   summarizeScheduleForCard,
   summarizeScheduleForTable,
   summarizeTimeOffForTable
 } from "@/lib/staff/format";
+
 import { toUserMessage } from "@/lib/auth/messages";
 
 // Mirror of the staff-avatar backend contract so an obviously-wrong file is rejected before
@@ -126,11 +130,17 @@ const toAvailabilityRow = (member: StaffMember): StaffAvailabilityRow => ({
   avatarUrl: member.avatarUrl
 });
 
-type CommittedShift = { startTime: string; endTime: string };
-// The actual persisted/configured weekly schedule — a day present here IS a working day
-// (this is the sole source of truth for what gets submitted). Separate from `selectedDays`
-// below, which is only a transient batch-edit target and must never be confused with it.
-type DayScheduleState = Partial<Record<DayOfWeek, CommittedShift>>;
+type CommittedShift = ScheduleInterval;
+// The actual persisted/configured weekly schedule — a day present here with a non-empty
+// array IS a working day (this is the sole source of truth for what gets submitted). Each
+// day may hold multiple non-overlapping intervals (split shifts) — "+ Add Hours" APPENDS a
+// new interval to the day's array rather than replacing it (rule: gaps between intervals
+// are unavailable breaks). Separate from `selectedDays` below, which is only a transient
+// batch-edit target and must never be confused with it.
+type DayScheduleState = Partial<Record<DayOfWeek, CommittedShift[]>>;
+
+const dayHasHours = (schedule: DayScheduleState, day: DayOfWeek): boolean =>
+  (schedule[day]?.length ?? 0) > 0;
 
 export default function DashboardStaffList() {
   const [isAdding, setIsAdding] = useState(false);
@@ -287,10 +297,11 @@ export default function DashboardStaffList() {
   };
 
   // Folds the current Start/End draft into the committed schedule for the selected day(s),
-  // the same way "+ Add Hours" does — used by Save changes so a valid visible draft is never
-  // silently discarded just because the user didn't click Add Hours first (STEP 2/3).
-  // Returns the *local* merged schedule object (never reads back from React state) so the
-  // caller can submit it directly instead of racing an async setState (STEP 10).
+  // the same way "+ Add Hours" does (appends, never overwrites) — used by Save changes so a
+  // valid visible draft is never silently discarded just because the user didn't click Add
+  // Hours first (STEP 2/3). Returns the *local* merged schedule object (never reads back from
+  // React state) so the caller can submit it directly instead of racing an async setState
+  // (STEP 10).
   const resolveScheduleForSave = (): { schedule: DayScheduleState; blockingError: string | null } => {
     if (selectedDays.length === 0) {
       return { schedule: scheduleByDay, blockingError: null };
@@ -306,7 +317,7 @@ export default function DashboardStaffList() {
 
     const next = { ...scheduleByDay };
     for (const day of selectedDays) {
-      next[day] = result.shift;
+      next[day] = [...(next[day] ?? []), result.shift];
     }
     return { schedule: next, blockingError: null };
   };
@@ -338,25 +349,19 @@ export default function DashboardStaffList() {
     setSelectedDays(next);
     setScheduleFieldError("");
 
-    // Selecting exactly one already-configured day loads its real hours for editing (so
-    // "select only that day, tweak the time, + Add Hours" works as an individual override).
-    // Any other selection state (none, or multiple days) starts blank — there's no single
-    // "current" value to show when applying one shift across several days at once.
-    if (next.length === 1) {
-      const existing = scheduleByDay[next[0]!];
-      if (existing) {
-        applyTimeInputsFromShift(existing);
-      } else {
-        clearTimeInputs();
-      }
-    } else {
-      clearTimeInputs();
-    }
+    // Selecting day(s) always starts a blank draft — "+ Add Hours" APPENDS a new interval to
+    // whatever the day already has (never overwrites), so there's no single "current" shift
+    // to pre-load even for one selected day; a day can hold several split-shift intervals.
+    // Editing a specific existing interval happens via that interval's own Edit control in
+    // the "Weekly schedule" list below (see handleEditInterval), which populates the draft.
+    clearTimeInputs();
   };
 
-  // "+ Add Hours": applies the entered Start/End shift to every currently selected weekday,
-  // replacing each one's previous shift (never creating a duplicate entry — scheduleByDay is
-  // keyed by day, so setting a key always replaces it).
+  // "+ Add Hours": APPENDS the entered Start/End shift as a new interval to every currently
+  // selected weekday's existing intervals — never overwrites/replaces them. This is what
+  // makes split shifts possible: select MONDAY, add 09:00-13:00, then add 14:00-17:00 again
+  // to build a two-interval day. The server re-validates/normalizes on save (overlap
+  // rejection, contiguous-merge) — this client-side append never assumes it's authoritative.
   const handleAddHours = () => {
     setScheduleFieldError("");
 
@@ -378,7 +383,7 @@ export default function DashboardStaffList() {
     setScheduleByDay((prev) => {
       const next = { ...prev };
       for (const day of selectedDays) {
-        next[day] = result.shift;
+        next[day] = [...(next[day] ?? []), result.shift];
       }
       return next;
     });
@@ -397,7 +402,7 @@ export default function DashboardStaffList() {
   const handleMarkSelectedDaysOff = () => {
     if (selectedDays.length === 0) return;
     setScheduleFieldError("");
-    const daysWithExistingShift = selectedDays.filter((day) => scheduleByDay[day]);
+    const daysWithExistingShift = selectedDays.filter((day) => dayHasHours(scheduleByDay, day));
     if (daysWithExistingShift.length > 0) {
       setOffDayConflict(selectedDays);
       return;
@@ -419,8 +424,10 @@ export default function DashboardStaffList() {
     setOffDayConflict(null);
   };
 
-  // Explicitly turns off every currently selected weekday that has a configured shift —
-  // the clear, deliberate way to remove a working day, distinct from merely deselecting it.
+  // Explicitly clears every configured interval for every currently selected weekday — the
+  // clear, deliberate way to remove a working day's hours, distinct from merely deselecting
+  // it. Leaves the day with an empty intervals[] ("no hours configured"), never implicitly
+  // Off (rule 6: Off is only ever an explicit separate action via Mark Weekend/Off).
   const handleRemoveSelectedDaysHours = () => {
     setScheduleFieldError("");
     setScheduleByDay((prev) => {
@@ -434,22 +441,53 @@ export default function DashboardStaffList() {
     clearTimeInputs();
   };
 
+  // Removes ONE specific interval from one day, leaving any other intervals on that day
+  // untouched — e.g. removing the 09:00-13:00 half of a split shift keeps the 14:00-17:00
+  // half. Removing the last remaining interval leaves the day as "no hours configured"
+  // (empty array), never automatically Off.
+  const handleRemoveInterval = (day: DayOfWeek, index: number) => {
+    setScheduleFieldError("");
+    setScheduleByDay((prev) => {
+      const remaining = (prev[day] ?? []).filter((_, i) => i !== index);
+      const next = { ...prev };
+      if (remaining.length > 0) {
+        next[day] = remaining;
+      } else {
+        delete next[day];
+      }
+      return next;
+    });
+  };
+
+  // Edits one specific interval: removes it from the committed schedule and loads its times
+  // into the Start/End draft, selecting only that day — clicking "+ Add Hours" then re-adds
+  // the (possibly changed) interval, giving the interval its own effective Edit control
+  // without a separate inline-edit UI.
+  const handleEditInterval = (day: DayOfWeek, index: number) => {
+    const interval = scheduleByDay[day]?.[index];
+    if (!interval) return;
+    handleRemoveInterval(day, index);
+    setSelectedDays([day]);
+    applyTimeInputsFromShift(interval);
+    setScheduleFieldError("");
+  };
+
   const scheduleSelectionCaption = (): string => {
     if (selectedDays.length === 0) {
       return "Tap one or more days to set their hours";
     }
     if (selectedDays.length === 1) {
       const day = selectedDays[0]!;
-      const shift = scheduleByDay[day];
-      return shift
-        ? `${dayShortLabel[day]}: ${formatTime12Hour(shift.startTime)} – ${formatTime12Hour(shift.endTime)}`
+      const intervals = scheduleByDay[day] ?? [];
+      return intervals.length > 0
+        ? `${dayShortLabel[day]}: ${formatIntervalsList(intervals)} — enter another interval and click + Add Hours to add a split shift`
         : `${dayShortLabel[day]}: not set — enter hours and click + Add Hours`;
     }
     const orderedSelected = dayOrder.filter((day) => selectedDays.includes(day));
     return `${orderedSelected.map((day) => dayShortLabel[day]).join(", ")} selected — enter hours and click + Add Hours to apply to all`;
   };
 
-  const canRemoveSelectedDaysHours = selectedDays.some((day) => scheduleByDay[day]);
+  const canRemoveSelectedDaysHours = selectedDays.some((day) => dayHasHours(scheduleByDay, day));
 
   const loadEditableStaffState = (member: StaffMember) => {
     setStaffName(member.name);
@@ -467,9 +505,13 @@ export default function DashboardStaffList() {
     setCropSource(null);
     setCropBaseName(undefined);
 
+    // Hydrates ALL intervals per day (never last-write-wins) — a split-shift day round-trips
+    // exactly as the server returned it.
     const nextSchedule: DayScheduleState = {};
     for (const day of member.schedule) {
-      nextSchedule[day.dayOfWeek] = { startTime: day.startTime, endTime: day.endTime };
+      if (day.intervals.length > 0) {
+        nextSchedule[day.dayOfWeek] = [...day.intervals];
+      }
     }
     setScheduleByDay(nextSchedule);
     setOffDays(member.offDays ?? []);
@@ -652,12 +694,12 @@ export default function DashboardStaffList() {
     setFormError("");
 
     const scheduleDays: ScheduleDay[] = Object.entries(effectiveSchedule)
-      .filter((entry): entry is [DayOfWeek, { startTime: string; endTime: string }] => Boolean(entry[1]))
-      .map(([dayOfWeek, hours]) => ({ dayOfWeek, startTime: hours.startTime, endTime: hours.endTime }));
+      .filter((entry): entry is [DayOfWeek, ScheduleInterval[]] => Boolean(entry[1]?.length))
+      .map(([dayOfWeek, intervals]) => ({ dayOfWeek, intervals }));
     // Defense in depth mirroring the backend's own dedup (staff.service.ts putSchedule): a
     // working day always wins, so an off day can never be submitted for a day that also ended
-    // up with a shift in this same save.
-    const effectiveOffDays = offDays.filter((day) => !effectiveSchedule[day]);
+    // up with intervals in this same save.
+    const effectiveOffDays = offDays.filter((day) => !dayHasHours(effectiveSchedule, day));
 
     try {
       // Phase 2D — Create Mode issues an invitation; no User/membership exists yet, so schedule
@@ -1052,7 +1094,7 @@ export default function DashboardStaffList() {
               <div className="box-sizing-border-box flex flex-col items-start p-6 bg-white border border-[#E5E7EB] rounded-[4px] w-full h-auto min-h-[272px] justify-between gap-4">
                 <div className="flex flex-row justify-between w-full px-2 gap-1 overflow-x-auto scrollbar-hide">
                   {dayOrder.map((day) => {
-                    const working = Boolean(scheduleByDay[day]);
+                    const working = dayHasHours(scheduleByDay, day);
                     const off = offDays.includes(day);
                     const selected = selectedDays.includes(day);
                     return (
@@ -1098,20 +1140,38 @@ export default function DashboardStaffList() {
                 <div className="flex flex-row justify-between gap-4 w-full">
                   {/* Start shift */}
                   <div className="flex-1 flex flex-col gap-2">
-                    <span className="font-poppins font-medium text-[12px] leading-[20px] tracking-[1.5px] uppercase text-[#111111]">
+                    <label
+                      htmlFor="staff-start-shift-time"
+                      className="font-poppins font-medium text-[12px] leading-[20px] tracking-[1.5px] uppercase text-[#111111]"
+                    >
                       start shift
-                    </span>
+                    </label>
                     <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        placeholder="9:00"
-                        value={startTimeText}
-                        onChange={(e) => setStartTimeText(sanitizeTimeDraftInput(e.target.value))}
-                        disabled={selectedDays.length === 0}
-                        maxLength={5}
-                        inputMode="numeric"
-                        className="h-[41.6px] bg-white border border-[#C6C6CB] rounded-[8px] px-3 font-poppins text-base text-[#364153] focus:outline-none shadow-[0px_1px_2px_rgba(0,0,0,0.05)] w-full disabled:opacity-50"
-                      />
+                      <div className="relative w-full">
+                        <select
+                          id="staff-start-shift-time"
+                          aria-label="Start shift time"
+                          value={startTimeText}
+                          onChange={(e) => setStartTimeText(e.target.value)}
+                          disabled={selectedDays.length === 0}
+                          className="appearance-none h-[41.6px] bg-white border border-[#C6C6CB] rounded-[8px] px-3 pr-9 font-poppins text-base text-[#364153] focus:outline-none shadow-[0px_1px_2px_rgba(0,0,0,0.05)] w-full disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23141B34' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`,
+                            backgroundRepeat: 'no-repeat',
+                            backgroundPosition: 'right 10px center',
+                            backgroundSize: '16px'
+                          }}
+                        >
+                          <option value="" disabled hidden>
+                            Select time
+                          </option>
+                          {buildShiftTimeSelectOptions(startTimeText).map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       <div className="flex bg-neutral-100 rounded-lg p-0.5 select-none h-8 items-center shrink-0">
                         <button type="button" onClick={() => setPeriodInput("AM")} disabled={selectedDays.length === 0} className={`px-2 h-7 rounded-md text-[10px] font-semibold transition-all ${periodInput === "AM" ? "bg-white text-black shadow-sm" : "text-neutral-500"}`}>AM</button>
                         <button type="button" onClick={() => setPeriodInput("PM")} disabled={selectedDays.length === 0} className={`px-2 h-7 rounded-md text-[10px] font-semibold transition-all ${periodInput === "PM" ? "bg-white text-black shadow-sm" : "text-neutral-500"}`}>PM</button>
@@ -1120,20 +1180,38 @@ export default function DashboardStaffList() {
                   </div>
                   {/* End shift */}
                   <div className="flex-1 flex flex-col gap-2">
-                    <span className="font-poppins font-medium text-[12px] leading-[20px] tracking-[1.5px] uppercase text-[#111111]">
+                    <label
+                      htmlFor="staff-end-shift-time"
+                      className="font-poppins font-medium text-[12px] leading-[20px] tracking-[1.5px] uppercase text-[#111111]"
+                    >
                       end shift
-                    </span>
+                    </label>
                     <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        placeholder="5:00"
-                        value={endTimeText}
-                        onChange={(e) => setEndTimeText(sanitizeTimeDraftInput(e.target.value))}
-                        disabled={selectedDays.length === 0}
-                        maxLength={5}
-                        inputMode="numeric"
-                        className="h-[41.6px] bg-white border border-[#C6C6CB] rounded-[8px] px-3 font-poppins text-base text-[#364153] focus:outline-none shadow-[0px_1px_2px_rgba(0,0,0,0.05)] w-full disabled:opacity-50"
-                      />
+                      <div className="relative w-full">
+                        <select
+                          id="staff-end-shift-time"
+                          aria-label="End shift time"
+                          value={endTimeText}
+                          onChange={(e) => setEndTimeText(e.target.value)}
+                          disabled={selectedDays.length === 0}
+                          className="appearance-none h-[41.6px] bg-white border border-[#C6C6CB] rounded-[8px] px-3 pr-9 font-poppins text-base text-[#364153] focus:outline-none shadow-[0px_1px_2px_rgba(0,0,0,0.05)] w-full disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23141B34' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`,
+                            backgroundRepeat: 'no-repeat',
+                            backgroundPosition: 'right 10px center',
+                            backgroundSize: '16px'
+                          }}
+                        >
+                          <option value="" disabled hidden>
+                            Select time
+                          </option>
+                          {buildShiftTimeSelectOptions(endTimeText).map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       <div className="flex bg-neutral-100 rounded-lg p-0.5 select-none h-8 items-center shrink-0">
                         <button type="button" onClick={() => setEndPeriodInput("AM")} disabled={selectedDays.length === 0} className={`px-2 h-7 rounded-md text-[10px] font-semibold transition-all ${endPeriodInput === "AM" ? "bg-white text-black shadow-sm" : "text-neutral-500"}`}>AM</button>
                         <button type="button" onClick={() => setEndPeriodInput("PM")} disabled={selectedDays.length === 0} className={`px-2 h-7 rounded-md text-[10px] font-semibold transition-all ${endPeriodInput === "PM" ? "bg-white text-black shadow-sm" : "text-neutral-500"}`}>PM</button>
@@ -1190,27 +1268,51 @@ export default function DashboardStaffList() {
                   <span className="font-poppins font-medium text-[12px] leading-[20px] tracking-[1.5px] uppercase text-[#111111]">
                     Weekly schedule
                   </span>
-                  {dayOrder.every((day) => !scheduleByDay[day] && !offDays.includes(day)) ? (
+                  {dayOrder.every((day) => !dayHasHours(scheduleByDay, day) && !offDays.includes(day)) ? (
                     <span className="text-[12px] text-[#888780] font-poppins">
                       No working hours or Weekend/Off days set yet
                     </span>
                   ) : (
                     <div className="flex flex-col gap-1.5">
                       {dayOrder.map((day) => {
-                        const shift = scheduleByDay[day];
+                        const intervals = scheduleByDay[day] ?? [];
                         const isOff = offDays.includes(day);
-                        if (!shift && !isOff) return null;
                         return (
-                          <div
-                            key={day}
-                            className="flex items-center justify-between text-[13px] font-poppins"
-                          >
-                            <span className="text-[#1C1B1C] font-medium">{dayShortLabel[day]}</span>
-                            <span className={isOff ? "text-[#6B7280]" : "text-[#364153]"}>
-                              {isOff
-                                ? "Weekend / Off"
-                                : `${formatTime12Hour(shift!.startTime)} – ${formatTime12Hour(shift!.endTime)}`}
-                            </span>
+                          <div key={day} className="flex flex-col gap-1 text-[13px] font-poppins">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[#1C1B1C] font-medium">{dayShortLabel[day]}</span>
+                              {isOff && <span className="text-[#6B7280]">Weekend / Off</span>}
+                              {!isOff && intervals.length === 0 && (
+                                <span className="text-[#888780]">No hours configured</span>
+                              )}
+                            </div>
+                            {!isOff &&
+                              intervals.map((interval, index) => (
+                                <div
+                                  key={index}
+                                  className="flex items-center justify-between pl-2 text-[#364153]"
+                                >
+                                  <span>
+                                    {formatTime12Hour(interval.startTime)} – {formatTime12Hour(interval.endTime)}
+                                  </span>
+                                  <span className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditInterval(day, index)}
+                                      className="text-[11px] font-medium text-[#2E9DA7] hover:underline"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveInterval(day, index)}
+                                      className="text-[11px] font-medium text-[#888780] hover:text-[#DE350B]"
+                                    >
+                                      Remove
+                                    </button>
+                                  </span>
+                                </div>
+                              ))}
                           </div>
                         );
                       })}
@@ -1525,10 +1627,3 @@ export default function DashboardStaffList() {
   );
 }
 
-/** Canonical "HH:mm" -> {hour: 1-12, minute, period}, for prefilling the 12-hour inputs. */
-function parseTime12HourInputFromCanonical(hhmm: string): { hour: number; minute: number; period: "AM" | "PM" } {
-  const label = formatTime12Hour(hhmm);
-  const match = /^(\d{1,2}):(\d{2}) (AM|PM)$/.exec(label);
-  if (!match) return { hour: 9, minute: 0, period: "AM" };
-  return { hour: Number(match[1]), minute: Number(match[2]), period: match[3] as "AM" | "PM" };
-}
