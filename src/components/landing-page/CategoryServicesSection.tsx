@@ -96,15 +96,17 @@ function DiscoveryRow({
           ))}
         </Carousel>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center">
+        <div className="flex flex-wrap justify-center gap-6 mx-auto max-w-full sm:max-w-[744px] md:max-w-[836px] lg:max-w-[1266px]">
           {cards.map((rec) => (
-            <ServiceCard
-              key={rec.id}
-              rec={rec}
-              isFavorite={favorites.includes(rec.id)}
-              onToggleFavorite={onToggleFavorite}
-              onBookNow={onBookNow}
-            />
+            <div key={rec.id} className="w-full sm:w-[360px] md:w-[406px]">
+              <ServiceCard
+                rec={rec}
+                isFavorite={favorites.includes(rec.id)}
+                onToggleFavorite={onToggleFavorite}
+                onBookNow={onBookNow}
+                className="w-full h-full"
+              />
+            </div>
           ))}
         </div>
       )}
