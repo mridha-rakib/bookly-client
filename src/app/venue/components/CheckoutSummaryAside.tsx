@@ -9,7 +9,7 @@ import type { BookingCreationPreview } from "@/lib/api/bookings";
 import type { CatalogBusiness } from "@/lib/api/catalog";
 import { formatBookingDate, formatBookingMoney, formatBookingTimeRange } from "@/lib/bookings/format";
 
-export type WizardStep = "addons" | "professionals" | "time" | "payment" | "confirmed";
+export type WizardStep = "addons" | "travel" | "professionals" | "time" | "payment" | "confirmed";
 
 export type PromoInputStatus = "idle" | "applying" | "applied" | "error";
 
