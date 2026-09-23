@@ -640,17 +640,27 @@ function VenueDetailsContent() {
           <HugeiconsIcon icon={ArrowLeft01Icon} size={20} />
         </button>
 
-        {/* 1. Breadcrumbs section */}
+        {/* 1. Breadcrumbs section — built entirely from the real fetched Business (name/
+            category/address), never demo copy. Optional segments (category/city/area) are
+            simply omitted when the business doesn't have them, rather than showing a fake
+            fallback. */}
         <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-[#000000] -mt-2">
-          <span>Home</span>
-          <HugeiconsIcon icon={ArrowRight01Icon} size={14} className="text-gray-400" />
-          <span>Barbers</span>
-          <HugeiconsIcon icon={ArrowRight01Icon} size={14} className="text-gray-400" />
-          <span>Dubai</span>
-          <HugeiconsIcon icon={ArrowRight01Icon} size={14} className="text-gray-400" />
-          <span>Nad Al Sheba 1</span>
-          <HugeiconsIcon icon={ArrowRight01Icon} size={14} className="text-gray-400" />
-          <span className="font-semibold">{business?.name ?? (catalogQuery.isLoading ? "Loading…" : "")}</span>
+          {[
+            { text: "Home" },
+            ...(business?.category ? [{ text: business.category }] : []),
+            ...(business?.address?.city ? [{ text: business.address.city }] : []),
+            ...(business?.address?.area ? [{ text: business.address.area }] : []),
+            ...(business?.name
+              ? [{ text: business.name, emphasize: true }]
+              : catalogQuery.isLoading
+                ? [{ text: "Loading…", emphasize: true }]
+                : []),
+          ].map((segment, index) => (
+            <React.Fragment key={index}>
+              {index > 0 && <HugeiconsIcon icon={ArrowRight01Icon} size={14} className="text-gray-400" />}
+              <span className={segment.emphasize ? "font-semibold" : undefined}>{segment.text}</span>
+            </React.Fragment>
+          ))}
         </div>
 
         {/* 2. Hero Image Banner Section */}
