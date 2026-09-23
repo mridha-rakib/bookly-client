@@ -192,6 +192,22 @@ function BookingViewContent() {
                   </div>
                 ))}
 
+                {/* Package-progress discoverability (info-clarity fix) — `pricingMode: "PACKAGE"`
+                    is already persisted on the booking's own service line (see
+                    booking-creation.service.ts's finalizePackagePurchase), so this needs no
+                    backend change; canonical session-count/remaining-sessions progress itself
+                    stays exclusively on /customer/packages, not duplicated here. */}
+                {booking.serviceLines[0]?.pricingMode === "PACKAGE" && (
+                  <div className="w-full bg-[#F5F4EE] rounded-lg p-4 flex flex-wrap justify-between items-center gap-3 text-sm font-medium">
+                    <span className="text-[#1C1B1C]">
+                      This is a package purchase — manage and redeem your remaining sessions from My Packages.
+                    </span>
+                    <Link href="/customer/packages" className="text-[#2E9DA7] font-semibold hover:underline shrink-0">
+                      View My Packages →
+                    </Link>
+                  </div>
+                )}
+
                 <hr className="border-t border-[#757575] w-full my-1" />
 
                 <div className="flex justify-between items-center">

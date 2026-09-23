@@ -20,6 +20,10 @@ interface CheckoutSummaryAsideProps {
    * cancellation/no-show work afterwards is different enough that the generic copy below would
    * be misleading if left unchanged for this flow. Never affects normal booking copy. */
   isPackagePurchase?: boolean;
+  /** Package Deal audit (Phase 1.5 info-clarity fix) — see ConfirmedStep's identical prop doc
+   * comment for why this comes from the wizard's in-memory selection, not the preview response
+   * (BookingCreationPreview.serviceLines[].serviceSnapshot carries no session-count field). */
+  packageSessionsTotal?: number;
   business?: CatalogBusiness;
   preview?: BookingCreationPreview;
   isPreviewLoading?: boolean;
@@ -41,6 +45,7 @@ interface CheckoutSummaryAsideProps {
 export default function CheckoutSummaryAside({
   bookingStep,
   isPackagePurchase,
+  packageSessionsTotal,
   business,
   preview,
   isPreviewLoading,
@@ -142,6 +147,19 @@ export default function CheckoutSummaryAside({
 
   const renderPriceBreakdown = () => (
     <div className="border-t border-[#E5E5E5] pt-4 flex flex-col w-full text-sm font-medium text-[#1C1B1C]">
+      {/* Travel-fee transparency (info-clarity fix) — display only; the server-derived
+          travelFeeCents already flows into Subtotal below exactly as before, this just breaks
+          that one number out so a travel customer can see the surcharge, never double-counted. */}
+      {financials && financials.travelFeeCents > 0 ? (
+        <>
+          <div className="flex justify-between items-center py-2.5">
+            <span>Travel fee</span>
+            <span>{formatBookingMoney(financials.travelFeeCents)}</span>
+          </div>
+          <div className="border-t border-[#E5E5E5] w-full" />
+        </>
+      ) : null}
+
       <div className="flex justify-between items-center py-2.5">
         <span>Subtotal</span>
         <span>
@@ -293,13 +311,28 @@ export default function CheckoutSummaryAside({
                 {serviceLine?.serviceSnapshot.name ?? (isPreviewLoading ? "Loading…" : "—")}
               </h4>
               {serviceLine ? (
-                <span className="text-xs text-[#4E5F78]">{serviceLine.serviceSnapshot.durationMin} min</span>
+                <span className="text-xs text-[#4E5F78]">
+                  {isPackagePurchase
+                    ? `${packageSessionsTotal ? `${packageSessionsTotal} sessions • ` : ""}${serviceLine.serviceSnapshot.durationMin} min per session`
+                    : `${serviceLine.serviceSnapshot.durationMin} min`}
+                </span>
               ) : null}
             </div>
-            <span className="font-semibold text-sm text-[#1C1B1C] shrink-0">
-              {serviceLine ? formatBookingMoney(serviceLine.amountCents) : "—"}
-            </span>
+            <div className="flex flex-col items-end gap-0.5 shrink-0">
+              {isPackagePurchase ? (
+                <span className="text-[10px] font-semibold text-[#767676] uppercase tracking-wide">Package total</span>
+              ) : null}
+              <span className="font-semibold text-sm text-[#1C1B1C]">
+                {serviceLine ? formatBookingMoney(serviceLine.amountCents) : "—"}
+              </span>
+            </div>
           </div>
+
+          {isPackagePurchase && serviceLine ? (
+            <p className="text-xs text-[#4E5F78] leading-relaxed border-t border-[#E5E5E5] pt-4">
+              This booking schedules your first session. Remaining sessions are booked later from My Packages.
+            </p>
+          ) : null}
 
           {serviceLine && serviceLine.addons.length > 0 ? (
             <div className="flex justify-between items-start gap-4 border-t border-[#E5E5E5] pt-4">
