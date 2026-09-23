@@ -7,6 +7,8 @@ import { Download01Icon, ArrowDown01Icon, ArrowUp01Icon } from "@hugeicons/core-
 import { formatBookingMoney } from "@/lib/bookings/format";
 import type { BusinessPayableSummary } from "@/lib/api/superAdminFinance";
 import { useExecutePayoutMutation, useSuperAdminPendingPayoutsQuery } from "@/lib/superAdminFinance/hooks";
+import { useSuperAdminPayoutDestinationQuery } from "@/lib/superAdminPayoutDestination/hooks";
+import PayoutDestinationPanel from "./PayoutDestinationPanel";
 
 interface SuperAdminFinancePendingProps {
   setActiveTab?: (tab: string) => void;
@@ -29,6 +31,15 @@ export default function SuperAdminFinancePending({
   const query = useSuperAdminPendingPayoutsQuery();
   const executeMutation = useExecutePayoutMutation();
   const items = query.data?.items ?? [];
+
+  // Only fetched while the confirm modal is open for a specific Business — the masked read is
+  // cheap, but there is no reason to query it for every row in the table.
+  const destinationQuery = useSuperAdminPayoutDestinationQuery(selectedPayout?.businessId, {
+    enabled: Boolean(selectedPayout),
+  });
+  const destination = destinationQuery.data;
+  // A manual transfer with no known destination must not be confirmable.
+  const canConfirmTransfer = destination?.configured === true;
 
   const handleExportCSV = () => {
     const headers = ["Business", "City", "Category", "Transactions", "No-show €", "Late cancel €", "Deposits €", "Net Amount"];
@@ -55,7 +66,7 @@ export default function SuperAdminFinancePending({
   };
 
   const handleConfirmTransfer = () => {
-    if (!selectedPayout) return;
+    if (!selectedPayout || !canConfirmTransfer) return;
     executeMutation.mutate(
       { businessId: selectedPayout.businessId, providerReference: providerReference || undefined },
       {
@@ -206,6 +217,14 @@ export default function SuperAdminFinancePending({
               <span className="text-rose-600 font-semibold text-xs mt-2 block">⚠️ This action is irreversible</span>
             </p>
 
+            <PayoutDestinationPanel
+              businessId={selectedPayout.businessId}
+              destination={destination}
+              isLoading={destinationQuery.isLoading}
+              isError={destinationQuery.isError}
+              revealResetToken={selectedPayout.businessId}
+            />
+
             <label className="flex flex-col gap-1 text-xs text-gray-600">
               Your bank reference (optional)
               <input
@@ -230,7 +249,8 @@ export default function SuperAdminFinancePending({
               </button>
               <button
                 onClick={handleConfirmTransfer}
-                disabled={executeMutation.isPending}
+                disabled={executeMutation.isPending || !canConfirmTransfer}
+                title={canConfirmTransfer ? undefined : "This Business has no payout bank details configured"}
                 className="bg-[#16A34A] hover:bg-[#15803d] disabled:opacity-50 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
               >
                 {executeMutation.isPending ? "Confirming…" : "Confirm Transfer"}

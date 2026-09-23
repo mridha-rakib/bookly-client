@@ -52,6 +52,17 @@ const codeMessages: Record<string, string> = {
   ACCOUNT_HAS_ACTIVE_BOOKINGS:
     "You have upcoming bookings. Please complete or cancel them before closing your account.",
   ACCOUNT_DELETED: "This account has been closed.",
+  PAYOUT_DESTINATION_BUSINESS_NOT_FOUND: "We couldn't find that business.",
+  PAYOUT_DESTINATION_NOT_CONFIGURED: "No payout bank details are configured for this business.",
+  PAYOUT_DESTINATION_IBAN_INVALID: "Please enter a valid IBAN.",
+  PAYOUT_DESTINATION_IBAN_COUNTRY_UNSUPPORTED: "That IBAN's country isn't supported for payouts.",
+  PAYOUT_DESTINATION_DECRYPT_FAILED: "We couldn't read these bank details. Please contact support.",
+  PAYOUT_DESTINATION_STEP_UP_REQUIRED:
+    "Please confirm your identity before changing payout bank details.",
+  PAYOUT_DESTINATION_STEP_UP_INVALID:
+    "That confirmation is no longer valid. Please request a new code.",
+  PAYOUT_DESTINATION_STEP_UP_NOT_APPLICABLE:
+    "This account signs in with a password — confirm with your current password instead.",
 };
 
 export const toUserMessage = (error: unknown): string => {

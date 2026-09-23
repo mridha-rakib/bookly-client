@@ -13,13 +13,13 @@ import {
   Notification01Icon,
   SecurityCheckIcon,
   Camera01Icon,
-  InformationCircleIcon,
   Tick01Icon
 } from "@hugeicons/core-free-icons";
 
 import { SettingsInput } from "../settings/SettingsInput";
 import { SettingsSubSidebar } from "../settings/SettingsSubSidebar";
 import { Security2FAPanel } from "../settings/Security2FAPanel";
+import { PayoutDestinationSettings } from "../settings/PayoutDestinationSettings";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/sonner";
 import { useCurrentUserQuery } from "@/lib/auth/hooks";
@@ -213,20 +213,11 @@ export default function DashboardSettings() {
     }
   };
 
-  // Payments — no backend exists for a Business's payout bank details anywhere in this codebase
-  // (confirmed — Finance/payout modules only ever read Stripe-derived data, never a
-  // Business-submitted IBAN). Kept local/decorative and honestly non-functional below rather than
-  // silently discarding what would look like real bank details.
-  const [bankHolder, setBankHolder] = useState("");
-  const [bankIban, setBankIban] = useState("");
-  const [bankName, setBankName] = useState("");
-  const [bankVat, setBankVat] = useState("");
-
   const subTabs = [
     { name: "Personal info", icon: User02Icon },
     { name: "Role", icon: UserGroup03Icon },
     { name: "Cancellation & No-show", icon: Appointment02Icon },
-    { name: "Payments", icon: CreditCardPosIcon },
+    { name: "Bank & Payouts", icon: CreditCardPosIcon },
     { name: "Integration", icon: UserGroup03Icon },
     { name: "Notifications", icon: Notification01Icon },
     { name: "Security & 2FA", icon: SecurityCheckIcon }
@@ -540,56 +531,9 @@ export default function DashboardSettings() {
             </div>
           )}
 
-          {/* TAB 4: Payments */}
-          {activeSubTab === "Payments" && (
-            <div className="flex flex-col gap-[14px] w-full">
-              <div>
-                <h2 className="font-poppins font-medium text-base text-[#1A1A1A]">Payment info</h2>
-                <p className="font-poppins font-normal text-xs text-[#888780] mt-0.5">Set your payment information</p>
-              </div>
-
-              <div className="bg-white border border-[#E2E8F0] rounded-[16px] p-6 flex flex-col gap-5">
-                <span className="font-poppins font-semibold text-[13px] text-[#1A1A1A]">
-                  Payout Bank Account Details (SEPA)
-                </span>
-
-                <div className="bg-[#F7F5F1] border border-[#E2E8F0] rounded-lg p-3 flex gap-2">
-                  <HugeiconsIcon icon={InformationCircleIcon} className="w-5 h-5 text-[#6B7280] shrink-0 mt-0.5" />
-                  <span className="text-xs text-[#5B5D58] font-medium leading-[18px]">
-                    Bank details management isn&apos;t available yet.
-                  </span>
-                </div>
-
-                <div className="flex flex-col gap-4">
-                  <SettingsInput
-                    label="Account holder name/Business name"
-                    value={bankHolder}
-                    onChange={setBankHolder}
-                    disabled={true}
-                  />
-
-                  <SettingsInput label="IBAN" value={bankIban} onChange={setBankIban} disabled={true} />
-
-                  <SettingsInput label="Bank name" value={bankName} onChange={setBankName} disabled={true} />
-
-                  <SettingsInput
-                    label="VAT no. (optional)"
-                    value={bankVat}
-                    onChange={setBankVat}
-                    placeholder="e.g. 123"
-                    disabled={true}
-                  />
-                </div>
-
-                <button
-                  disabled={true}
-                  className="w-full bg-neutral-200 text-neutral-400 py-2.5 rounded-[12px] font-semibold text-sm mt-2 cursor-not-allowed"
-                >
-                  Update bank details
-                </button>
-
-              </div>
-            </div>
+          {/* TAB 4: Bank & Payouts */}
+          {activeSubTab === "Bank & Payouts" && (
+            <PayoutDestinationSettings businessId={businessId} />
           )}
 
           {/* TAB 5: Integration */}
