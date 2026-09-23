@@ -10,6 +10,7 @@ import { ArrowLeft01Icon, ArrowRight01Icon, Clock04Icon, Location05Icon, SquareL
 import ServiceCard, { Recommendation } from "@/components/ServiceCard";
 import Carousel from "@/components/landing-page/Carousel";
 import AddonsStep from "./components/AddonsStep";
+import TravelAddressStep, { emptyTravelAddress, type TravelAddressFields } from "./components/TravelAddressStep";
 import ProfessionalsStep from "./components/ProfessionalsStep";
 import TimeStep from "./components/TimeStep";
 import PaymentStep from "./components/PaymentStep";
@@ -36,6 +37,7 @@ import { formatBookingMoney } from "@/lib/bookings/format";
 import { toUserMessage } from "@/lib/auth/messages";
 import { useBusinessRatingSummaryQuery, useBusinessReviewsQuery } from "@/lib/review/hooks";
 import { formatTime12Hour } from "@/lib/staff/format";
+import type { BusinessCity } from "@/lib/constants/cities";
 import {
   useAddFavoriteMutation,
   useFavoriteIdsQuery,
@@ -97,11 +99,17 @@ function VenueDetailsContent() {
   };
 
   // Booking Wizard Steps States
-  const [bookingStep, setBookingStep] = useState<"addons" | "professionals" | "time" | "payment" | "confirmed" | null>(null);
+  const [bookingStep, setBookingStep] = useState<"addons" | "travel" | "professionals" | "time" | "payment" | "confirmed" | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<string | undefined>(undefined);
   const [pricingInputByService, setPricingInputByService] = useState<Record<string, { hours?: number; personCount?: number }>>({});
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [selectedProfessional, setSelectedProfessional] = useState<string | null>(null);
+  // Travel/visit-type (Phase 1 fix) — only meaningful when the business is TRAVEL_TO_CUSTOMER;
+  // AT_BUSINESS_LOCATION never reads or sends these. customerCity doubles as both the top-level
+  // CreateBookingInput.customerCity (served-city + fee lookup) and travelAddress.city (the
+  // address snapshot's own city field) — a single city selection for one coherent address.
+  const [customerCity, setCustomerCity] = useState<BusinessCity | undefined>(undefined);
+  const [travelAddress, setTravelAddress] = useState<TravelAddressFields>(emptyTravelAddress);
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -122,6 +130,15 @@ function VenueDetailsContent() {
     selectedService?.assignedStaffMembershipIds.includes(member.id),
   );
 
+  // Travel/visit-type (Phase 1 fix) — canonical, never a customer choice: the Business's own
+  // fixed visitType decides whether a travel step/address is collected at all (see
+  // BookingCreationService.resolveFulfilment). servedCities is per-Service, exactly what the
+  // backend's requireServedCity validates against — never a hardcoded city list.
+  const isTravelBooking = business?.visitType === "TRAVEL_TO_CUSTOMER";
+  const servedCities = (selectedService?.servedCities ?? []) as BusinessCity[];
+  const setTravelAddressField = (patch: Partial<TravelAddressFields>) =>
+    setTravelAddress((prev) => ({ ...prev, ...patch }));
+
   const serviceAddonsQuery = useServiceAddonsQuery(venueId, selectedServiceId);
 
   const availabilityFromDate = `${visibleMonth.getFullYear()}-${String(visibleMonth.getMonth() + 1).padStart(2, "0")}-01`;
@@ -135,9 +152,39 @@ function VenueDetailsContent() {
           fromDate: availabilityFromDate,
           toDate: availabilityToDate,
           staffMembershipId: selectedProfessional ?? undefined,
+          customerCity: isTravelBooking ? customerCity : undefined,
         }
       : undefined,
   );
+
+  // Stale-slot guard (Phase 1.5 fix) — the single canonical source of truth for whether
+  // `selectedSlot` still reflects the LATEST availability response for the current
+  // service/professional/date/customerCity. A slot object surviving a professional or
+  // travel-city change (neither of which clears it directly) must never be trusted merely
+  // because it's non-null — see the Time→Payment stale-slot audit.
+  const selectedAvailabilityDay = availabilityQuery.data?.days.find((day) => day.date === selectedDateIso);
+  const isSelectedSlotValid = Boolean(
+    selectedSlot && selectedAvailabilityDay?.slots.some((slot) => slot.startAt === selectedSlot.startAt),
+  );
+
+  // Safety net: once a fresh (non-loading, non-fetching) availability response is in for the
+  // current step, if the previously selected slot is no longer in it — because the professional,
+  // customerCity, or date changed the result, or someone else took it — drop it so the UI (slot
+  // highlight, Payment summary, Continue gate) never keeps pointing at an invalid selection.
+  // Applied during render via the same "adjusting state" pattern as the Book Again preselect
+  // below (setState directly in render body, not inside a useEffect, per this codebase's lint
+  // config) — safe from render loops because clearing `selectedSlot` makes `isSelectedSlotValid`'s
+  // own precondition false on the next render.
+  if (
+    (bookingStep === "time" || bookingStep === "payment") &&
+    selectedSlot &&
+    !availabilityQuery.isLoading &&
+    !availabilityQuery.isFetching &&
+    availabilityQuery.data &&
+    !isSelectedSlotValid
+  ) {
+    setSelectedSlot(undefined);
+  }
 
   const previewMutation = usePreviewCustomerBookingMutation();
   const finalizeMutation = useFinalizeCustomerBookingMutation();
@@ -173,6 +220,19 @@ function VenueDetailsContent() {
     const staffMembershipId =
       selectedProfessional === ANY_STAFF ? selectedSlot.eligibleStaffMembershipIds[0] : selectedProfessional;
     if (!staffMembershipId) return undefined;
+    // Travel/visit-type (Phase 1 fix) — required before a TRAVEL_TO_CUSTOMER booking can be
+    // built at all; AT_BUSINESS_LOCATION sends neither field (server-derived fee stays 0,
+    // never a client-calculated travelFeeCents).
+    if (
+      isTravelBooking &&
+      (!customerCity ||
+        !travelAddress.propertyType ||
+        !travelAddress.area.trim() ||
+        !travelAddress.streetName.trim() ||
+        !travelAddress.streetNumber.trim())
+    ) {
+      return undefined;
+    }
     const promoCode = promoCodeOverride === null ? undefined : (promoCodeOverride ?? appliedPromoCode);
     return {
       serviceLines: [
@@ -184,6 +244,21 @@ function VenueDetailsContent() {
         },
       ],
       startAt: selectedSlot.startAt,
+      ...(isTravelBooking && customerCity
+        ? {
+            customerCity,
+            travelAddress: {
+              city: customerCity,
+              propertyType: travelAddress.propertyType,
+              area: travelAddress.area,
+              streetName: travelAddress.streetName,
+              streetNumber: travelAddress.streetNumber,
+              floorUnit: travelAddress.floorUnit || undefined,
+              aptRoom: travelAddress.aptRoom || undefined,
+              additionalDirections: travelAddress.additionalDirections || undefined,
+            },
+          }
+        : {}),
       notes: bookingNotes || undefined,
       idempotencyKey,
       promoCode,
@@ -224,7 +299,7 @@ function VenueDetailsContent() {
       },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookingStep, selectedServiceId, selectedAddonIds.join(","), selectedProfessional, selectedSlot?.startAt, appliedPromoCode, isPackagePurchaseFlow]);
+  }, [bookingStep, selectedServiceId, selectedAddonIds.join(","), selectedProfessional, selectedSlot?.startAt, appliedPromoCode, isPackagePurchaseFlow, customerCity, travelAddress.propertyType, travelAddress.area, travelAddress.streetName, travelAddress.streetNumber, travelAddress.floorUnit, travelAddress.aptRoom, travelAddress.additionalDirections]);
 
   const handleApplyPromo = async () => {
     const code = promoCodeInput.trim();
@@ -274,6 +349,8 @@ function VenueDetailsContent() {
     setSelectedDateIso(undefined);
     setSelectedSlot(undefined);
     setWalletError(undefined);
+    setCustomerCity(undefined);
+    setTravelAddress(emptyTravelAddress);
     setIdempotencyKey(crypto.randomUUID());
     setBookingStep("addons");
   };
@@ -297,14 +374,35 @@ function VenueDetailsContent() {
 
   const canContinueWizard = (() => {
     if (bookingStep === "addons") return true;
+    if (bookingStep === "travel") {
+      return Boolean(
+        customerCity &&
+          travelAddress.propertyType &&
+          travelAddress.area.trim() &&
+          travelAddress.streetName.trim() &&
+          travelAddress.streetNumber.trim(),
+      );
+    }
     if (bookingStep === "professionals") return Boolean(selectedProfessional);
-    if (bookingStep === "time") return Boolean(selectedSlot);
-    if (bookingStep === "payment") return hasSavedCard && Boolean(preview);
+    if (bookingStep === "time")
+      return (
+        Boolean(selectedSlot) &&
+        isSelectedSlotValid &&
+        !availabilityQuery.isLoading &&
+        !availabilityQuery.isFetching
+      );
+    // Payment's own preview/pricing already require `selectedSlot` (buildBookingInput), but
+    // `preview` is stale mutation data that doesn't clear itself — requiring `selectedSlot`
+    // here too ensures the stale-slot safety-net effect above (which clears it once an
+    // authoritative availability response invalidates it) can actually block Confirm.
+    if (bookingStep === "payment") return hasSavedCard && Boolean(preview) && Boolean(selectedSlot);
     return false;
   })();
 
   const handleWizardContinue = async () => {
     if (bookingStep === "addons") {
+      setBookingStep(isTravelBooking ? "travel" : "professionals");
+    } else if (bookingStep === "travel") {
       setBookingStep("professionals");
     } else if (bookingStep === "professionals") {
       setBookingStep("time");
@@ -1759,8 +1857,10 @@ function VenueDetailsContent() {
                   onClick={() => {
                     if (bookingStep === "addons") {
                       setBookingStep(null);
-                    } else if (bookingStep === "professionals") {
+                    } else if (bookingStep === "travel") {
                       setBookingStep("addons");
+                    } else if (bookingStep === "professionals") {
+                      setBookingStep(isTravelBooking ? "travel" : "addons");
                     } else if (bookingStep === "time") {
                       setBookingStep("professionals");
                     } else if (bookingStep === "payment") {
@@ -1780,6 +1880,13 @@ function VenueDetailsContent() {
 
                   <span className={bookingStep === "addons" ? "text-black font-semibold" : "text-[#ACAAB4]"}>Add-ons</span>
                   <HugeiconsIcon icon={ArrowRight01Icon} size={14} className={bookingStep === "addons" ? "text-black" : "text-[#ACAAB4]"} />
+
+                  {isTravelBooking && (
+                    <>
+                      <span className={bookingStep === "travel" ? "text-black font-semibold" : "text-[#ACAAB4]"}>Location</span>
+                      <HugeiconsIcon icon={ArrowRight01Icon} size={14} className={bookingStep === "travel" ? "text-black" : "text-[#ACAAB4]"} />
+                    </>
+                  )}
 
                   <span className={bookingStep === "professionals" ? "text-black font-semibold" : "text-[#ACAAB4]"}>Professionals</span>
                   <HugeiconsIcon icon={ArrowRight01Icon} size={14} className={bookingStep === "professionals" ? "text-black" : "text-[#ACAAB4]"} />
@@ -1816,6 +1923,16 @@ function VenueDetailsContent() {
                   isLoading={serviceAddonsQuery.isLoading}
                   selectedAddonIds={selectedAddonIds}
                   setSelectedAddonIds={setSelectedAddonIds}
+                />
+              )}
+
+              {bookingStep === "travel" && (
+                <TravelAddressStep
+                  servedCities={servedCities}
+                  customerCity={customerCity}
+                  setCustomerCity={setCustomerCity}
+                  address={travelAddress}
+                  setAddress={setTravelAddressField}
                 />
               )}
 
