@@ -700,7 +700,7 @@ function VenueDetailsContent() {
           name: selectedService.name,
           duration:
             selectedService.fixedPricing?.durationMin ?? selectedService.perPersonPricing?.durationMin ?? selectedService.packagePricing?.durationMin
-              ? `${selectedService.fixedPricing?.durationMin ?? selectedService.perPersonPricing?.durationMin ?? selectedService.packagePricing?.durationMin} min`
+              ? `${selectedService.fixedPricing?.durationMin ?? selectedService.perPersonPricing?.durationMin ?? selectedService.packagePricing?.durationMin} min${selectedService.isPackageDeal ? " per session" : ""}`
               : "",
           priceVal: estimateServicePriceCents(selectedService, pricingInputByService[selectedService.id] ?? {}) / 100,
           priceText: formatBookingMoney(estimateServicePriceCents(selectedService, pricingInputByService[selectedService.id] ?? {})),
@@ -985,6 +985,25 @@ function VenueDetailsContent() {
                             : `${durationMin} min`
                           : undefined;
 
+                        // Package Deal info-clarity fix — sessionsInPackage is already on the
+                        // catalog DTO (never derived from description text). discountPercent is
+                        // the canonical field either way: server-computed from
+                        // normalPricePerSessionCents × sessions when that field was set at
+                        // Service-creation time, or the Owner's raw entry for a legacy package
+                        // with no such basis — normalPricePerSessionCents itself is never exposed
+                        // to the customer catalog, so this is the only trustworthy source
+                        // available client-side; inverting it (below) is not a second competing
+                        // formula, just the existing display math, kept in one place. Absent
+                        // discountPercent means no comparison basis exists — no original/savings
+                        // is shown rather than a fabricated one.
+                        const sessionsInPackage = service.packagePricing?.sessionsInPackage;
+                        const packageDiscountPercent = service.isPackageDeal ? service.packagePricing?.discountPercent : undefined;
+                        const packageOriginalPriceCents = packageDiscountPercent
+                          ? Math.round(priceCents / (1 - packageDiscountPercent / 100))
+                          : undefined;
+                        const packageSavingsCents =
+                          packageOriginalPriceCents !== undefined ? packageOriginalPriceCents - priceCents : undefined;
+
                         return (
                           <div
                             key={service.id}
@@ -1004,8 +1023,14 @@ function VenueDetailsContent() {
                                   {formatBookingMoney(service.perPersonPricing.ratePerPersonCents)} per person • min {service.perPersonPricing.minPersons} person • max {service.perPersonPricing.maxPersons} person
                                 </span>
                               )}
-                              {(service.pricingMode === "FIXED" || service.isPackageDeal) && durationText && (
+                              {service.pricingMode === "FIXED" && !service.isPackageDeal && durationText && (
                                 <span className="text-sm text-[#767676]">{durationText}</span>
+                              )}
+                              {service.isPackageDeal && durationText && (
+                                <span className="text-sm text-[#767676]">
+                                  {sessionsInPackage ? `${sessionsInPackage} session${sessionsInPackage === 1 ? "" : "s"} • ` : ""}
+                                  {durationText} per session
+                                </span>
                               )}
 
                               {service.pricingMode === "HOURLY" && service.hourlyPricing && (
@@ -1081,18 +1106,40 @@ function VenueDetailsContent() {
                                 </div>
                               )}
 
-                              <div className="flex items-center gap-2 mt-1">
+                              {service.isPackageDeal && (
+                                <span className="text-[10px] font-semibold text-[#767676] uppercase tracking-wide mt-1">
+                                  Package total
+                                </span>
+                              )}
+                              <div className="flex items-center gap-2">
                                 <span className="font-semibold text-lg text-[#0D0D0D]">{formatBookingMoney(priceCents)}</span>
-                                {(service.fixedPricing?.discountPercent || service.packagePricing?.discountPercent) && (
-                                  <span className="line-through text-sm text-gray-400">
-                                    {formatBookingMoney(
-                                      Math.round(priceCents / (1 - (service.fixedPricing?.discountPercent ?? service.packagePricing?.discountPercent ?? 0) / 100)),
+                                {service.isPackageDeal
+                                  ? packageOriginalPriceCents !== undefined && (
+                                      <span className="line-through text-sm text-gray-400">
+                                        {formatBookingMoney(packageOriginalPriceCents)}
+                                      </span>
+                                    )
+                                  : service.fixedPricing?.discountPercent && (
+                                      <span className="line-through text-sm text-gray-400">
+                                        {formatBookingMoney(Math.round(priceCents / (1 - service.fixedPricing.discountPercent / 100)))}
+                                      </span>
                                     )}
-                                  </span>
-                                )}
                               </div>
+                              {service.isPackageDeal && packageSavingsCents !== undefined && packageSavingsCents > 0 && (
+                                <span className="text-xs text-[#2BB54F] font-medium">
+                                  Save {formatBookingMoney(packageSavingsCents)} ({Math.round(packageDiscountPercent ?? 0)}%)
+                                </span>
+                              )}
                               {service.description && (
                                 <p className="text-xs text-gray-500 font-medium mt-1">{service.description}</p>
+                              )}
+                              {service.isPackageDeal && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {sessionsInPackage
+                                    ? `Includes ${sessionsInPackage} session${sessionsInPackage === 1 ? "" : "s"}. `
+                                    : ""}
+                                  This booking schedules your first session — book the rest later from My Packages.
+                                </p>
                               )}
                             </div>
                             <button
@@ -1976,7 +2023,12 @@ function VenueDetailsContent() {
               )}
 
               {bookingStep === "confirmed" && confirmedBooking && (
-                <ConfirmedStep booking={confirmedBooking} setBookingStep={setBookingStep} />
+                <ConfirmedStep
+                  booking={confirmedBooking}
+                  setBookingStep={setBookingStep}
+                  isPackagePurchase={isPackagePurchaseFlow}
+                  packageSessionsTotal={selectedService?.packagePricing?.sessionsInPackage}
+                />
               )}
             </div>
 
@@ -1985,6 +2037,7 @@ function VenueDetailsContent() {
               <CheckoutSummaryAside
                 bookingStep={bookingStep}
                 isPackagePurchase={isPackagePurchaseFlow}
+                packageSessionsTotal={selectedService?.packagePricing?.sessionsInPackage}
                 business={catalogQuery.data?.business}
                 preview={preview}
                 isPreviewLoading={

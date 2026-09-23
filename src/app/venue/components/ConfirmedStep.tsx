@@ -4,7 +4,7 @@ import React from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Tick01Icon, ScissorIcon, User02Icon, Calendar03Icon, Location01Icon, MapsIcon, Appointment02Icon } from "@hugeicons/core-free-icons";
+import { Tick01Icon, ScissorIcon, User02Icon, Calendar03Icon, Location01Icon, MapsIcon, Appointment02Icon, Clock04Icon, PackageIcon } from "@hugeicons/core-free-icons";
 
 import type { BookingDetail } from "@/lib/api/bookings";
 import { formatBookingDate, formatBookingMoney, formatBookingTimeRange } from "@/lib/bookings/format";
@@ -12,9 +12,19 @@ import { formatBookingDate, formatBookingMoney, formatBookingTimeRange } from "@
 interface ConfirmedStepProps {
   booking: BookingDetail;
   setBookingStep: (step: null) => void;
+  /** True only for a Package Deal purchase (session 1) — see CheckoutSummaryAside's own
+   * `isPackagePurchase` doc comment for why package/normal copy diverges here too. */
+  isPackagePurchase?: boolean;
+  /** Package Deal audit (Phase 1.5 info-clarity fix) — `booking.serviceLines[0]` (the persisted,
+   * canonical BookingServiceLineDto) carries no session-count field, so this is passed through
+   * from the wizard's still-in-memory `selectedService.packagePricing.sessionsInPackage` — the
+   * exact catalog data that produced THIS booking, not stale cross-step state (selectedServiceId
+   * never changes again once a purchase reaches this step). Never sourced from the persisted
+   * booking response, which genuinely doesn't carry it. */
+  packageSessionsTotal?: number;
 }
 
-export default function ConfirmedStep({ booking, setBookingStep }: ConfirmedStepProps) {
+export default function ConfirmedStep({ booking, setBookingStep, isPackagePurchase, packageSessionsTotal }: ConfirmedStepProps) {
   const router = useRouter();
   const primaryLine = booking.serviceLines[0];
   const staffName = primaryLine
@@ -64,6 +74,34 @@ export default function ConfirmedStep({ booking, setBookingStep }: ConfirmedStep
                   </span>
                 </div>
               </div>
+
+              {primaryLine ? (
+                <div className="flex items-start gap-3 w-full">
+                  <div className="w-8 h-8 bg-[#F1EDED] rounded-lg flex items-center justify-center shrink-0 p-2">
+                    <HugeiconsIcon icon={Clock04Icon} size={16} className="text-[#4E5F78]" />
+                  </div>
+                  <div className="flex flex-col items-start gap-1">
+                    <span className="font-medium text-sm text-[#45474B] leading-[20px]">Duration</span>
+                    <span className="font-bold text-base text-[#020305] leading-[24px]">
+                      {primaryLine.durationMin} min{isPackagePurchase ? " per session" : ""}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+
+              {primaryLine && primaryLine.addons.length > 0 ? (
+                <div className="flex items-start gap-3 w-full">
+                  <div className="w-8 h-8 bg-[#F1EDED] rounded-lg flex items-center justify-center shrink-0 p-2">
+                    <HugeiconsIcon icon={ScissorIcon} size={16} className="text-[#4E5F78]" />
+                  </div>
+                  <div className="flex flex-col items-start gap-1">
+                    <span className="font-medium text-sm text-[#45474B] leading-[20px]">Add-ons</span>
+                    <span className="font-bold text-base text-[#020305] leading-[24px]">
+                      {primaryLine.addons.map((a) => a.name).join(" • ")}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="flex items-start gap-3 w-full">
                 <div className="w-8 h-8 bg-[#F1EDED] rounded-lg flex items-center justify-center shrink-0 p-2">
@@ -117,6 +155,33 @@ export default function ConfirmedStep({ booking, setBookingStep }: ConfirmedStep
           </div>
 
           <div className="w-full h-[1px] bg-[#C6C6CB]/50 my-2" />
+
+          {isPackagePurchase ? (
+            <div className="flex items-start gap-3 w-full bg-[#F1EDED]/60 rounded-xl p-4">
+              <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shrink-0 p-2">
+                <HugeiconsIcon icon={PackageIcon} size={16} className="text-[#4E5F78]" />
+              </div>
+              <div className="flex flex-col items-start gap-1">
+                <span className="font-semibold text-sm text-[#020305] leading-[20px]">
+                  {packageSessionsTotal
+                    ? `Includes ${packageSessionsTotal} sessions — this booking schedules your first session.`
+                    : "This booking schedules your first session."}
+                </span>
+                <span className="text-sm text-[#45474B] leading-[20px]">
+                  Book your remaining sessions any time from My Packages.
+                </span>
+                <button
+                  onClick={() => {
+                    setBookingStep(null);
+                    router.push(`/customer/packages`);
+                  }}
+                  className="mt-2 text-sm font-semibold text-[#2E9DA7] hover:underline cursor-pointer"
+                >
+                  View My Packages →
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           {/* Price Summary breakdown — real data from the booking's own financial snapshot */}
           <div className="flex flex-col gap-4 w-full">
