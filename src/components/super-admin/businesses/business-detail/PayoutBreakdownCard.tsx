@@ -7,6 +7,8 @@ import { InformationCircleIcon } from "@hugeicons/core-free-icons";
 import { formatBookingMoney } from "@/lib/bookings/format";
 import type { BusinessPayableSummary } from "@/lib/api/superAdminFinance";
 import { useExecutePayoutMutation } from "@/lib/superAdminFinance/hooks";
+import { useSuperAdminPayoutDestinationQuery } from "@/lib/superAdminPayoutDestination/hooks";
+import PayoutDestinationPanel from "@/components/super-admin/finance/PayoutDestinationPanel";
 
 interface PayoutBreakdownCardProps {
   businessId: string;
@@ -22,18 +24,31 @@ export default function PayoutBreakdownCard({
   isLoading,
 }: PayoutBreakdownCardProps) {
   const [showDetails, setShowDetails] = useState(false);
+  // Bumped after a confirmed payout so any revealed plaintext IBAN is dropped from local state.
+  const [revealResetToken, setRevealResetToken] = useState(0);
   const executeMutation = useExecutePayoutMutation();
+
+  const destinationQuery = useSuperAdminPayoutDestinationQuery(businessId);
+  const destination = destinationQuery.data;
+  const hasDestination = destination?.configured === true;
 
   const amount = (cents: number | undefined) =>
     cents !== undefined ? formatBookingMoney(cents) : isLoading ? "…" : "—";
 
-  const canPay = Boolean(payable && payable.netCents > 0);
+  // A manual SEPA transfer with no known destination must not be confirmable, so the existing
+  // "is there anything to pay" gate is extended with "do we know where to send it".
+  const canPay = Boolean(payable && payable.netCents > 0) && hasDestination;
 
   const handleConfirm = () => {
-    if (!payable || payable.netCents <= 0) return;
+    if (!payable || payable.netCents <= 0 || !hasDestination) return;
     executeMutation.mutate(
       { businessId },
-      { onSuccess: () => setShowDetails(false) },
+      {
+        onSuccess: () => {
+          setShowDetails(false);
+          setRevealResetToken((token) => token + 1);
+        },
+      },
     );
   };
 
@@ -89,6 +104,14 @@ export default function PayoutBreakdownCard({
               <span className="text-2xl text-[#2E9DA7]">{amount(payable?.netCents)}</span>
             </div>
           </div>
+
+          <PayoutDestinationPanel
+            businessId={businessId}
+            destination={destination}
+            isLoading={destinationQuery.isLoading}
+            isError={destinationQuery.isError}
+            revealResetToken={revealResetToken}
+          />
         </div>
 
         {/* Right Column: What Bookly earned */}
@@ -120,7 +143,11 @@ export default function PayoutBreakdownCard({
             className="box-sizing-border-box flex flex-row justify-center items-center px-4 py-1.5 gap-2 w-full md:max-w-[1112px] h-[56px] border border-[#111111] rounded-lg cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 bg-white hover:bg-emerald-50 transition-colors flex-none order-1 grow"
           >
             <span className="font-sans font-medium text-[14px] sm:text-[18px] leading-[20px] text-center text-[#111111] whitespace-nowrap">
-              {canPay ? "Send SEPA payout" : "No pending balance to pay out"}
+              {canPay
+                ? "Send SEPA payout"
+                : !hasDestination && payable && payable.netCents > 0
+                  ? "Bank details not configured for this Business"
+                  : "No pending balance to pay out"}
             </span>
           </button>
         </div>
