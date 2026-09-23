@@ -1,4 +1,10 @@
-import type { DayOfWeek, ScheduleDay, StaffTimeOffEntry, StaffTimeOffType } from "@/lib/api/staff";
+import type {
+  DayOfWeek,
+  ScheduleDay,
+  ScheduleInterval,
+  StaffTimeOffEntry,
+  StaffTimeOffType
+} from "@/lib/api/staff";
 
 // Monday-first, matching both the backend's canonical DayOfWeek order and the existing
 // Add Staff form's day-chip order.
@@ -99,6 +105,59 @@ export const sanitizeTimeDraftInput = (raw: string): string => {
   return `${hour}:${minutePart.slice(0, 2)}`;
 };
 
+export type ShiftTimeOption = { value: string; label: string };
+
+const shiftTimeOptionHours12 = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const shiftTimeOptionMinutes = [0, 15, 30, 45];
+
+/**
+ * The 48 canonical Start/End Shift dropdown options: 12-hour clock, 15-minute increments, no
+ * AM/PM suffix (paired with a separate AM/PM toggle elsewhere in the UI) — "12:00", "12:15",
+ * "12:30", "12:45", "1:00", ..., "11:45". `value` is an "H:MM" string (no leading zero on the
+ * hour) — exactly what {@link parseTimeInputText} already parses and what
+ * `parseTime12HourInputFromCanonical` below already produces when hydrating an existing shift —
+ * so it drops into the existing Start/End Shift draft state and parsing pipeline unchanged.
+ * This is the single source of truth for the 48-value list; every caller must import it rather
+ * than re-deriving its own copy.
+ */
+export const shiftTimeOptions: ShiftTimeOption[] = shiftTimeOptionHours12.flatMap((hour) =>
+  shiftTimeOptionMinutes.map((minute) => {
+    const value = `${hour}:${String(minute).padStart(2, "0")}`;
+    return { value, label: value };
+  })
+);
+
+const shiftTimeOptionValues = new Set(shiftTimeOptions.map((option) => option.value));
+
+/**
+ * Options to render for one Start/End Shift `<select>`, given its current draft value ("H:MM",
+ * or "" while nothing is selected/typed yet). Normally just the 48 canonical
+ * {@link shiftTimeOptions}. If `currentValue` is a legacy/non-15-minute time that doesn't land
+ * on any of them (e.g. data written before this UI existed, or by another client), it's
+ * surfaced as one extra leading option holding the exact current value — so the select shows
+ * the true current value instead of silently snapping to the first canonical option, and the
+ * user must actively pick one of the 48 canonical options to replace it.
+ */
+export const buildShiftTimeSelectOptions = (currentValue: string): ShiftTimeOption[] => {
+  if (!currentValue || shiftTimeOptionValues.has(currentValue)) {
+    return shiftTimeOptions;
+  }
+  return [{ value: currentValue, label: `${currentValue} (current)` }, ...shiftTimeOptions];
+};
+
+/** Canonical "HH:mm" -> {hour: 1-12, minute, period}, for prefilling the 12-hour Start/End
+ * Shift select + AM/PM toggle from an existing persisted interval. Shared by every Staff
+ * schedule editor (Owner's DashboardStaffList, Supervisor's SupervisorStaffSchedule) so both
+ * hydrate an existing interval identically. */
+export const parseTime12HourInputFromCanonical = (
+  hhmm: string
+): { hour: number; minute: number; period: "AM" | "PM" } => {
+  const label = formatTime12Hour(hhmm);
+  const match = /^(\d{1,2}):(\d{2}) (AM|PM)$/.exec(label);
+  if (!match) return { hour: 9, minute: 0, period: "AM" };
+  return { hour: Number(match[1]), minute: Number(match[2]), period: match[3] as "AM" | "PM" };
+};
+
 export const timeOffTypeLabels: Record<StaffTimeOffType, string> = {
   ANNUAL_HOLIDAY: "Annual Holiday",
   SICK_LEAVE: "Sick leave"
@@ -118,20 +177,30 @@ export const formatTimeOffRange = (entry: Pick<StaffTimeOffEntry, "startDate" | 
     ? formatIsoDateShort(entry.startDate)
     : `${formatIsoDateShort(entry.startDate)} - ${formatIsoDateShort(entry.endDate)}`;
 
-type HourGroup = { startTime: string; endTime: string; days: DayOfWeek[] };
+type HourGroup = { intervals: ScheduleInterval[]; days: DayOfWeek[] };
 
-/** Groups configured days by identical (startTime, endTime) — never merges days whose
- * hours actually differ, so callers can render each group as its own truthful segment. */
+/** "09:00"/"13:00" -> "9:00 AM–1:00 PM"; joins multiple intervals (split shifts) with ", ". */
+export const formatIntervalsList = (intervals: ScheduleInterval[]): string =>
+  intervals.map((interval) => `${formatTime12Hour(interval.startTime)}–${formatTime12Hour(interval.endTime)}`).join(", ");
+
+const intervalsKey = (intervals: ScheduleInterval[]): string =>
+  intervals.map((interval) => `${interval.startTime}-${interval.endTime}`).join(",");
+
+/** Groups configured (non-empty-intervals) days by an identical intervals list — never
+ * merges days whose hours actually differ, so callers can render each group as its own
+ * truthful segment. Days with no configured hours (`intervals: []`) are excluded here —
+ * callers surface "No hours configured" for those separately. */
 const groupByHours = (days: ScheduleDay[]): HourGroup[] => {
   const byKey = new Map<string, HourGroup>();
 
   for (const day of days) {
-    const key = `${day.startTime}-${day.endTime}`;
+    if (day.intervals.length === 0) continue;
+    const key = intervalsKey(day.intervals);
     const existing = byKey.get(key);
     if (existing) {
       existing.days.push(day.dayOfWeek);
     } else {
-      byKey.set(key, { startTime: day.startTime, endTime: day.endTime, days: [day.dayOfWeek] });
+      byKey.set(key, { intervals: day.intervals, days: [day.dayOfWeek] });
     }
   }
 
@@ -143,7 +212,7 @@ const groupByHours = (days: ScheduleDay[]): HourGroup[] => {
 };
 
 const formatHourGroup = (group: HourGroup): string =>
-  `${compressDayRanges(group.days)} • ${formatTime12Hour(group.startTime)}–${formatTime12Hour(group.endTime)}`;
+  `${compressDayRanges(group.days)} • ${formatIntervalsList(group.intervals)}`;
 
 /**
  * Card-sized weekly schedule summary. Never fabricates uniform hours across days that
@@ -155,8 +224,9 @@ const formatHourGroup = (group: HourGroup): string =>
 export const summarizeScheduleForCard = (days: ScheduleDay[], offDays: DayOfWeek[] = []): string => {
   const segments: string[] = [];
 
-  if (days.length > 0) {
-    segments.push(...groupByHours(days).map(formatHourGroup));
+  const workingDays = days.filter((day) => day.intervals.length > 0);
+  if (workingDays.length > 0) {
+    segments.push(...groupByHours(workingDays).map(formatHourGroup));
   }
   if (offDays.length > 0) {
     segments.push(`Weekend: ${compressDayRanges(offDays)}`);
@@ -219,8 +289,9 @@ const compressDayRanges = (days: DayOfWeek[]): string => {
 export const summarizeScheduleForTable = (days: ScheduleDay[], offDays: DayOfWeek[] = []): string[] => {
   const segments: string[] = [];
 
-  if (days.length > 0) {
-    segments.push(...groupByHours(days).map(formatHourGroup));
+  const workingDays = days.filter((day) => day.intervals.length > 0);
+  if (workingDays.length > 0) {
+    segments.push(...groupByHours(workingDays).map(formatHourGroup));
   }
   if (offDays.length > 0) {
     segments.push(`Weekend: ${compressDayRanges(offDays)}`);

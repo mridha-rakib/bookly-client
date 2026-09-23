@@ -24,11 +24,18 @@ export const daysOfWeek = [
 ] as const;
 export type DayOfWeek = (typeof daysOfWeek)[number];
 
-// Canonical 24-hour "HH:mm" — never displayed to users directly, see lib/utils/staffTime.ts.
-export interface ScheduleDay {
-  dayOfWeek: DayOfWeek;
+// Canonical 24-hour "HH:mm" — never displayed to users directly, see lib/staff/format.ts.
+export interface ScheduleInterval {
   startTime: string;
   endTime: string;
+}
+
+/** A weekday's working hours — zero or more non-overlapping working intervals (split
+ * shifts). Gaps between intervals are unavailable for booking (breaks). Empty `intervals`
+ * means "no hours configured yet" — distinct from being listed in `offDays`. */
+export interface ScheduleDay {
+  dayOfWeek: DayOfWeek;
+  intervals: ScheduleInterval[];
 }
 
 export type StaffTimeOffType = "ANNUAL_HOLIDAY" | "SICK_LEAVE";
