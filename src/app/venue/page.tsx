@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -32,7 +32,7 @@ import {
   usePreviewPackagePurchaseMutation,
   usePurchasePackageMutation,
 } from "@/lib/packages/hooks";
-import type { BookingDetail, CreateBookingInput } from "@/lib/api/bookings";
+import type { BookingCreationPreview, BookingDetail, CreateBookingInput } from "@/lib/api/bookings";
 import { getStripe } from "@/lib/payments/stripe-client";
 import { formatBookingMoney } from "@/lib/bookings/format";
 import { toUserMessage } from "@/lib/auth/messages";
@@ -199,13 +199,78 @@ function VenueDetailsContent() {
   const previewPackageMutation = usePreviewPackagePurchaseMutation();
   const purchasePackageMutation = usePurchasePackageMutation();
 
-  const preview = isPackagePurchaseFlow
-    ? previewPackageMutation.data && "financials" in previewPackageMutation.data
-      ? previewPackageMutation.data
-      : undefined
-    : previewMutation.data && "financials" in previewMutation.data
-      ? previewMutation.data
-      : undefined;
+  // Preview race-safety fix — previewMutation/previewPackageMutation are TanStack Query
+  // MUTATIONS, not queries: calling `.mutate()`/`.mutateAsync()` again before a prior call
+  // settles does NOT cancel or sequence the earlier one. Their shared `.data`/`.error` reflect
+  // whichever call happens to SETTLE last, not whichever was STARTED last — so a stale response
+  // for an older booking configuration could silently overwrite a newer, still-correct preview.
+  // `previewRequestIdRef` gives every preview-triggering call (the auto-effect below, plus the
+  // promo apply/remove handlers, which share the same mutation object) a strictly increasing id;
+  // `runGuardedPreview` only ever writes `acceptedPreview`/`isPreviewPending`/`previewFetchFailed`
+  // from the response whose id STILL matches the ref's current value at settle time — an
+  // out-of-order response is silently dropped rather than displayed. `isMountedRef` additionally
+  // guards against writing state after this component has unmounted (e.g. the customer navigated
+  // away entirely while a request was still in flight).
+  const previewRequestIdRef = useRef(0);
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // `isPackage` is tagged onto the accepted response itself (rather than reset via a separate
+  // effect keyed on `isPackagePurchaseFlow`) so switching between a Package purchase and a normal
+  // booking mid-wizard can never show the WRONG flow's stale preview: a Package's preview shape/
+  // summary is not a smaller version of a normal booking's, so `preview` below only ever exposes
+  // an accepted response that actually matches the CURRENT flow — a pure derivation during render,
+  // no extra effect/state-reset needed. An ordinary same-flow input change is unaffected and keeps
+  // showing the last accepted preview while a fresh one loads, matching this page's existing
+  // loading-state UX.
+  const [acceptedPreview, setAcceptedPreview] = useState<
+    { isPackage: boolean; data: BookingCreationPreview } | undefined
+  >(undefined);
+  const [isPreviewPending, setIsPreviewPending] = useState(false);
+  const [previewFetchFailed, setPreviewFetchFailed] = useState(false);
+
+  /** Starts a new, latest-wins preview request — see this section's own doc comment above for
+   * the full race-safety rationale. Returns the underlying promise so callers that need the
+   * actual resolved value regardless of race status (e.g. handleApplyPromo's own applied/error
+   * branching below) can still use it directly; that branching is independent of what ends up
+   * displayed as the canonical `acceptedPreview`. Every state write happens inside a `.then()`
+   * callback, never synchronously in the function body, so this stays safe to call directly from
+   * an effect body (the auto-preview effect below) as well as from event handlers. */
+  const runGuardedPreview = (
+    mutateAsyncFn: () => Promise<BookingCreationPreview>,
+  ): Promise<BookingCreationPreview> => {
+    const requestId = ++previewRequestIdRef.current;
+    const isPackage = isPackagePurchaseFlow;
+    return Promise.resolve()
+      .then(() => {
+        setIsPreviewPending(true);
+        return mutateAsyncFn();
+      })
+      .then(
+        (result) => {
+          if (isMountedRef.current && requestId === previewRequestIdRef.current) {
+            setAcceptedPreview({ isPackage, data: result });
+            setPreviewFetchFailed(false);
+            setIsPreviewPending(false);
+          }
+          return result;
+        },
+        (error: unknown) => {
+          if (isMountedRef.current && requestId === previewRequestIdRef.current) {
+            setPreviewFetchFailed(true);
+            setIsPreviewPending(false);
+          }
+          throw error;
+        },
+    );
+  };
+
+  const preview =
+    acceptedPreview?.isPackage === isPackagePurchaseFlow ? acceptedPreview.data : undefined;
 
   // Batch 13 — Promo Code. `appliedPromoCode` is the server-CONFIRMED code (only set after a
   // successful preview resolves it); `promoCodeInput` is the raw, uncommitted text field.
@@ -278,27 +343,27 @@ function VenueDetailsContent() {
     if (isPackagePurchaseFlow) {
       // No Promo Code support for a Package purchase (deferred — see the Package Deal audit)
       // and no self-heal needed since one is never applied here.
-      previewPackageMutation.mutate({ businessId: venueId, input });
+      void runGuardedPreview(() => previewPackageMutation.mutateAsync({ businessId: venueId, input }));
       return;
     }
 
-    previewMutation.mutate(
-      { businessId: venueId, input },
-      {
-        onError: () => {
-          // Section 26 self-heal: if the applied promo became invalid mid-flow (e.g. usage
-          // exhausted by another customer, or the code was deactivated), never leave the
-          // customer stuck on a dead summary — drop it and re-quote without it.
-          if (appliedPromoCode) {
-            setAppliedPromoCode(undefined);
-            setPromoCodeInput("");
-            setPromoStatus("error");
-            setPromoErrorMessage("Your promo code is no longer valid and was removed.");
-            previewMutation.mutate({ businessId: venueId, input: { ...input, promoCode: undefined } });
-          }
-        },
-      },
-    );
+    runGuardedPreview(() => previewMutation.mutateAsync({ businessId: venueId, input })).catch(() => {
+      // Section 26 self-heal: if the applied promo became invalid mid-flow (e.g. usage
+      // exhausted by another customer, or the code was deactivated), never leave the
+      // customer stuck on a dead summary — drop it and re-quote without it. Runs regardless of
+      // whether THIS particular attempt was superseded by a newer one by the time it failed —
+      // same as before the race-safety fix, this only decides whether to self-heal, not what
+      // gets displayed (that's runGuardedPreview's own job).
+      if (appliedPromoCode) {
+        setAppliedPromoCode(undefined);
+        setPromoCodeInput("");
+        setPromoStatus("error");
+        setPromoErrorMessage("Your promo code is no longer valid and was removed.");
+        void runGuardedPreview(() =>
+          previewMutation.mutateAsync({ businessId: venueId, input: { ...input, promoCode: undefined } }),
+        );
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookingStep, selectedServiceId, selectedAddonIds.join(","), selectedProfessional, selectedSlot?.startAt, appliedPromoCode, isPackagePurchaseFlow, customerCity, travelAddress.propertyType, travelAddress.area, travelAddress.streetName, travelAddress.streetNumber, travelAddress.floorUnit, travelAddress.aptRoom, travelAddress.additionalDirections]);
 
@@ -310,8 +375,8 @@ function VenueDetailsContent() {
     setPromoStatus("applying");
     setPromoErrorMessage(undefined);
     try {
-      const result = await previewMutation.mutateAsync({ businessId: venueId, input });
-      if ("financials" in result && result.promo) {
+      const result = await runGuardedPreview(() => previewMutation.mutateAsync({ businessId: venueId, input }));
+      if (result.promo) {
         setAppliedPromoCode(code);
         setPromoStatus("applied");
       } else {
@@ -323,7 +388,9 @@ function VenueDetailsContent() {
       setPromoErrorMessage(toUserMessage(error));
       // Restore the base (no-promo) summary so checkout stays usable after a failed attempt.
       const fallbackInput = buildBookingInput();
-      if (fallbackInput) previewMutation.mutate({ businessId: venueId, input: fallbackInput });
+      if (fallbackInput) {
+        void runGuardedPreview(() => previewMutation.mutateAsync({ businessId: venueId, input: fallbackInput }));
+      }
     }
   };
 
@@ -333,7 +400,7 @@ function VenueDetailsContent() {
     setPromoStatus("idle");
     setPromoErrorMessage(undefined);
     const input = buildBookingInput(null);
-    if (input) previewMutation.mutate({ businessId: venueId, input });
+    if (input) void runGuardedPreview(() => previewMutation.mutateAsync({ businessId: venueId, input }));
   };
 
   const handleBookService = (serviceId: string) => {
@@ -2066,13 +2133,14 @@ function VenueDetailsContent() {
                 packageSessionsTotal={selectedService?.packagePricing?.sessionsInPackage}
                 business={catalogQuery.data?.business}
                 preview={preview}
-                isPreviewLoading={
-                  isPackagePurchaseFlow ? previewPackageMutation.isPending : previewMutation.isPending
-                }
+                // Race-safety fix: reflects only the LATEST preview request's own pending/failed
+                // state (see runGuardedPreview above) rather than the shared mutation object's
+                // own isPending/isError, which could otherwise flip based on an older, already-
+                // superseded call settling after a newer one.
+                isPreviewLoading={isPreviewPending}
                 previewError={
-                  isPackagePurchaseFlow
-                    ? previewPackageMutation.isError || purchasePackageMutation.isError
-                    : previewMutation.isError || finalizeMutation.isError
+                  previewFetchFailed ||
+                  (isPackagePurchaseFlow ? purchasePackageMutation.isError : finalizeMutation.isError)
                 }
                 showPolicy={showPolicy}
                 setShowPolicy={setShowPolicy}
