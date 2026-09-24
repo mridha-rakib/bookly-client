@@ -4,8 +4,22 @@ import React, { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { InformationCircleIcon, CreditCardPosIcon } from "@hugeicons/core-free-icons";
 import { CardCvcElement, CardExpiryElement, CardNumberElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import type { StripeCardNumberElementChangeEvent } from "@stripe/stripe-js";
 
 import { paymentsApi } from "@/lib/api/payments";
+
+// Card-brand UX polish — the three static badges below react to Stripe's OWN `brand` field from
+// CardNumberElement's change event (the exact same tokenized-in-an-iframe Element, never a
+// second card-number reader): Stripe remains the sole authority on brand, this only decides
+// which of the three ALREADY-EXISTING badges to visually emphasize. Any brand Stripe reports
+// that isn't one of these three (discover/diners/jcb/unionpay/unknown) intentionally maps to
+// `null` — never guessed onto the nearest badge.
+type DisplayableBrand = "visa" | "mastercard" | "amex";
+const displayableBrands: Record<string, DisplayableBrand> = {
+  visa: "visa",
+  mastercard: "mastercard",
+  amex: "amex",
+};
 
 const stripeElementStyle = {
   base: {
@@ -43,6 +57,13 @@ export function CardCollectionForm({
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  // Stripe-reported brand only (`event.brand`) — never derived from the card number itself,
+  // which this component never has access to in the first place.
+  const [detectedBrand, setDetectedBrand] = useState<DisplayableBrand | null>(null);
+
+  const handleCardNumberChange = (event: StripeCardNumberElementChangeEvent) => {
+    setDetectedBrand(displayableBrands[event.brand] ?? null);
+  };
 
   const handleSave = async () => {
     if (!stripe || !elements) return;
@@ -82,7 +103,7 @@ export function CardCollectionForm({
     <>
       <div className="bg-white border border-[#F1F5F9] rounded-2xl p-6 shadow-sm flex flex-col gap-5 w-full relative">
         <div className="flex flex-col gap-2 w-full">
-          <span className="text-[11px] font-bold text-[#16123E] tracking-widest uppercase">Name</span>
+          <span className="text-[11px] font-bold text-[#16123E] tracking-widest uppercase">Name on Card</span>
           <div className="border border-[#ECEBEF] rounded-xl px-4 py-3.5 flex items-center bg-white">
             <input
               type="text"
@@ -98,12 +119,42 @@ export function CardCollectionForm({
           <span className="text-[11px] font-bold text-[#16123E] tracking-widest uppercase">Card Number</span>
           <div className="border border-[#ECEBEF] rounded-xl px-4 py-3.5 flex items-center justify-between bg-white">
             <div className="w-full">
-              <CardNumberElement options={{ style: stripeElementStyle, placeholder: "4444 4444 4444 4444" }} />
+              <CardNumberElement
+                options={{ style: stripeElementStyle, placeholder: "4444 4444 4444 4444" }}
+                onChange={handleCardNumberChange}
+              />
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <div className="px-1.5 py-0.5 bg-[#1A1F71] text-white text-[9px] font-bold rounded">VISA</div>
-              <div className="px-1.5 py-0.5 bg-red-600 text-white text-[9px] font-bold rounded">MC</div>
-              <div className="px-1.5 py-0.5 bg-amber-500 text-white text-[9px] font-bold rounded">AMEX</div>
+            <div
+              className="flex items-center gap-1.5 shrink-0"
+              aria-label={detectedBrand ? `Detected card brand: ${detectedBrand}` : "Card brand not yet detected"}
+            >
+              <div
+                title="Visa"
+                aria-current={detectedBrand === "visa"}
+                className={`px-1.5 py-0.5 bg-[#1A1F71] text-white text-[9px] font-bold rounded transition-opacity ${
+                  detectedBrand && detectedBrand !== "visa" ? "opacity-40" : "opacity-100"
+                }`}
+              >
+                VISA
+              </div>
+              <div
+                title="Mastercard"
+                aria-current={detectedBrand === "mastercard"}
+                className={`px-1.5 py-0.5 bg-red-600 text-white text-[9px] font-bold rounded transition-opacity ${
+                  detectedBrand && detectedBrand !== "mastercard" ? "opacity-40" : "opacity-100"
+                }`}
+              >
+                MC
+              </div>
+              <div
+                title="American Express"
+                aria-current={detectedBrand === "amex"}
+                className={`px-1.5 py-0.5 bg-amber-500 text-white text-[9px] font-bold rounded transition-opacity ${
+                  detectedBrand && detectedBrand !== "amex" ? "opacity-40" : "opacity-100"
+                }`}
+              >
+                AMEX
+              </div>
             </div>
           </div>
         </div>
@@ -112,7 +163,15 @@ export function CardCollectionForm({
           <div className="flex flex-col gap-2 flex-1">
             <span className="text-[11px] font-bold text-[#16123E] tracking-widest uppercase">Expiration Date</span>
             <div className="border border-[#ECEBEF] rounded-xl px-4 py-3.5 flex items-center bg-white">
-              <CardExpiryElement options={{ style: stripeElementStyle }} />
+              {/* Expiry-input fix — CardNumberElement/CardCvcElement (above/below) are both
+                  wrapped in a `w-full` div so Stripe's injected Element container fills this
+                  flex row's main axis; CardExpiryElement was missing it, leaving the actual
+                  iframe click/focus target sized to its own intrinsic width while this
+                  surrounding box (border/padding) visually spanned the full field — most clicks
+                  inside the visible box landed outside the real iframe. */}
+              <div className="w-full">
+                <CardExpiryElement options={{ style: stripeElementStyle }} />
+              </div>
             </div>
           </div>
 
