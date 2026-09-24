@@ -63,6 +63,15 @@ const codeMessages: Record<string, string> = {
     "That confirmation is no longer valid. Please request a new code.",
   PAYOUT_DESTINATION_STEP_UP_NOT_APPLICABLE:
     "This account signs in with a password — confirm with your current password instead.",
+  // P1 retry safety — this error only ever reaches the customer AFTER
+  // BookingCreationService's own compensating refund has already been awaited synchronously
+  // (see compensateFailedBookingAfterPayment), so "has been refunded" is never a promise about
+  // future timing. Worded as "any payment you made" rather than an unconditional "your payment
+  // has been refunded" because the same conflict can also occur with zero charge taken (a
+  // fully promo-covered deposit never calls Stripe at all) — see
+  // BookingCreationService.finalizeCustomerBooking's `paymentResult`-gated compensation call.
+  BOOKING_SLOT_RESERVATION_CONFLICT:
+    "This time slot was just taken by someone else. Any payment you made for it has been automatically refunded — please choose another available time.",
 };
 
 export const toUserMessage = (error: unknown): string => {
