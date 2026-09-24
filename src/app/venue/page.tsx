@@ -21,6 +21,7 @@ import VenueLocationMap from "./components/VenueLocationMap";
 import { Suspense } from "react";
 
 import { useAuthStore } from "@/lib/auth/store";
+import { BooklyApiError } from "@/lib/api/client";
 import { useBusinessCatalogQuery, useServiceAddonsQuery, useServiceAvailabilityQuery } from "@/lib/catalog/hooks";
 import { ANY_STAFF, type AvailabilitySlot, type CatalogService } from "@/lib/api/catalog";
 import {
@@ -428,11 +429,36 @@ function VenueDetailsContent() {
           ? purchasePackageMutation.mutateAsync({ businessId: venueId, input })
           : finalizeMutation.mutateAsync({ businessId: venueId, input });
 
+      // P1 retry safety — every path below that ends the CURRENT finalize attempt (anything
+      // short of a confirmed booking) mints a fresh idempotencyKey before Confirm can be used
+      // again. Reusing the same key across logically separate attempts would hand it straight
+      // back to Stripe (see StripePaymentGateway.createAndConfirmPaymentIntent's own
+      // `idempotencyKey` option): a genuinely new attempt with different/retried card details
+      // risks Stripe replaying the prior cached result (or rejecting the request outright for
+      // not matching the original parameters) instead of actually re-attempting payment. The
+      // ONE exception — the requires_action → confirmCardPayment → same-call retry below —
+      // never goes through this helper, so it correctly keeps reusing the original key captured
+      // in `input`, exactly as BookingCreationService.finalizeCustomerBooking's own doc comment
+      // requires.
+      // For BOOKING_SLOT_RESERVATION_CONFLICT specifically (the backend already compensated
+      // with a synchronous refund before this error ever reaches the client — see
+      // BookingCreationService.compensateFailedBookingAfterPayment) the now-confirmed-gone slot
+      // must not be silently resubmitted: clear it and send the customer back to Time so the
+      // existing stale-slot Continue gate (isSelectedSlotValid) can never let them retry with it.
+      const failFinalize = (messageOrError: string | unknown) => {
+        setWalletError(typeof messageOrError === "string" ? messageOrError : toUserMessage(messageOrError));
+        setIdempotencyKey(crypto.randomUUID());
+        if (messageOrError instanceof BooklyApiError && messageOrError.code === "BOOKING_SLOT_RESERVATION_CONFLICT") {
+          setSelectedSlot(undefined);
+          setBookingStep("time");
+        }
+      };
+
       let result: Awaited<ReturnType<typeof submitFinalize>>;
       try {
         result = await submitFinalize();
       } catch (error) {
-        setWalletError(toUserMessage(error));
+        failFinalize(error);
         return;
       }
 
@@ -444,12 +470,12 @@ function VenueDetailsContent() {
         try {
           const stripe = await getStripe();
           if (!stripe) {
-            setWalletError("Payment could not be initialized. Please try again.");
+            failFinalize("Payment could not be initialized. Please try again.");
             return;
           }
           const confirmResult = await stripe.confirmCardPayment(result.clientSecret);
           if (confirmResult.error) {
-            setWalletError(confirmResult.error.message ?? "Payment authentication failed.");
+            failFinalize(confirmResult.error.message ?? "Payment authentication failed.");
             return;
           }
           const retry = await submitFinalize();
@@ -457,10 +483,10 @@ function VenueDetailsContent() {
             setConfirmedBooking(retry);
             setBookingStep("confirmed");
           } else {
-            setWalletError("Payment could not be confirmed. Please try again.");
+            failFinalize("Payment could not be confirmed. Please try again.");
           }
         } catch (error) {
-          setWalletError(toUserMessage(error));
+          failFinalize(error);
         } finally {
           setConfirming3ds(false);
         }
