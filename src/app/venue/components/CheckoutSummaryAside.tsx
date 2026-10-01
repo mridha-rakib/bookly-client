@@ -173,9 +173,13 @@ export default function CheckoutSummaryAside({
 
       <div className="flex justify-between items-center py-2.5 relative">
         <div className="flex items-center gap-1.5">
-          <span>Deposit</span>
+          <span>{appliedPromo ? "Deposit before promo" : "Deposit before VAT"}</span>
           <div className="relative group">
-            <button type="button" className="text-neutral-400 hover:text-neutral-600 cursor-pointer flex items-center">
+            <button
+              type="button"
+              aria-label="About the deposit"
+              className="text-neutral-400 hover:text-neutral-600 cursor-pointer flex items-center"
+            >
               <HugeiconsIcon icon={InformationCircleIcon} size={16} />
             </button>
             <div className="absolute bottom-full right-[-80px] sm:right-[-40px] mb-3 hidden group-hover:flex w-[290px] sm:w-[420px] md:w-[480px] bg-white border border-neutral-200 shadow-2xl rounded-xl p-5 gap-2.5 z-50 text-left font-inter text-[14.5px] leading-[22px] text-[#666666] items-start transition-opacity duration-200">
@@ -188,7 +192,11 @@ export default function CheckoutSummaryAside({
             </div>
           </div>
         </div>
-        <span>{financials ? formatBookingMoney(financials.depositCents) : "—"}</span>
+        <span>
+          {preview
+            ? formatBookingMoney(appliedPromo ? appliedPromo.depositBeforePromoCents : preview.preTaxChargeCents)
+            : "—"}
+        </span>
       </div>
 
       {appliedPromo ? (
@@ -201,20 +209,37 @@ export default function CheckoutSummaryAside({
         </>
       ) : null}
 
+      {appliedPromo ? (
+        <>
+          <div className="border-t border-[#E5E5E5] w-full" />
+          <div className="flex justify-between items-center py-2.5">
+            <span>Deposit before VAT</span>
+            <span>{preview ? formatBookingMoney(preview.preTaxChargeCents) : "—"}</span>
+          </div>
+        </>
+      ) : null}
+
       {renderPromoField()}
 
       <div className="border-t border-[#E5E5E5] w-full" />
 
       <div className="flex justify-between items-center py-2.5">
-        <span>Due now</span>
-        <span>{preview ? formatBookingMoney(preview.amountDueNowCents) : "—"}</span>
+        <span>VAT</span>
+        <span>{preview ? formatBookingMoney(preview.taxCents) : "—"}</span>
       </div>
 
       <div className="border-t border-[#E5E5E5] w-full" />
 
       <div className="flex justify-between items-center text-base font-semibold py-2.5">
+        <span>Due now</span>
+        <span>{preview ? formatBookingMoney(preview.dueNowCents) : "—"}</span>
+      </div>
+
+      <div className="border-t border-[#E5E5E5] w-full" />
+
+      <div className="flex justify-between items-center py-2.5">
         <span>Balance due at venue</span>
-        <span>{financials ? formatBookingMoney(financials.balanceDueCents) : "—"}</span>
+        <span>{preview ? formatBookingMoney(preview.balanceDueCents) : "—"}</span>
       </div>
     </div>
   );
@@ -234,11 +259,11 @@ export default function CheckoutSummaryAside({
           {isPackagePurchase ? (
             <>
               <p>
-                A {financials ? formatBookingMoney(financials.depositCents) : "deposit"} is charged now to secure
-                your first session and will be deducted from the package&apos;s total cost.
+                A {preview ? formatBookingMoney(preview.preTaxChargeCents) : "—"} deposit before VAT is charged
+                now to secure your first session and will be deducted from the package&apos;s total cost.
               </p>
               <p>
-                You will pay the remaining {financials ? formatBookingMoney(financials.balanceDueCents) : ""} at the
+                You will pay the remaining {preview ? formatBookingMoney(preview.balanceDueCents) : ""} at the
                 venue by cash or card. Your remaining sessions cannot be booked until the Business records this
                 balance as fully paid.
               </p>
@@ -252,11 +277,11 @@ export default function CheckoutSummaryAside({
           ) : (
             <>
               <p>
-                A {financials ? formatBookingMoney(financials.depositCents) : "deposit"} is charged now to secure your
-                appointment and will be deducted from your total service cost.
+                A {preview ? formatBookingMoney(preview.preTaxChargeCents) : "—"} deposit before VAT is charged
+                now to secure your appointment and will be deducted from your total service cost.
               </p>
               <p>
-                You will pay the remaining {financials ? formatBookingMoney(financials.balanceDueCents) : ""} at the
+                You will pay the remaining {preview ? formatBookingMoney(preview.balanceDueCents) : ""} at the
                 venue by cash or card.
               </p>
               <p>Payment is processed securely via Stripe. Your card is also stored for the Business&apos;s cancellation/no-show policy below.</p>
@@ -401,11 +426,13 @@ export default function CheckoutSummaryAside({
           <div className="p-4 flex items-center justify-between gap-4">
             <button
               onClick={() => setIsMobileSummaryExpanded(!isMobileSummaryExpanded)}
+              aria-expanded={isMobileSummaryExpanded}
+              aria-label="Toggle booking price summary"
               className="flex flex-col items-start justify-center min-w-0 cursor-pointer"
             >
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-lg text-[#0D0D0D]">
-                  {preview ? formatBookingMoney(preview.amountDueNowCents) : "—"}
+                  {preview ? formatBookingMoney(preview.dueNowCents) : "—"}
                 </span>
                 <svg
                   className={`w-5 h-5 text-neutral-500 transition-transform duration-300 ${isMobileSummaryExpanded ? "rotate-180" : ""}`}
