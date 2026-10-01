@@ -277,12 +277,17 @@ export interface BookingCreationPreview {
     amountCents: number;
   }>;
   financials: BookingFinancialsDto;
-  amountDueNowCents: number;
+  /** Server-authoritative C2 disclosure values. The client formats these integer cents only;
+   * it must never derive VAT or due-now from another field. */
+  preTaxChargeCents: number;
+  taxCents: number;
+  dueNowCents: number;
+  balanceDueCents: number;
   requiresSavedCard: boolean;
   hasSavedCard: boolean;
   /** Batch 13 — present only when a valid `promoCode` was submitted and resolved server-side.
-   * `depositBeforePromoCents` always equals `financials.depositCents`; `amountDueNowCents` above
-   * is already the post-promo charge — never recompute the discount in the client. */
+   * `depositBeforePromoCents` always equals `financials.depositCents`; `preTaxChargeCents` above
+   * is already the post-promo taxable charge — never recompute the discount in the client. */
   promo?: {
     code: string;
     type: "PERCENTAGE" | "FIXED";
