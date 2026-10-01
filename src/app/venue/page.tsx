@@ -214,6 +214,10 @@ function VenueDetailsContent() {
   const previewRequestIdRef = useRef(0);
   const isMountedRef = useRef(true);
   useEffect(() => {
+    // React Strict Mode replays mount effects in development (setup -> cleanup -> setup).
+    // Restore the live flag on every setup so the replayed, latest preview may publish its
+    // result and clear `isPreviewPending`; the real unmount cleanup still blocks late writes.
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };
