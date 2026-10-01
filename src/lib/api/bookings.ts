@@ -35,6 +35,9 @@ export interface BookingServiceLineDto {
   staffName?: string;
   addons: Array<{ addonId: string; name: string; priceCents: number }>;
   amountCents: number;
+  sessionsInPackage?: number;
+  sessionIndex?: number;
+  packageProgressId?: string;
 }
 
 export interface BookingFinancialsDto {

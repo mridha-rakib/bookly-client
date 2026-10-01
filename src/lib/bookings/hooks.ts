@@ -11,6 +11,7 @@ import {
   type FinalizeBookingResult,
   type ListBookingsParams,
 } from "@/lib/api/bookings";
+import { packageKeys } from "@/lib/packages/hooks";
 
 export const bookingKeys = {
   all: ["bookings"] as const,
@@ -257,6 +258,17 @@ const invalidateCustomerBookingCaches = (queryClient: ReturnType<typeof useQuery
   void queryClient.invalidateQueries({ queryKey: bookingKeys.customerLists() });
 };
 
+const invalidateLinkedPackage = (
+  queryClient: ReturnType<typeof useQueryClient>,
+  booking: BookingDetail,
+) => {
+  const packageProgressId = booking.serviceLines.find((line) => line.packageProgressId)
+    ?.packageProgressId;
+  if (!packageProgressId) return;
+  void queryClient.invalidateQueries({ queryKey: packageKeys.list() });
+  void queryClient.invalidateQueries({ queryKey: packageKeys.detail(packageProgressId) });
+};
+
 /** A "get me the real price" quote — read-only server-side, but a mutation (not a query) since
  * it's triggered on demand as the customer moves through the wizard (service lines/date change),
  * never polled/cached across renders. Never trust a client-computed total — see
@@ -299,6 +311,7 @@ export const useCancelByCustomerMutation = () => {
     onSuccess: (booking) => {
       queryClient.setQueryData(bookingKeys.customerDetail(booking.id), booking);
       invalidateCustomerBookingCaches(queryClient);
+      invalidateLinkedPackage(queryClient, booking);
     },
   });
 };
@@ -312,6 +325,7 @@ export const useRescheduleByCustomerMutation = () => {
     onSuccess: (booking) => {
       queryClient.setQueryData(bookingKeys.customerDetail(booking.id), booking);
       invalidateCustomerBookingCaches(queryClient);
+      invalidateLinkedPackage(queryClient, booking);
     },
   });
 };

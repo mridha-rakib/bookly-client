@@ -15,18 +15,15 @@ interface ConfirmedStepProps {
   /** True only for a Package Deal purchase (session 1) — see CheckoutSummaryAside's own
    * `isPackagePurchase` doc comment for why package/normal copy diverges here too. */
   isPackagePurchase?: boolean;
-  /** Package Deal audit (Phase 1.5 info-clarity fix) — `booking.serviceLines[0]` (the persisted,
-   * canonical BookingServiceLineDto) carries no session-count field, so this is passed through
-   * from the wizard's still-in-memory `selectedService.packagePricing.sessionsInPackage` — the
-   * exact catalog data that produced THIS booking, not stale cross-step state (selectedServiceId
-   * never changes again once a purchase reaches this step). Never sourced from the persisted
-   * booking response, which genuinely doesn't carry it. */
+  /** Wizard fallback for a legacy response without the persisted Package linkage fields. */
   packageSessionsTotal?: number;
 }
 
 export default function ConfirmedStep({ booking, setBookingStep, isPackagePurchase, packageSessionsTotal }: ConfirmedStepProps) {
   const router = useRouter();
   const primaryLine = booking.serviceLines[0];
+  const packageProgressId = primaryLine?.packageProgressId;
+  const resolvedPackageSessionsTotal = primaryLine?.sessionsInPackage ?? packageSessionsTotal;
   const staffName = primaryLine
     ? [primaryLine.staffName].filter(Boolean).join(" ") || "Assigned professional"
     : "—";
@@ -163,8 +160,8 @@ export default function ConfirmedStep({ booking, setBookingStep, isPackagePurcha
               </div>
               <div className="flex flex-col items-start gap-1">
                 <span className="font-semibold text-sm text-[#020305] leading-[20px]">
-                  {packageSessionsTotal
-                    ? `Includes ${packageSessionsTotal} sessions — this booking schedules your first session.`
+                  {resolvedPackageSessionsTotal
+                    ? `Includes ${resolvedPackageSessionsTotal} sessions — this booking schedules your first session.`
                     : "This booking schedules your first session."}
                 </span>
                 <span className="text-sm text-[#45474B] leading-[20px]">
@@ -173,7 +170,11 @@ export default function ConfirmedStep({ booking, setBookingStep, isPackagePurcha
                 <button
                   onClick={() => {
                     setBookingStep(null);
-                    router.push(`/customer/packages`);
+                    router.push(
+                      packageProgressId
+                        ? `/customer/packages/${packageProgressId}`
+                        : "/customer/packages",
+                    );
                   }}
                   className="mt-2 text-sm font-semibold text-[#2E9DA7] hover:underline cursor-pointer"
                 >

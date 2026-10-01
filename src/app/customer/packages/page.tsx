@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import SearchBar from "@/components/landing-page/SearchBar";
@@ -10,23 +11,10 @@ import { useAuthStore } from "@/lib/auth/store";
 import { useMyPackagesQuery, useVoidPackageMutation } from "@/lib/packages/hooks";
 import type { PackageProgress } from "@/lib/api/packages";
 import { formatBookingMoney } from "@/lib/bookings/format";
-import RedeemSessionModal from "./RedeemSessionModal";
-
-const STATUS_BADGE: Record<PackageProgress["status"], { label: string; className: string }> = {
-  ACTIVE: { label: "Active", className: "bg-[#DFFDDF] text-[#176117]" },
-  AWAITING_BALANCE: { label: "Balance due at venue", className: "bg-[#FFF3CD] text-[#8A6D0B]" },
-  DEPLETED: { label: "Fully used", className: "bg-neutral-100 text-neutral-500" },
-  VOIDED: { label: "Refunded", className: "bg-neutral-100 text-neutral-500" },
-};
-
-/** Client-side mirror of BookingLifecycleService.voidUnusedPackage's own eligibility rule
- * ("completely unused": no session ever COMPLETED/FORFEITED, and nothing left unresolved other
- * than the origin's own still-upcoming appointment) — a convenience hint for whether to show the
- * refund action at all. The server re-checks this authoritatively; a wrong guess here just
- * surfaces as an error toast, never an incorrect refund. */
-const isLikelyVoidEligible = (pkg: PackageProgress): boolean =>
-  pkg.status !== "VOIDED" &&
-  !pkg.sessions.some((session) => session.status === "COMPLETED" || session.status === "FORFEITED");
+import {
+  isLikelyVoidEligible,
+  PACKAGE_STATUS_PRESENTATION,
+} from "@/lib/packages/presentation";
 
 export default function PackagesPage() {
   return (
@@ -43,9 +31,6 @@ function PackagesPageContent() {
   const packagesQuery = useMyPackagesQuery();
   const packages = packagesQuery.data?.packages ?? [];
   const voidPackageMutation = useVoidPackageMutation();
-
-  const [redeemingPackageId, setRedeemingPackageId] = useState<string | null>(null);
-  const redeemingPackage = packages.find((p) => p.id === redeemingPackageId);
 
   const handleRequestRefund = (pkg: PackageProgress) => {
     if (!window.confirm("Refund and cancel this package? This cannot be undone.")) {
@@ -116,9 +101,9 @@ function PackagesPageContent() {
                         )}
                       </div>
                       <span
-                        className={`text-xs font-medium px-2.5 py-1 rounded-full ${STATUS_BADGE[pkg.status].className}`}
+                        className={`text-xs font-medium px-2.5 py-1 rounded-full ${PACKAGE_STATUS_PRESENTATION[pkg.status].className}`}
                       >
-                        {STATUS_BADGE[pkg.status].label}
+                        {PACKAGE_STATUS_PRESENTATION[pkg.status].label}
                       </span>
                     </div>
 
@@ -157,20 +142,12 @@ function PackagesPageContent() {
                       </p>
                     )}
 
-                    <button
-                      type="button"
-                      disabled={pkg.status !== "ACTIVE"}
-                      onClick={() => setRedeemingPackageId(pkg.id)}
-                      className="mt-2 w-full py-2.5 rounded-lg bg-[#0D0D0D] hover:bg-black text-white text-sm font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    <Link
+                      href={`/customer/packages/${pkg.id}`}
+                      className="mt-2 w-full rounded-lg bg-[#0D0D0D] py-2.5 text-center text-sm font-semibold text-white hover:bg-black"
                     >
-                      {pkg.status === "ACTIVE"
-                        ? "Book a session"
-                        : pkg.status === "AWAITING_BALANCE"
-                          ? "Balance not yet settled"
-                          : pkg.status === "VOIDED"
-                            ? "Refunded"
-                            : "No sessions remaining"}
-                    </button>
+                      View details
+                    </Link>
 
                     {isLikelyVoidEligible(pkg) && (
                       <button
@@ -191,16 +168,6 @@ function PackagesPageContent() {
       </main>
 
       <Footer />
-
-      {redeemingPackage && (
-        <RedeemSessionModal
-          businessId={redeemingPackage.businessId}
-          packageProgressId={redeemingPackage.id}
-          serviceId={redeemingPackage.serviceId}
-          onClose={() => setRedeemingPackageId(null)}
-          onBooked={() => setRedeemingPackageId(null)}
-        />
-      )}
     </div>
   );
 }
