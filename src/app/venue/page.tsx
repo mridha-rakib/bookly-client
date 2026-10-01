@@ -265,8 +265,26 @@ function VenueDetailsContent() {
         },
         (error: unknown) => {
           if (isMountedRef.current && requestId === previewRequestIdRef.current) {
+            // A failed re-quote must never leave the previous financial commitment on screen.
+            // In particular, a server-issued slot can pass while selected and expire before the
+            // Payment-step revalidation reaches the API. That old quote no longer describes a
+            // finalizable booking.
+            setAcceptedPreview(undefined);
             setPreviewFetchFailed(true);
             setIsPreviewPending(false);
+
+            // `BOOKING_SCHEDULE_INVALID` is emitted by the API only when the submitted instant
+            // is malformed or no longer in the future. Wizard slots are server-issued ISO
+            // instants, so this is a stale selection here; do not let the customer submit it
+            // again or expose the internal validation text as the recovery instruction.
+            if (error instanceof BooklyApiError && error.code === "BOOKING_SCHEDULE_INVALID") {
+              // The booking-specific recovery message below replaces the generic quote-error
+              // banner, which would otherwise be both misleading and duplicated.
+              setPreviewFetchFailed(false);
+              setSelectedSlot(undefined);
+              setWalletError(toUserMessage(error));
+              setBookingStep("time");
+            }
           }
           throw error;
         },
@@ -467,7 +485,15 @@ function VenueDetailsContent() {
     // `preview` is stale mutation data that doesn't clear itself — requiring `selectedSlot`
     // here too ensures the stale-slot safety-net effect above (which clears it once an
     // authoritative availability response invalidates it) can actually block Confirm.
-    if (bookingStep === "payment") return hasSavedCard && Boolean(preview) && Boolean(selectedSlot);
+    if (bookingStep === "payment") {
+      return (
+        hasSavedCard &&
+        Boolean(preview) &&
+        Boolean(selectedSlot) &&
+        !isPreviewPending &&
+        !previewFetchFailed
+      );
+    }
     return false;
   })();
 
@@ -2103,7 +2129,12 @@ function VenueDetailsContent() {
                     setSelectedSlot(undefined);
                   }}
                   selectedSlot={selectedSlot}
-                  onSelectSlot={setSelectedSlot}
+                  onSelectSlot={(slot) => {
+                    setSelectedSlot(slot);
+                    // A fresh server-issued slot is the explicit recovery action for a stale
+                    // time; do not carry its old warning into the next Payment preview.
+                    setWalletError(undefined);
+                  }}
                 />
               )}
 
