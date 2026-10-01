@@ -19,6 +19,13 @@ export interface PackageProgressSession {
   sessionIndex: number;
   bookingId: string;
   status: PackageProgressSessionStatus;
+  /** `null` is a safe degraded response for a legacy/corrupt dangling relationship. It never
+   * invents a Booking summary and lets a future package timeline retain the historical entry. */
+  booking: {
+    status: string;
+    schedule: { startAt: string; endAt: string };
+    professional: { membershipId: string; displayName?: string };
+  } | null;
 }
 
 /**
