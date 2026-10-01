@@ -14,6 +14,8 @@ export const packageKeys = {
   detail: (packageProgressId: string) => [...packageKeys.all, "detail", packageProgressId] as const,
 };
 
+const customerBookingListsKey = ["customerBookings", "list"] as const;
+
 /** "My Packages" — cross-business, matches useMyBookingsQuery's own cross-business convention. */
 export const useMyPackagesQuery = () =>
   useQuery({
@@ -73,6 +75,7 @@ export const useRedeemPackageSessionMutation = () => {
       void queryClient.invalidateQueries({
         queryKey: packageKeys.detail(variables.packageProgressId),
       });
+      void queryClient.invalidateQueries({ queryKey: customerBookingListsKey });
     },
   });
 };
@@ -97,6 +100,7 @@ export const useVoidPackageMutation = () => {
       void queryClient.invalidateQueries({
         queryKey: packageKeys.detail(variables.packageProgressId),
       });
+      void queryClient.invalidateQueries({ queryKey: customerBookingListsKey });
     },
   });
 };

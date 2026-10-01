@@ -23,7 +23,7 @@ export interface PackageProgressSession {
    * invents a Booking summary and lets a future package timeline retain the historical entry. */
   booking: {
     status: string;
-    schedule: { startAt: string; endAt: string };
+    schedule: { timezone: string; startAt: string; endAt: string };
     professional: { membershipId: string; displayName?: string };
   } | null;
 }

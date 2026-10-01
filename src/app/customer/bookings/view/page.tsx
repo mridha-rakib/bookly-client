@@ -37,6 +37,7 @@ function BookingViewContent() {
 
   const detailQuery = useCustomerBookingDetailQuery(bookingId);
   const booking = detailQuery.data;
+  const packageLine = booking?.serviceLines.find((line) => line.packageProgressId);
 
   const catalogQuery = useBusinessCatalogQuery(booking?.businessId);
   const business = catalogQuery.data?.business;
@@ -192,18 +193,19 @@ function BookingViewContent() {
                   </div>
                 ))}
 
-                {/* Package-progress discoverability (info-clarity fix) — `pricingMode: "PACKAGE"`
-                    is already persisted on the booking's own service line (see
-                    booking-creation.service.ts's finalizePackagePurchase), so this needs no
-                    backend change; canonical session-count/remaining-sessions progress itself
-                    stays exclusively on /customer/packages, not duplicated here. */}
-                {booking.serviceLines[0]?.pricingMode === "PACKAGE" && (
+                {packageLine?.packageProgressId && (
                   <div className="w-full bg-[#F5F4EE] rounded-lg p-4 flex flex-wrap justify-between items-center gap-3 text-sm font-medium">
                     <span className="text-[#1C1B1C]">
-                      This is a package purchase — manage and redeem your remaining sessions from My Packages.
+                      {packageLine.sessionIndex === 1 ? "Package purchase" : "Package session"}
+                      {packageLine.sessionIndex && packageLine.sessionsInPackage
+                        ? ` — Session ${packageLine.sessionIndex} of ${packageLine.sessionsInPackage}`
+                        : ""}
                     </span>
-                    <Link href="/customer/packages" className="text-[#2E9DA7] font-semibold hover:underline shrink-0">
-                      View My Packages →
+                    <Link
+                      href={`/customer/packages/${packageLine.packageProgressId}`}
+                      className="text-[#2E9DA7] font-semibold hover:underline shrink-0"
+                    >
+                      View package →
                     </Link>
                   </div>
                 )}
@@ -323,13 +325,13 @@ function BookingViewContent() {
                   }}
                   className="py-2.5 px-6 rounded-lg text-sm font-semibold bg-[#BA1A1A] text-white hover:bg-red-800 transition-colors cursor-pointer"
                 >
-                  Cancel
+                  {packageLine ? "Cancel session" : "Cancel"}
                 </button>
                 <button
                   onClick={() => setIsRescheduleOpen(true)}
                   className="py-2.5 px-6 border border-[#C6C6CB] rounded-lg text-sm font-semibold text-[#111111] hover:bg-neutral-100 transition-colors bg-white cursor-pointer"
                 >
-                  Reschedule
+                  {packageLine ? "Reschedule session" : "Reschedule"}
                 </button>
               </div>
             )}
@@ -346,10 +348,13 @@ function BookingViewContent() {
       {showCancelConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 font-manrope">
           <div className="bg-white rounded-[24px] shadow-2xl p-8 max-w-[480px] w-full flex flex-col items-center select-none text-center">
-            <h2 className="font-bold text-[32px] leading-10 text-[#020305] mb-2">Cancel your booking?</h2>
+            <h2 className="font-bold text-[32px] leading-10 text-[#020305] mb-2">
+              {packageLine ? "Cancel this package session?" : "Cancel your booking?"}
+            </h2>
             <p className="text-sm text-[#4E5F78] leading-6 mb-8 px-2">
-              Cancellation and no-show fees, if any, are set by {business?.name ?? "the Business"} and calculated on
-              the full service price, not your deposit. We&apos;ll show you the exact result right after you confirm.
+              {packageLine
+                ? "This cancels only this appointment, not your whole package. Depending on the existing cancellation policy, the session may be restored or forfeited. We’ll show the exact result after you confirm."
+                : `Cancellation and no-show fees, if any, are set by ${business?.name ?? "the Business"} and calculated on the full service price, not your deposit. We’ll show you the exact result right after you confirm.`}
             </p>
             {cancelError ? <p className="text-sm text-red-600 font-medium mb-4">{cancelError}</p> : null}
             <div className="flex flex-col-reverse sm:flex-row gap-3 sm:gap-4 w-full">

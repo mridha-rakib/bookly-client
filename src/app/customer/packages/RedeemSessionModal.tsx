@@ -133,10 +133,20 @@ export default function RedeemSessionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 font-poppins">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6 md:p-8 flex flex-col gap-6">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="redeem-session-title"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6 md:p-8 flex flex-col gap-6"
+      >
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-xl text-[#1C1B1C]">Book a session</h2>
-          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-black cursor-pointer">
+          <h2 id="redeem-session-title" className="font-semibold text-xl text-[#1C1B1C]">Book a session</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close session scheduler"
+            className="text-neutral-400 hover:text-black cursor-pointer"
+          >
             <HugeiconsIcon icon={Cancel01Icon} className="w-5 h-5" />
           </button>
         </div>
@@ -189,7 +199,7 @@ export default function RedeemSessionModal({
                 onClick={onClose}
                 className="px-5 py-2.5 rounded-lg bg-[#EBEBEB] text-[#757575] text-sm font-medium hover:bg-[#E2E2E2] cursor-pointer"
               >
-                Cancel
+                Close scheduler
               </button>
               {subStep === "addons" ? (
                 <button
