@@ -72,6 +72,8 @@ const codeMessages: Record<string, string> = {
   // BookingCreationService.finalizeCustomerBooking's `paymentResult`-gated compensation call.
   BOOKING_SLOT_RESERVATION_CONFLICT:
     "This time slot was just taken by someone else. Any payment you made for it has been automatically refunded — please choose another available time.",
+  BOOKING_SCHEDULE_INVALID:
+    "The selected time is no longer available. Please choose another available time.",
 };
 
 export const toUserMessage = (error: unknown): string => {
