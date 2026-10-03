@@ -12,6 +12,7 @@ import { useDashboardOverviewQuery } from "@/lib/dashboardOverview/hooks";
 import { formatEuro } from "@/lib/services/format";
 import { describeActivity } from "@/utils/dashboardActivity";
 import { formatTime12Hour } from "@/lib/staff/format";
+import { formatPackageSessionLabel } from "@/lib/bookings/format";
 
 export default function SupervisorOverview() {
   const [timeFilter, setTimeFilter] = useState("Today");
@@ -133,7 +134,7 @@ export default function SupervisorOverview() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mb-8">
           {/* Card 1 */}
           <div className="bg-white border border-[#D3D3D3] rounded-xl p-4.5 shadow-sm flex flex-col justify-between h-[96px]">
-            <span className="text-[11px] font-normal text-[#888780] font-poppins">Today's bookings</span>
+            <span className="text-[11px] font-normal text-[#888780] font-poppins">Today&apos;s bookings</span>
             <div className="flex flex-col mt-0.5">
               <span className="text-3xl font-semibold text-[#1A1A1A] leading-none">
                 {overview ? overview.todayBookingsCount : "—"}
@@ -190,7 +191,7 @@ export default function SupervisorOverview() {
               <div className="flex justify-between items-center mb-4">
                 <div className="flex items-center gap-2">
                   <HugeiconsIcon icon={Clock01Icon} className="w-5 h-5 text-[#888780]" />
-                  <h2 className="text-sm font-medium text-[#5F5E5A] font-poppins">Today's schedule</h2>
+                  <h2 className="text-sm font-medium text-[#5F5E5A] font-poppins">Today&apos;s schedule</h2>
                 </div>
 
                 <div className="bg-[#F7F5F1] p-0.5 rounded-lg flex items-center gap-0.5">
@@ -231,6 +232,11 @@ export default function SupervisorOverview() {
                           <div className="flex flex-col">
                             <span className="text-xs font-medium text-[#1A1A1A] font-poppins">{row.customerName}</span>
                             <span className="text-[11px] text-[#888780] font-poppins">{row.serviceName}</span>
+                            {row.packageSessions.map((session, index) => (
+                              <span key={`${session.packageProgressId}-${index}`} className="text-[10px] font-medium text-[#3760B7] font-poppins">
+                                {formatPackageSessionLabel(session)}
+                              </span>
+                            ))}
                           </div>
                         </td>
                         <td className="py-3 px-4 text-xs text-[#5F5E5A] font-poppins">{formatEuro(row.totalPaymentCents)}</td>
@@ -278,7 +284,7 @@ export default function SupervisorOverview() {
 
           <div className="space-y-6">
             <div className="bg-white border border-[#E8E8E6] rounded-xl p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-[#0F1E35] font-poppins mb-4">Today's Schedule</h3>
+              <h3 className="text-sm font-semibold text-[#0F1E35] font-poppins mb-4">Today&apos;s Schedule</h3>
               <div className="space-y-4">
                 {timelineEvents.map((evt) => (
                   <div key={evt.bookingId} className="flex gap-4 items-start">
@@ -288,6 +294,11 @@ export default function SupervisorOverview() {
                     <div className="flex flex-col pl-1">
                       <span className="text-xs font-semibold text-[#111111]">{evt.customerName}</span>
                       <span className="text-[11px] text-neutral-500">{evt.detail}</span>
+                      {evt.packageSessions.map((session, index) => (
+                        <span key={`${session.packageProgressId}-${index}`} className="text-[10px] font-medium text-[#3760B7]">
+                          {formatPackageSessionLabel(session)}
+                        </span>
+                      ))}
                       <span className="text-[10px] text-amber-600 font-medium mt-0.5">{evt.durationMin} min</span>
                     </div>
                   </div>

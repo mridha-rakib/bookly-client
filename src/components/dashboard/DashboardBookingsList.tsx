@@ -21,6 +21,7 @@ import {
   formatBookingDate,
   formatBookingMoney,
   formatBookingTime,
+  formatPackageSessionLabel,
 } from "@/lib/bookings/format";
 
 interface DashboardBookingsListProps {
@@ -443,8 +444,20 @@ export default function DashboardBookingsList({
                     </td>
 
                     {/* Reference column */}
-                    <td className="py-4 px-4 text-xs font-semibold text-[#4C4B47]">
-                      {booking.reference}
+                    <td className="py-4 px-4">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs font-semibold text-[#4C4B47]">
+                          {booking.reference}
+                        </span>
+                        {booking.packageSessions.map((session, index) => (
+                          <span
+                            key={`${session.packageProgressId}-${session.sessionIndex}-${index}`}
+                            className="text-[10px] font-medium text-[#3760B7]"
+                          >
+                            {formatPackageSessionLabel(session)}
+                          </span>
+                        ))}
+                      </div>
                     </td>
 
                     {/* Date & Time column */}

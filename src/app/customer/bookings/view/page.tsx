@@ -22,6 +22,7 @@ import {
   formatBookingDate,
   formatBookingMoney,
   formatBookingTimeRange,
+  formatPackageSessionLabel,
 } from "@/lib/bookings/format";
 import { toUserMessage } from "@/lib/auth/messages";
 import BookingReviewCard from "../BookingReviewCard";
@@ -196,10 +197,14 @@ function BookingViewContent() {
                 {packageLine?.packageProgressId && (
                   <div className="w-full bg-[#F5F4EE] rounded-lg p-4 flex flex-wrap justify-between items-center gap-3 text-sm font-medium">
                     <span className="text-[#1C1B1C]">
-                      {packageLine.sessionIndex === 1 ? "Package purchase" : "Package session"}
                       {packageLine.sessionIndex && packageLine.sessionsInPackage
-                        ? ` — Session ${packageLine.sessionIndex} of ${packageLine.sessionsInPackage}`
-                        : ""}
+                        ? packageLine.sessionIndex === 1
+                          ? `Package purchase — Session ${packageLine.sessionIndex} of ${packageLine.sessionsInPackage}`
+                          : formatPackageSessionLabel({
+                              sessionIndex: packageLine.sessionIndex,
+                              sessionsInPackage: packageLine.sessionsInPackage,
+                            })
+                        : "Package booking"}
                     </span>
                     <Link
                       href={`/customer/packages/${packageLine.packageProgressId}`}

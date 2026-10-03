@@ -25,7 +25,7 @@ import {
   useWaiveFeeMutation,
 } from "@/lib/bookings/hooks";
 import type { BookingCalendarEntry } from "@/lib/api/bookings";
-import { BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingMoney, formatBookingTime } from "@/lib/bookings/format";
+import { BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingMoney, formatBookingTime, formatCompactPackageSessionLabel, formatPackageSessionLabel } from "@/lib/bookings/format";
 import { formatClockTime12Hour, formatTime12Hour } from "@/lib/staff/format";
 import { toast } from "@/components/ui/sonner";
 import { toUserMessage } from "@/lib/auth/messages";
@@ -252,6 +252,14 @@ export default function DashboardCalendar({
         onClick={(e) => e.stopPropagation()}
         className="absolute right-6 top-[25px] z-50 w-[160px] bg-white rounded-xl shadow-2xl border border-[#C6C6CB] flex flex-col py-1 text-xs select-none animate-fadeIn"
       >
+        {booking?.packageSessions.map((session, index) => (
+          <p
+            key={`${session.packageProgressId}-${session.sessionIndex}-${index}`}
+            className="px-4 py-2 text-[10px] font-semibold text-[#3760B7]"
+          >
+            {formatPackageSessionLabel(session)}
+          </p>
+        ))}
         {isUpcoming && (
           <button
             disabled={noShow.state !== "open"}
@@ -572,8 +580,19 @@ export default function DashboardCalendar({
                           {cell.inMonth && dayBookings.length > 0 && (
                             <div className="mt-1.5 flex flex-col gap-1">
                               {dayBookings.slice(0, 2).map((b) => (
-                                <div key={b.id} className="bg-[#BBEBFF] text-[#195156] text-[10px] font-semibold px-1.5 py-0.5 rounded truncate">
-                                  {formatBookingTime(b.schedule.startAt, b.schedule.timezone)} {b.customerName}
+                                <div key={b.id} className="flex flex-col bg-[#BBEBFF] text-[#195156] text-[10px] font-semibold px-1.5 py-0.5 rounded">
+                                  <span className="truncate">
+                                    {formatBookingTime(b.schedule.startAt, b.schedule.timezone)} {b.customerName}
+                                  </span>
+                                  {b.packageSessions.map((session, index) => (
+                                    <span
+                                      key={`${session.packageProgressId}-${session.sessionIndex}-${index}`}
+                                      className="truncate text-[9px]"
+                                      title={formatPackageSessionLabel(session)}
+                                    >
+                                      {formatCompactPackageSessionLabel(session)}
+                                    </span>
+                                  ))}
                                 </div>
                               ))}
                               {dayBookings.length > 2 && (
@@ -676,6 +695,15 @@ export default function DashboardCalendar({
                                         <span>{formatBookingTime(b.schedule.startAt, b.schedule.timezone)} {b.customerName}</span>
                                       </div>
                                       <div className="text-[10px] text-[#45474B] truncate">{b.serviceNames[0] ?? ""}</div>
+                                      {b.packageSessions.map((session, index) => (
+                                        <div
+                                          key={`${session.packageProgressId}-${session.sessionIndex}-${index}`}
+                                          className="text-[9px] font-semibold text-[#3760B7] truncate"
+                                          title={formatPackageSessionLabel(session)}
+                                        >
+                                          {formatCompactPackageSessionLabel(session)}
+                                        </div>
+                                      ))}
                                       <div className="text-[9px] font-semibold uppercase tracking-wide mt-0.5" style={{ color: undefined }}>
                                         <span className={`px-1 py-0.5 rounded ${tone === "danger" ? "text-[#BA1A1A]" : tone === "success" ? "text-[#2F8068]" : "text-[#45474B]"}`}>
                                           {BOOKING_STATUS_LABELS[b.status]}
@@ -831,6 +859,15 @@ export default function DashboardCalendar({
                                   </div>
                                   <h4 className="font-poppins text-xs font-semibold text-[#020305] mt-1.5 truncate">{b.customerName}</h4>
                                   <p className="text-[10px] text-[#45474B] truncate mt-0.5">{b.serviceNames.join(", ")}</p>
+                                  {b.packageSessions.map((session, index) => (
+                                    <p
+                                      key={`${session.packageProgressId}-${session.sessionIndex}-${index}`}
+                                      className="text-[9px] font-semibold text-[#3760B7] truncate"
+                                      title={formatPackageSessionLabel(session)}
+                                    >
+                                      {formatCompactPackageSessionLabel(session)}
+                                    </p>
+                                  ))}
                                 </div>
                                 <span className="text-[10px] font-medium text-[#45474B]">{formatBookingMoney(b.totalCents)}</span>
                                 {renderDropdown(b.id)}

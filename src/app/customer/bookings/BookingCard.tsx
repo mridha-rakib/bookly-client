@@ -24,6 +24,7 @@ import {
   formatBookingDate,
   formatBookingMoney,
   formatBookingTimeRange,
+  formatPackageSessionLabel,
   type BookingStatusTone,
 } from "@/lib/bookings/format";
 
@@ -77,6 +78,15 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
               {BOOKING_STATUS_LABELS[booking.status]}
             </span>
           </div>
+
+          {booking.packageSessions.map((session, index) => (
+            <p
+              key={`${session.packageProgressId}-${session.sessionIndex}-${index}`}
+              className="text-sm font-semibold text-[#3760B7] font-manrope"
+            >
+              {formatPackageSessionLabel(session)}
+            </p>
+          ))}
 
           <div className="flex items-center gap-1.5 text-sm text-[#111111] font-manrope">
             <HugeiconsIcon icon={BarCode01Icon} className="w-4 h-4 text-[#141B34]" />

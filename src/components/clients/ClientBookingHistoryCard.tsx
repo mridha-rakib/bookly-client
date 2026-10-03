@@ -29,6 +29,7 @@ import {
   formatBookingDate,
   formatBookingMoney,
   formatBookingTimeRange,
+  formatPackageSessionLabel,
 } from "@/lib/bookings/format";
 import { useAvailabilityQuery } from "@/lib/availability/hooks";
 
@@ -336,7 +337,13 @@ export default function ClientBookingHistoryCard({
                 session.packageProgressId === line.packageProgressId &&
                 session.serviceId === line.serviceId,
             );
-            const hasSessionIdentity = Boolean(line.sessionIndex && line.sessionsInPackage);
+            const sessionIdentity =
+              line.sessionIndex && line.sessionsInPackage
+                ? {
+                    sessionIndex: line.sessionIndex,
+                    sessionsInPackage: line.sessionsInPackage,
+                  }
+                : undefined;
             return (
               <div key={`${line.serviceId}-${line.packageProgressId}-${index}`} className="flex flex-col gap-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -345,10 +352,13 @@ export default function ClientBookingHistoryCard({
                       {aggregate?.packageName ?? line.name}
                     </p>
                     <p className="mt-1 font-poppins text-sm font-medium text-[#675A82]">
-                      {aggregate?.isOriginSession ? "Package purchase" : "Package session"}
-                      {hasSessionIdentity
-                        ? ` — Session ${line.sessionIndex} of ${line.sessionsInPackage}`
-                        : ""}
+                      {sessionIdentity
+                        ? aggregate?.isOriginSession
+                          ? `Package purchase — Session ${sessionIdentity.sessionIndex} of ${sessionIdentity.sessionsInPackage}`
+                          : formatPackageSessionLabel(sessionIdentity)
+                        : aggregate?.isOriginSession
+                          ? "Package purchase"
+                          : "Package session"}
                     </p>
                   </div>
                   {aggregate && (

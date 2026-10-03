@@ -59,6 +59,12 @@ export interface BookingScheduleDto {
   endAt: string;
 }
 
+export interface BookingPackageSessionIdentity {
+  packageProgressId: string;
+  sessionIndex: number;
+  sessionsInPackage: number;
+}
+
 export interface BookingLocationSnapshotDto {
   city: BusinessCity;
   area: string;
@@ -217,6 +223,7 @@ export interface BookingListItem {
   /** First-vs-returning display only — see booking.dto.ts's own doc comment. Meaningless when
    * `source === "MANUAL"` (always 0); branch on `source` first. */
   platformFeeCents: number;
+  packageSessions: BookingPackageSessionIdentity[];
 }
 
 export interface BookingCalendarEntry {
@@ -231,6 +238,7 @@ export interface BookingCalendarEntry {
   customerName: string;
   totalCents: number;
   currency: string;
+  packageSessions: BookingPackageSessionIdentity[];
   /** Batch 21 — drives whether the calendar "Start No-show" action is offered; the backend
    * re-checks authoritatively. Absent for legacy bookings (no window restriction). */
   noShowEligibilitySnapshot?: {
