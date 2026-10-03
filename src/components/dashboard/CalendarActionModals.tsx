@@ -158,6 +158,8 @@ interface CompleteModalProps {
    * When omitted, that option is hidden and only the manual-amount/no-payment options show. */
   defaultBalanceDueCents?: number;
   currencySymbol?: string;
+  isPackageSession?: boolean;
+  isPackageOrigin?: boolean;
 }
 
 export function CompleteModal({
@@ -166,6 +168,8 @@ export function CompleteModal({
   onConfirm,
   defaultBalanceDueCents,
   currencySymbol = "€",
+  isPackageSession = false,
+  isPackageOrigin = false,
 }: CompleteModalProps) {
   const formattedDefault =
     defaultBalanceDueCents !== undefined ? (defaultBalanceDueCents / 100).toFixed(2) : undefined;
@@ -231,8 +235,18 @@ export function CompleteModal({
 
           {/* Subtext */}
           <p className="w-[329px] font-poppins font-normal text-[14px] leading-[20px] text-[#525252] text-center">
-            If you mark it as yes then customer did show up and take the service from you
+            Confirm that the appointment was completed and record any payment collected at the venue. This records an off-platform payment; it does not charge the customer&apos;s saved card.
           </p>
+          {isPackageOrigin && (
+            <p className="w-[329px] rounded-lg bg-[#F7F4FF] p-3 font-poppins text-[12px] leading-[18px] text-[#675A82] text-center">
+              Remaining package sessions become schedulable only after the package balance is recorded as paid in full. Completing this appointment alone does not unlock them.
+            </p>
+          )}
+          {isPackageSession && !isPackageOrigin && (
+            <p className="w-[329px] rounded-lg bg-[#F7F4FF] p-3 font-poppins text-[12px] leading-[18px] text-[#675A82] text-center">
+              This completes this package appointment only; it does not charge or modify the whole package.
+            </p>
+          )}
         </div>
 
         {/* Inputs */}
@@ -305,7 +319,7 @@ export function CompleteModal({
               Internal note (optional)
             </label>
             <textarea
-              placeholder="Add a private note about this no-show..."
+              placeholder="Add a private note about this completion..."
               value={internalNote}
               onChange={(e) => setInternalNote(e.target.value)}
               className="box-border w-[329px] h-[120px] border border-[#111111]/60 rounded-xl p-3 gap-2.5 font-poppins font-normal text-sm text-[#111111] placeholder-[#111111]/40 focus:outline-none focus:border-green-500 resize-none"
@@ -346,9 +360,15 @@ interface CancelBookingModalProps {
    * content beyond required-non-empty); `internalNote` is optional free text. Matches
    * bookingsApi.cancelByBusiness's own `reason` parameter. */
   onConfirm: (reason: string, internalNote?: string) => void;
+  packageSessionLabel?: string;
 }
 
-export function CancelBookingModal({ isOpen, onClose, onConfirm }: CancelBookingModalProps) {
+export function CancelBookingModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  packageSessionLabel,
+}: CancelBookingModalProps) {
   const [cancelReason, setCancelReason] = useState("Service is not available");
   const [showReasonDropdown, setShowReasonDropdown] = useState(false);
   const [internalNote, setInternalNote] = useState("");
@@ -382,8 +402,13 @@ export function CancelBookingModal({ isOpen, onClose, onConfirm }: CancelBooking
 
           {/* Subtext */}
           <p className="w-[329px] font-poppins font-normal text-[14px] leading-[20px] text-[#525252] text-center">
-            Since you are canceling the booking, customer do not need to pay you anymore
+            This cancels the appointment. Any required refund is processed separately and its settlement may remain pending or fail.
           </p>
+          {packageSessionLabel && (
+            <p className="w-[329px] rounded-lg bg-[#F7F4FF] p-3 font-poppins text-[12px] leading-[18px] text-[#675A82] text-center">
+              {packageSessionLabel}: this cancels only this appointment, not the whole package. A business cancellation restores the session entitlement.
+            </p>
+          )}
         </div>
 
         {/* Inputs */}
@@ -429,7 +454,7 @@ export function CancelBookingModal({ isOpen, onClose, onConfirm }: CancelBooking
               Internal note (optional)
             </label>
             <textarea
-              placeholder="Add a private note about this no-show..."
+              placeholder="Add a private note about this cancellation..."
               value={internalNote}
               onChange={(e) => setInternalNote(e.target.value)}
               className="box-border w-[329px] h-[120px] border border-[#111111]/60 rounded-xl p-3 gap-2.5 font-poppins font-normal text-sm text-[#111111] placeholder-[#111111]/40 focus:outline-none focus:border-red-500 resize-none"

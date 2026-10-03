@@ -226,6 +226,8 @@ function BusinessDashboardContent() {
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.innerWidth < 768) {
+      // Intentional one-time synchronization with the browser viewport after hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsCollapsed(true);
     }
   }, []);
@@ -319,6 +321,7 @@ function BusinessDashboardContent() {
                   booking={bookingDetailQuery.data}
                   businessId={bookingsBusinessId ?? ""}
                   showFooterActions={true}
+                  showOperationalContext={true}
                   onCompleteBooking={() => setShowCompleteModalForBooking(true)}
                   onWaiveFeeClick={() => setShowWaiveFeeModal(true)}
                   onCancelNoShowClick={() => setShowNoShowModal(true)}
@@ -460,6 +463,12 @@ function BusinessDashboardContent() {
         isOpen={showCompleteModalForBooking}
         onClose={() => setShowCompleteModalForBooking(false)}
         defaultBalanceDueCents={bookingDetailQuery.data?.financials.balanceDueCents}
+        isPackageSession={Boolean(
+          bookingDetailQuery.data?.serviceLines.some((line) => line.packageProgressId),
+        )}
+        isPackageOrigin={Boolean(
+          bookingDetailQuery.data?.packageSessions.some((session) => session.isOriginSession),
+        )}
         onConfirm={(venuePayment) => {
           if (bookingsBusinessId && viewingBookingId) {
             completeBookingMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, venuePayment });
@@ -496,6 +505,16 @@ function BusinessDashboardContent() {
       <CancelBookingModal
         isOpen={showCancelBookingModal}
         onClose={() => setShowCancelBookingModal(false)}
+        packageSessionLabel={(() => {
+          const line = bookingDetailQuery.data?.serviceLines.find(
+            (candidate) => candidate.packageProgressId,
+          );
+          return line?.sessionIndex && line.sessionsInPackage
+            ? `Session ${line.sessionIndex} of ${line.sessionsInPackage}`
+            : line
+              ? "Package session"
+              : undefined;
+        })()}
         onConfirm={(reason) => {
           if (bookingsBusinessId && viewingBookingId) {
             cancelByBusinessMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, reason });

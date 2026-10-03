@@ -100,6 +100,32 @@ export interface BookingDetail {
   fulfilment: BookingFulfilmentDto;
   serviceLines: BookingServiceLineDto[];
   financials: BookingFinancialsDto;
+  paymentSummary: {
+    actualOnlinePaidCents: number;
+    originalVenueBalanceCents: number;
+    venuePaidCents: number;
+    outstandingVenueBalanceCents: number;
+    venueSettlementStatus:
+      | "NOT_REQUIRED"
+      | "NOT_RECORDED"
+      | "NOT_PAID"
+      | "PARTIALLY_PAID"
+      | "PAID_IN_FULL";
+  };
+  packageSessions: Array<{
+    serviceId: string;
+    packageName: string;
+    packageProgressId: string;
+    sessionIndex: number;
+    sessionsInPackage: number;
+    isOriginSession: boolean;
+    packageStatus: "ACTIVE" | "AWAITING_BALANCE" | "DEPLETED" | "VOIDED";
+    remainingSessions: number;
+    completedSessions: number;
+    balanceSettled: boolean;
+    outstandingBalanceCents: number;
+    schedulingUnlocked: boolean;
+  }>;
   schedule: BookingScheduleDto;
   customerRescheduleCount: number;
   cancellationOutcome?: {
@@ -123,6 +149,15 @@ export interface BookingDetail {
   /** Set only once the Business has completed the booking and recorded whether the customer
    * paid the remaining balance at the venue — see CompleteModal / bookingsApi.completeBooking. */
   completionPayment?: { paid: boolean; amountCents?: number; recordedAt: string };
+  promo?: {
+    code: string;
+    type: "PERCENTAGE" | "FIXED";
+    value: number;
+    discountCents: number;
+    chargeCents: number;
+    fundingOwner: string;
+    appliedAt: string;
+  };
   /** Both set only by markNoShow, both-or-neither — the authoritative source for any no-show
    * countdown display (never a client-side-only timer; see the backend DTO's own comment). */
   noShowStartedAt?: string;

@@ -43,6 +43,9 @@ interface ClientBookingHistoryCardProps {
   showSummaryDetails?: boolean;
   showNotesDetails?: boolean;
   showFooterActions?: boolean;
+  /** Business Booking Detail-only operational context. Client-history cards keep their existing
+   * density while the dedicated detail view gets persistent payment/package truth. */
+  showOperationalContext?: boolean;
   onCompleteBooking?: () => void;
   /** Fires with a real, chosen ISO `startAt` — the caller is responsible for calling
    * bookingsApi.rescheduleByOwner (never computed/validated here). */
@@ -69,6 +72,50 @@ const formatCountdown = (ms: number): string => {
   return `${String(minutes).padStart(2, "0")} : ${String(seconds).padStart(2, "0")}`;
 };
 
+const VENUE_SETTLEMENT_LABELS: Record<
+  BookingDetail["paymentSummary"]["venueSettlementStatus"],
+  string
+> = {
+  NOT_REQUIRED: "No venue balance required",
+  NOT_RECORDED: "Not yet recorded",
+  NOT_PAID: "Not paid",
+  PARTIALLY_PAID: "Partially paid",
+  PAID_IN_FULL: "Paid in full",
+};
+
+const PACKAGE_STATUS_LABELS: Record<
+  BookingDetail["packageSessions"][number]["packageStatus"],
+  string
+> = {
+  ACTIVE: "Active",
+  AWAITING_BALANCE: "Balance due",
+  DEPLETED: "No sessions remaining",
+  VOIDED: "Voided",
+};
+
+const settlementOutcomeText = (
+  kind: "refund" | "charge",
+  amountCents: number,
+  settlementStatus: NonNullable<BookingDetail["cancellationOutcome"]>["settlementStatus"],
+): string => {
+  const amount = formatBookingMoney(amountCents);
+  const noun = kind === "refund" ? "Refund" : "Cancellation charge";
+  switch (settlementStatus) {
+    case "SUCCEEDED":
+      return kind === "refund"
+        ? `${amount} was refunded to the customer.`
+        : `${amount} was successfully charged.`;
+    case "PENDING":
+      return `${noun} of ${amount} is pending.`;
+    case "FAILED":
+      return `${noun} of ${amount} failed and requires follow-up.`;
+    case "WAIVED":
+      return `${noun} of ${amount} was waived.`;
+    default:
+      return `No ${kind} settlement was required.`;
+  }
+};
+
 export default function ClientBookingHistoryCard({
   booking,
   businessId,
@@ -77,6 +124,7 @@ export default function ClientBookingHistoryCard({
   showSummaryDetails = true,
   showNotesDetails = true,
   showFooterActions = false,
+  showOperationalContext = false,
   onCompleteBooking,
   onReschedule,
   isReschedulePending = false,
@@ -94,6 +142,7 @@ export default function ClientBookingHistoryCard({
   const badge = bookingClientBadge(booking.source, booking.financials.platformFeeCents);
   const isManual = booking.source === "MANUAL";
   const primaryLine = booking.serviceLines[0];
+  const packageLines = booking.serviceLines.filter((line) => line.packageProgressId);
   const staffNames = Array.from(
     new Set(booking.serviceLines.map((line) => line.staffName).filter((n): n is string => Boolean(n))),
   );
@@ -205,6 +254,128 @@ export default function ClientBookingHistoryCard({
         </div>
       )}
 
+      {showOperationalContext && (
+        <div className="bg-white border border-neutral-200/60 rounded-2xl p-6 shadow-sm flex flex-col gap-5 w-full">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-poppins text-xs font-normal text-[#73726D] tracking-[0.075em] uppercase">
+              Payment &amp; settlement
+            </span>
+            <span className="rounded-full bg-[#F5F4EE] px-3 py-1 text-[11px] font-semibold text-[#5F5E5A]">
+              {VENUE_SETTLEMENT_LABELS[booking.paymentSummary.venueSettlementStatus]}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 font-poppins">
+            <OperationalValue
+              label={booking.paymentSummary.actualOnlinePaidCents > 0 ? "Paid online" : "Online payment"}
+              value={
+                booking.paymentSummary.actualOnlinePaidCents > 0
+                  ? formatBookingMoney(booking.paymentSummary.actualOnlinePaidCents)
+                  : "None collected"
+              }
+              detail={booking.promo ? `Promo ${booking.promo.code} applied` : undefined}
+            />
+            <OperationalValue
+              label="Original venue balance"
+              value={formatBookingMoney(booking.paymentSummary.originalVenueBalanceCents)}
+            />
+            <OperationalValue
+              label="Still outstanding"
+              value={formatBookingMoney(booking.paymentSummary.outstandingVenueBalanceCents)}
+              detail={
+                booking.paymentSummary.venuePaidCents > 0
+                  ? `${formatBookingMoney(booking.paymentSummary.venuePaidCents)} recorded at venue`
+                  : undefined
+              }
+            />
+          </div>
+          <p className="font-poppins text-xs leading-relaxed text-[#73726D]">
+            Venue payments are recorded by the business and are collected off-platform. This page does not charge the customer&apos;s saved card.
+          </p>
+          {booking.cancellationOutcome &&
+            (booking.cancellationOutcome.refundOwedCents > 0 || additionalChargeCents > 0) && (
+              <div className="rounded-xl border border-neutral-200 bg-[#F5F4EE] px-4 py-3 font-poppins text-sm text-[#1C1B1C]">
+                <span className="font-semibold">Cancellation settlement: </span>
+                {booking.cancellationOutcome.refundOwedCents > 0
+                  ? settlementOutcomeText(
+                      "refund",
+                      booking.cancellationOutcome.refundOwedCents,
+                      booking.cancellationOutcome.settlementStatus,
+                    )
+                  : settlementOutcomeText(
+                      "charge",
+                      additionalChargeCents,
+                      booking.cancellationOutcome.settlementStatus,
+                    )}
+              </div>
+            )}
+        </div>
+      )}
+
+      {showOperationalContext && packageLines.length > 0 && (
+        <div className="bg-[#F7F4FF] border border-[#DDD2F7] rounded-2xl p-6 shadow-sm flex flex-col gap-5 w-full">
+          <span className="font-poppins text-xs font-normal text-[#675A82] tracking-[0.075em] uppercase">
+            Package context
+          </span>
+          {packageLines.map((line, index) => {
+            const aggregate = booking.packageSessions.find(
+              (session) =>
+                session.packageProgressId === line.packageProgressId &&
+                session.serviceId === line.serviceId,
+            );
+            const hasSessionIdentity = Boolean(line.sessionIndex && line.sessionsInPackage);
+            return (
+              <div key={`${line.serviceId}-${line.packageProgressId}-${index}`} className="flex flex-col gap-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-poppins text-base font-semibold text-[#1C1B1C]">
+                      {aggregate?.packageName ?? line.name}
+                    </p>
+                    <p className="mt-1 font-poppins text-sm font-medium text-[#675A82]">
+                      {aggregate?.isOriginSession ? "Package purchase" : "Package session"}
+                      {hasSessionIdentity
+                        ? ` — Session ${line.sessionIndex} of ${line.sessionsInPackage}`
+                        : ""}
+                    </p>
+                  </div>
+                  {aggregate && (
+                    <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-[#675A82]">
+                      {PACKAGE_STATUS_LABELS[aggregate.packageStatus]}
+                    </span>
+                  )}
+                </div>
+                {aggregate ? (
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 font-poppins">
+                    <OperationalValue label="Remaining sessions" value={String(aggregate.remainingSessions)} />
+                    <OperationalValue label="Completed" value={String(aggregate.completedSessions)} />
+                    <OperationalValue
+                      label="Package balance"
+                      value={
+                        aggregate.balanceSettled
+                          ? "Paid in full"
+                          : `${formatBookingMoney(aggregate.outstandingBalanceCents)} outstanding`
+                      }
+                    />
+                    <OperationalValue
+                      label="Future scheduling"
+                      value={aggregate.schedulingUnlocked ? "Unlocked" : "Locked"}
+                      detail={
+                        aggregate.packageStatus === "AWAITING_BALANCE"
+                          ? "Unlocks when the package balance is recorded as paid in full"
+                          : undefined
+                      }
+                    />
+                  </div>
+                ) : (
+                  <p className="font-poppins text-xs text-[#675A82]">
+                    Package aggregate details are unavailable. Session identity is shown only from this booking&apos;s historical service line.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* 2.5 ADDRESS GRID CARD */}
       {travelAddress && (
         <div className="bg-white border border-neutral-200/60 rounded-2xl p-6 flex flex-col gap-5 w-full shadow-sm">
@@ -282,21 +453,21 @@ export default function ClientBookingHistoryCard({
       ) : status === "CANCELLED_BY_BUSINESS" ? (
         <StatusNote>
           {booking.cancellationOutcome?.refundOwedCents
-            ? `This booking was cancelled by the business. ${formatBookingMoney(booking.cancellationOutcome.refundOwedCents)} has been refunded to the customer (settlement: ${(booking.cancellationOutcome.settlementStatus ?? "PENDING").toLowerCase()}).`
-            : "This booking was cancelled by the business. No deposit was held, so no refund was due."}
+            ? `This booking was cancelled by the business. ${settlementOutcomeText("refund", booking.cancellationOutcome.refundOwedCents, booking.cancellationOutcome.settlementStatus)}`
+            : "This booking was cancelled by the business. No refund settlement was required."}
         </StatusNote>
       ) : status === "LATE_CANCELLATION" ? (
         <StatusNote>
           This booking was cancelled by the customer outside the free cancellation window
           {booking.cancellationOutcome?.feePercentage !== undefined && ` — a ${booking.cancellationOutcome.feePercentage}% late-cancellation fee applied`}.{" "}
           {additionalChargeCents > 0
-            ? `${formatBookingMoney(additionalChargeCents)} was charged (settlement: ${(booking.cancellationOutcome?.settlementStatus ?? "PENDING").toLowerCase()}).`
+            ? settlementOutcomeText("charge", additionalChargeCents, booking.cancellationOutcome?.settlementStatus ?? "PENDING")
             : "The already-collected deposit fully covered the fee — no additional charge was made."}
         </StatusNote>
       ) : status === "CANCELLED_BY_CUSTOMER" ? (
         <StatusNote>
-          This booking was cancelled by the customer within the free cancellation window. No fee
-          was charged.
+          This booking was cancelled by the customer within the free cancellation window. No
+          additional cancellation fee was charged.
         </StatusNote>
       ) : status === "NO_SHOW_CANCELLED" ? (
         <StatusNote>
@@ -421,33 +592,13 @@ export default function ClientBookingHistoryCard({
                   <span>{formatBookingMoney(booking.financials.totalCents)}</span>
                 </div>
 
-                <div className="bg-[#F5F4EE] rounded-xl p-4 flex flex-col gap-5">
-                  <div className="flex justify-between items-center font-poppins text-sm text-[#1C1B1C]">
-                    <span>{isManual ? "Amount" : "Deposited"}</span>
-                    <span className="font-semibold text-2xl">
-                      {isManual ? formatBookingMoney(booking.financials.totalCents) : formatBookingMoney(booking.financials.depositCents)}
-                    </span>
+                {isManual && (
+                  <div className="bg-[#F5F4EE] rounded-xl p-4 flex justify-between items-center font-poppins text-sm text-[#1C1B1C]">
+                    <span>Booking amount</span>
+                    <span className="font-semibold text-2xl">{formatBookingMoney(booking.financials.totalCents)}</span>
                   </div>
-                  {!isManual && (
-                    <>
-                      <div className="border-t border-[#757575]/20 w-full" />
-                      <div className="flex justify-between items-center font-poppins text-[#1C1B1C]">
-                        <span className="text-sm font-medium">Remaining balance due at appointment</span>
-                        <span className="font-semibold text-2xl text-[#1C1B1C]">
-                          {formatBookingMoney(booking.financials.balanceDueCents)}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                </div>
+                )}
               </div>
-
-              {booking.completionPayment && (
-                <div className="flex justify-between items-center bg-[#EEF5F0] rounded-xl px-4 py-3 text-sm font-semibold text-[#297A5E] font-poppins mt-2">
-                  <span>{booking.completionPayment.paid ? "Paid at venue" : "Not paid at venue"}</span>
-                  <span>{booking.completionPayment.amountCents !== undefined ? formatBookingMoney(booking.completionPayment.amountCents) : "—"}</span>
-                </div>
-              )}
 
               {booking.cancellationOutcome && booking.cancellationOutcome.cancellationFeeCents > 0 && (
                 <div className="flex flex-col gap-2 bg-[#EEF5F0] rounded-xl px-4 py-3 text-sm font-semibold font-poppins mt-2">
@@ -499,27 +650,27 @@ export default function ClientBookingHistoryCard({
       )}
 
       {showFooterActions && (status === "UPCOMING" || status === "PENDING") && (
-        <div className="flex justify-end gap-3 mt-4 w-full select-none">
+        <div className="mt-4 flex w-full flex-col items-stretch gap-3 select-none lg:flex-row lg:items-center lg:justify-end">
           {status === "UPCOMING" && (
             <button
               onClick={onCancelBooking}
-              className="h-[40px] px-6 rounded-lg border border-[#D44343] text-[#D44343] hover:bg-[#FFF0F0] text-xs font-semibold font-poppins shadow-sm"
+              className="h-[40px] w-full whitespace-nowrap rounded-lg border border-[#D44343] px-6 text-xs font-semibold font-poppins text-[#D44343] shadow-sm hover:bg-[#FFF0F0] lg:w-auto"
             >
-              Cancel Booking
+              {packageLines.length > 0 ? "Cancel package session" : "Cancel Booking"}
             </button>
           )}
           <button
             onClick={() => setIsRescheduling(true)}
-            className="h-[40px] px-6 rounded-lg bg-[#111111] hover:bg-neutral-800 text-white text-xs font-semibold font-poppins shadow-sm"
+            className="h-[40px] w-full whitespace-nowrap rounded-lg bg-[#111111] px-6 text-xs font-semibold font-poppins text-white shadow-sm hover:bg-neutral-800 lg:w-auto"
           >
-            Reschedule
+            {packageLines.length > 0 ? "Reschedule package session" : "Reschedule"}
           </button>
           {status === "UPCOMING" && (
             <button
               onClick={onCompleteBooking}
-              className="h-[40px] px-6 rounded-lg bg-[#12B76A] hover:bg-[#0F9F5C] text-white text-xs font-semibold font-poppins shadow-sm"
+              className="h-[40px] w-full whitespace-nowrap rounded-lg bg-[#12B76A] px-6 text-xs font-semibold font-poppins text-white shadow-sm hover:bg-[#0F9F5C] lg:w-auto"
             >
-              Complete Booking
+              {packageLines.length > 0 ? "Complete package session" : "Complete Booking"}
             </button>
           )}
         </div>
@@ -554,6 +705,22 @@ const StatusNote = ({ children }: { children: React.ReactNode }) => (
     <div className="border-l-4 border-[#B4B3AF] bg-[#F5F4EE] p-4 rounded-r-lg text-sm font-medium text-[#111111] leading-relaxed">
       {children}
     </div>
+  </div>
+);
+
+const OperationalValue = ({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+}) => (
+  <div className="rounded-xl bg-white/80 p-4">
+    <p className="text-[10px] font-semibold uppercase tracking-wider text-[#73726D]">{label}</p>
+    <p className="mt-1 text-base font-semibold text-[#1C1B1C]">{value}</p>
+    {detail && <p className="mt-1 text-[11px] leading-relaxed text-[#73726D]">{detail}</p>}
   </div>
 );
 
