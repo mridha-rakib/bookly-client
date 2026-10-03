@@ -146,7 +146,9 @@ export default function ClientBookingHistoryCard({
   const staffNames = Array.from(
     new Set(booking.serviceLines.map((line) => line.staffName).filter((n): n is string => Boolean(n))),
   );
-  const travelAddress = booking.fulfilment.mode === "TRAVEL_TO_CUSTOMER" ? booking.fulfilment.travelAddress : undefined;
+  const isTravelToCustomer = booking.fulfilment.mode === "TRAVEL_TO_CUSTOMER";
+  const travelAddress = isTravelToCustomer ? booking.fulfilment.travelAddress : undefined;
+  const additionalDirections = travelAddress?.additionalDirections?.trim();
 
   // --- Live no-show countdown, derived from the backend's own authoritative deadline ---------
   const [now, setNow] = useState(() => Date.now());
@@ -216,12 +218,15 @@ export default function ClientBookingHistoryCard({
       {/* 2. DATE & TIME CARD */}
       {showDateTimeDetails && (
         <div className="bg-white border border-neutral-200/60 rounded-2xl p-6 shadow-sm flex flex-col gap-5 w-full">
+          <span className="font-poppins text-xs font-normal text-[#73726D] tracking-[0.075em] uppercase">
+            Appointment
+          </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 bg-[#F5F4EE] rounded-xl flex items-center justify-center shrink-0">
                 <HugeiconsIcon icon={Calendar01Icon} className="w-5 h-5 text-neutral-600" />
               </div>
-              <div className="flex flex-col">
+              <div className="flex flex-col min-w-0">
                 <span className="font-poppins text-[10px] text-neutral-400 uppercase tracking-wider">Date</span>
                 <span className="font-poppins text-base font-semibold text-[#111111] mt-0.5">
                   {formatBookingDate(booking.schedule.startAt, booking.schedule.timezone)}
@@ -232,7 +237,7 @@ export default function ClientBookingHistoryCard({
               <div className="w-10 h-10 bg-[#F5F4EE] rounded-xl flex items-center justify-center shrink-0">
                 <HugeiconsIcon icon={Clock01Icon} className="w-5 h-5 text-neutral-600" />
               </div>
-              <div className="flex flex-col">
+              <div className="flex flex-col min-w-0">
                 <span className="font-poppins text-[10px] text-neutral-400 uppercase tracking-wider">Time</span>
                 <span className="font-poppins text-base font-semibold text-[#111111] mt-0.5">
                   {formatBookingTimeRange(booking.schedule)}
@@ -241,11 +246,11 @@ export default function ClientBookingHistoryCard({
             </div>
           </div>
           {staffNames.length > 0 && (
-            <div className="flex items-center gap-2 text-xs text-neutral-400 font-poppins ml-1">
+            <div className="flex items-center gap-2 text-xs text-neutral-500 font-poppins min-w-0">
               <div className="w-6 h-6 rounded-full bg-neutral-200 flex items-center justify-center text-[10px] font-bold text-neutral-600 shrink-0">
                 {staffNames[0]?.charAt(0)}
               </div>
-              <span>
+              <span className="break-words">
                 with {staffNames.join(", ")}
                 {booking.customerRescheduleCount > 0 && ` • Reschedule ${booking.customerRescheduleCount} of 2`}
               </span>
@@ -264,7 +269,7 @@ export default function ClientBookingHistoryCard({
               {VENUE_SETTLEMENT_LABELS[booking.paymentSummary.venueSettlementStatus]}
             </span>
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 font-poppins">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 font-poppins">
             <OperationalValue
               label={booking.paymentSummary.actualOnlinePaidCents > 0 ? "Paid online" : "Online payment"}
               value={
@@ -273,20 +278,29 @@ export default function ClientBookingHistoryCard({
                   : "None collected"
               }
               detail={booking.promo ? `Promo ${booking.promo.code} applied` : undefined}
-            />
-            <OperationalValue
-              label="Original venue balance"
-              value={formatBookingMoney(booking.paymentSummary.originalVenueBalanceCents)}
+              emphasized
             />
             <OperationalValue
               label="Still outstanding"
               value={formatBookingMoney(booking.paymentSummary.outstandingVenueBalanceCents)}
-              detail={
-                booking.paymentSummary.venuePaidCents > 0
-                  ? `${formatBookingMoney(booking.paymentSummary.venuePaidCents)} recorded at venue`
-                  : undefined
-              }
+              emphasized
             />
+          </div>
+          <div className="flex flex-wrap gap-x-6 gap-y-2 font-poppins text-xs text-[#73726D]">
+            <span>
+              Original venue balance: {" "}
+              <strong className="font-semibold text-[#1C1B1C]">
+                {formatBookingMoney(booking.paymentSummary.originalVenueBalanceCents)}
+              </strong>
+            </span>
+            {booking.paymentSummary.venuePaidCents > 0 && (
+              <span>
+                Recorded at venue: {" "}
+                <strong className="font-semibold text-[#1C1B1C]">
+                  {formatBookingMoney(booking.paymentSummary.venuePaidCents)}
+                </strong>
+              </span>
+            )}
           </div>
           <p className="font-poppins text-xs leading-relaxed text-[#73726D]">
             Venue payments are recorded by the business and are collected off-platform. This page does not charge the customer&apos;s saved card.
@@ -376,72 +390,52 @@ export default function ClientBookingHistoryCard({
         </div>
       )}
 
-      {/* 2.5 ADDRESS GRID CARD */}
-      {travelAddress && (
-        <div className="bg-white border border-neutral-200/60 rounded-2xl p-6 flex flex-col gap-5 w-full shadow-sm">
+      {/* 2.5 SERVICE LOCATION */}
+      <div className="bg-white border border-neutral-200/60 rounded-2xl p-6 flex flex-col gap-5 w-full shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="font-poppins text-xs font-normal text-[#73726D] tracking-[0.075em] uppercase">
-            Address
+            Service location
           </span>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 font-poppins">
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[10px] font-semibold text-[#73726D] uppercase tracking-wider">City</span>
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#111111]">
-                <HugeiconsIcon icon={Location05Icon} className="w-5 h-5 text-neutral-500 shrink-0" />
-                <span>{travelAddress.city}</span>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[10px] font-semibold text-[#73726D] uppercase tracking-wider">Property Type</span>
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#111111]">
-                <HugeiconsIcon icon={Building06Icon} className="w-5 h-5 text-neutral-500 shrink-0" />
-                <span>{travelAddress.propertyType}</span>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[10px] font-semibold text-[#73726D] uppercase tracking-wider">Area/Neighbourhood</span>
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#111111]">
-                <HugeiconsIcon icon={SentIcon} className="w-5 h-5 text-neutral-500 shrink-0" />
-                <span>{travelAddress.area}</span>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[10px] font-semibold text-[#73726D] uppercase tracking-wider">Street Name</span>
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#111111]">
-                <HugeiconsIcon icon={Route01Icon} className="w-5 h-5 text-neutral-500 shrink-0" />
-                <span>{travelAddress.streetName}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-6 font-poppins mt-2">
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[10px] font-semibold text-[#73726D] uppercase tracking-wider">Street Number</span>
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#111111]">
-                <HugeiconsIcon icon={Home03Icon} className="w-5 h-5 text-neutral-500 shrink-0" />
-                <span>{travelAddress.streetNumber}</span>
-              </div>
-            </div>
-            {travelAddress.floorUnit && (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-semibold text-[#73726D] uppercase tracking-wider">Floor/Unit</span>
-                <div className="flex items-center gap-2 text-sm font-semibold text-[#111111]">
-                  <HugeiconsIcon icon={Layers01Icon} className="w-5 h-5 text-neutral-500 shrink-0" />
-                  <span>{travelAddress.floorUnit}</span>
-                </div>
-              </div>
-            )}
-            {travelAddress.aptRoom && (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-semibold text-[#73726D] uppercase tracking-wider">Apt/Room No.</span>
-                <div className="flex items-center gap-2 text-sm font-semibold text-[#111111]">
-                  <HugeiconsIcon icon={PinIcon} className="w-5 h-5 text-neutral-500 shrink-0" />
-                  <span>{travelAddress.aptRoom}</span>
-                </div>
-              </div>
-            )}
-          </div>
+          <span className="rounded-full bg-[#F5F4EE] px-3 py-1 text-[11px] font-semibold text-[#5F5E5A]">
+            {isTravelToCustomer ? "Travel to customer" : "At business location"}
+          </span>
         </div>
-      )}
+
+        {isTravelToCustomer && travelAddress ? (
+          <>
+            <div className="grid grid-cols-1 gap-x-6 gap-y-5 font-poppins sm:grid-cols-2 lg:grid-cols-4">
+              <LocationValue icon={Location05Icon} label="City" value={travelAddress.city} />
+              <LocationValue icon={Building06Icon} label="Property type" value={travelAddress.propertyType} />
+              <LocationValue icon={SentIcon} label="Area / neighbourhood" value={travelAddress.area} />
+              <LocationValue icon={Route01Icon} label="Street" value={travelAddress.streetName} />
+              <LocationValue icon={Home03Icon} label="Building / number" value={travelAddress.streetNumber} />
+              {travelAddress.floorUnit && <LocationValue icon={Layers01Icon} label="Floor / unit" value={travelAddress.floorUnit} />}
+              {travelAddress.aptRoom && <LocationValue icon={PinIcon} label="Apartment / room" value={travelAddress.aptRoom} />}
+            </div>
+            {additionalDirections && (
+              <div className="rounded-xl bg-[#F5F4EE] p-4 font-poppins">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[#73726D]">
+                  Additional directions
+                </p>
+                <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-relaxed text-[#1C1B1C]">
+                  {additionalDirections}
+                </p>
+              </div>
+            )}
+          </>
+        ) : isTravelToCustomer ? (
+          <p className="font-poppins text-sm text-[#73726D]">
+            Customer destination was not recorded with this booking.
+          </p>
+        ) : (
+          <div className="flex items-center gap-3 font-poppins text-sm text-[#1C1B1C]">
+            <div className="w-10 h-10 bg-[#F5F4EE] rounded-xl flex items-center justify-center shrink-0">
+              <HugeiconsIcon icon={Building06Icon} className="w-5 h-5 text-neutral-600" />
+            </div>
+            <span>This appointment takes place at the business location.</span>
+          </div>
+        )}
+      </div>
 
       {/* 3. STATUS LOG EXPLANATION — driven entirely by real cancellationOutcome/completionPayment
           fields, never a hardcoded per-booking-id special case. */}
@@ -712,15 +706,35 @@ const OperationalValue = ({
   label,
   value,
   detail,
+  emphasized = false,
 }: {
   label: string;
   value: string;
   detail?: string;
+  emphasized?: boolean;
 }) => (
-  <div className="rounded-xl bg-white/80 p-4">
+  <div className={`rounded-xl p-4 ${emphasized ? "bg-[#F5F4EE]" : "bg-white/80"}`}>
     <p className="text-[10px] font-semibold uppercase tracking-wider text-[#73726D]">{label}</p>
     <p className="mt-1 text-base font-semibold text-[#1C1B1C]">{value}</p>
     {detail && <p className="mt-1 text-[11px] leading-relaxed text-[#73726D]">{detail}</p>}
+  </div>
+);
+
+const LocationValue = ({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentProps<typeof HugeiconsIcon>["icon"];
+  label: string;
+  value: string;
+}) => (
+  <div className="flex min-w-0 flex-col gap-1.5">
+    <span className="text-[10px] font-semibold text-[#73726D] uppercase tracking-wider">{label}</span>
+    <div className="flex min-w-0 items-start gap-2 text-sm font-semibold text-[#111111]">
+      <HugeiconsIcon icon={icon} className="w-5 h-5 text-neutral-500 shrink-0" />
+      <span className="break-words">{value}</span>
+    </div>
   </div>
 );
 
