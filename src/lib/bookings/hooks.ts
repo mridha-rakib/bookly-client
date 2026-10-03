@@ -108,7 +108,18 @@ const onBookingMutated = (
   businessId: string,
   booking: BookingDetail,
 ) => {
-  queryClient.setQueryData(bookingKeys.detail(businessId, booking.id), booking);
+  queryClient.setQueryData<BookingDetail>(
+    bookingKeys.detail(businessId, booking.id),
+    (previous) => ({
+      ...booking,
+      packageSessions: booking.packageSessions.length
+        ? booking.packageSessions
+        : (previous?.packageSessions ?? []),
+    }),
+  );
+  // Lifecycle mutation DTOs remain generic; refresh this Business-only detail read so package
+  // counters and the origin-balance scheduling gate are immediately re-enriched.
+  void queryClient.invalidateQueries({ queryKey: bookingKeys.detail(businessId, booking.id) });
   invalidateBookingCaches(queryClient, businessId);
 };
 

@@ -165,6 +165,7 @@ export default function SupervisorDashboard() {
                   booking={bookingDetailQuery.data}
                   businessId={bookingsBusinessId ?? ""}
                   showFooterActions={true}
+                  showOperationalContext={true}
                   onCompleteBooking={() => setShowCompleteModalForBooking(true)}
                   onWaiveFeeClick={() => setShowWaiveFeeModal(true)}
                   onCancelNoShowClick={() => setShowNoShowModal(true)}
@@ -241,6 +242,12 @@ export default function SupervisorDashboard() {
         isOpen={showCompleteModalForBooking}
         onClose={() => setShowCompleteModalForBooking(false)}
         defaultBalanceDueCents={bookingDetailQuery.data?.financials.balanceDueCents}
+        isPackageSession={Boolean(
+          bookingDetailQuery.data?.serviceLines.some((line) => line.packageProgressId),
+        )}
+        isPackageOrigin={Boolean(
+          bookingDetailQuery.data?.packageSessions.some((session) => session.isOriginSession),
+        )}
         onConfirm={(venuePayment) => {
           if (bookingsBusinessId && viewingBookingId) {
             completeBookingMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, venuePayment });
@@ -275,6 +282,16 @@ export default function SupervisorDashboard() {
       <CancelBookingModal
         isOpen={showCancelBookingModal}
         onClose={() => setShowCancelBookingModal(false)}
+        packageSessionLabel={(() => {
+          const line = bookingDetailQuery.data?.serviceLines.find(
+            (candidate) => candidate.packageProgressId,
+          );
+          return line?.sessionIndex && line.sessionsInPackage
+            ? `Session ${line.sessionIndex} of ${line.sessionsInPackage}`
+            : line
+              ? "Package session"
+              : undefined;
+        })()}
         onConfirm={(reason) => {
           if (bookingsBusinessId && viewingBookingId) {
             cancelByBusinessMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, reason });
