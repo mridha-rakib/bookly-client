@@ -20,7 +20,7 @@ import {
 
 import { useBusinessBookingsQuery } from "@/lib/bookings/hooks";
 import type { BookingStatus } from "@/lib/api/bookings";
-import { BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingDate, formatBookingMoney, formatBookingTime } from "@/lib/bookings/format";
+import { BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingDate, formatBookingMoney, formatBookingTime, formatPackageSessionLabel } from "@/lib/bookings/format";
 
 interface ClientDetailsProps {
   /** Real backend ids (Batch 6) — power the History tab's real booking list via
@@ -344,6 +344,14 @@ export default function ClientDetails({
                         <span className="font-poppins text-[11px] text-[#666666]">
                           {formatBookingDate(booking.schedule.startAt, booking.schedule.timezone)} · {formatBookingTime(booking.schedule.startAt, booking.schedule.timezone)} · {booking.primaryServiceName}
                         </span>
+                        {booking.packageSessions.map((session, index) => (
+                          <span
+                            key={`${session.packageProgressId}-${session.sessionIndex}-${index}`}
+                            className="font-poppins text-[11px] font-medium text-[#3760B7]"
+                          >
+                            {formatPackageSessionLabel(session)}
+                          </span>
+                        ))}
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
                         <span className="font-poppins text-xs font-semibold text-[#111111]">{formatBookingMoney(booking.totalCents)}</span>

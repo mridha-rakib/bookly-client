@@ -1,4 +1,8 @@
-import type { BookingSource, BookingStatus } from "@/lib/api/bookings";
+import type {
+  BookingPackageSessionIdentity,
+  BookingSource,
+  BookingStatus,
+} from "@/lib/api/bookings";
 import { formatTime12Hour } from "@/lib/staff/format";
 
 /** ONE canonical "Get Directions"/"Open in maps" destination builder — always the Booking's OWN
@@ -19,6 +23,14 @@ export const buildBookingDirectionsUrl = (destination: {
 
 /** Integer-cents formatter — same convention as lib/services/format.ts's formatEuro. */
 export const formatBookingMoney = (cents: number): string => `€${(cents / 100).toFixed(2)}`;
+
+export const formatPackageSessionLabel = (
+  session: Pick<BookingPackageSessionIdentity, "sessionIndex" | "sessionsInPackage">,
+): string => `Package session ${session.sessionIndex} of ${session.sessionsInPackage}`;
+
+export const formatCompactPackageSessionLabel = (
+  session: Pick<BookingPackageSessionIdentity, "sessionIndex" | "sessionsInPackage">,
+): string => `Package ${session.sessionIndex}/${session.sessionsInPackage}`;
 
 /** ONE canonical label per status — the single source of truth every Booking screen should
  * read from instead of inventing its own copy (see DashboardBookingsList.tsx's current mix of

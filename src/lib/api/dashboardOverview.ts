@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
+import type { BookingPackageSessionIdentity } from "@/lib/api/bookings";
 
 /**
  * Matches api/src/modules/dashboard-overview/dashboard-overview.dto.ts exactly. Replaces the
@@ -22,6 +23,7 @@ export interface DashboardOverviewScheduleRow {
   remainingFeeCents: number;
   staffName: string;
   leadType: DashboardOverviewLeadType;
+  packageSessions: BookingPackageSessionIdentity[];
 }
 
 export interface DashboardOverviewTimelineEntry {
@@ -30,6 +32,7 @@ export interface DashboardOverviewTimelineEntry {
   customerName: string;
   detail: string;
   durationMin: number;
+  packageSessions: BookingPackageSessionIdentity[];
 }
 
 export type DashboardOverviewActivityType =
