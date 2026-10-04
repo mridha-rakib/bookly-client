@@ -2113,10 +2113,20 @@ function VenueDetailsContent() {
                 <TimeStep
                   timezone={catalogQuery.data?.business.timezone ?? "UTC"}
                   visibleMonth={visibleMonth}
-                  onPrevMonth={() => setVisibleMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
-                  onNextMonth={() => setVisibleMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
+                  onPrevMonth={() => {
+                    setSelectedDateIso(undefined);
+                    setSelectedSlot(undefined);
+                    setVisibleMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+                  }}
+                  onNextMonth={() => {
+                    setSelectedDateIso(undefined);
+                    setSelectedSlot(undefined);
+                    setVisibleMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+                  }}
                   availability={availabilityQuery.data}
                   isLoading={availabilityQuery.isLoading}
+                  isError={availabilityQuery.isError}
+                  onRetry={() => void availabilityQuery.refetch()}
                   selectedDateIso={selectedDateIso}
                   onSelectDate={(dateIso) => {
                     setSelectedDateIso(dateIso);

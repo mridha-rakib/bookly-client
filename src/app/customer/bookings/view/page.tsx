@@ -180,17 +180,28 @@ function BookingViewContent() {
 
               <div className="flex flex-col gap-4">
                 {booking.serviceLines.map((line) => (
-                  <div key={line.serviceId} className="flex justify-between items-start gap-4">
-                    <div className="flex flex-col gap-1">
-                      <span className="font-semibold text-base text-[#1C1B1C]">{line.name}</span>
-                      <span className="text-sm text-[#4E5F78]">
-                        {line.durationMin} min
-                        {line.addons.length > 0 ? ` • ${line.addons.map((a) => a.name).join(" • ")}` : ""}
+                  <div key={line.serviceId} className="flex flex-col gap-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex flex-col gap-1">
+                        <span className="font-semibold text-base text-[#1C1B1C]">{line.name}</span>
+                        <span className="text-sm text-[#4E5F78]">{line.durationMin} min</span>
+                      </div>
+                      <span className="shrink-0 font-semibold text-base text-[#1C1B1C]">
+                        {formatBookingMoney(line.amountCents)}
                       </span>
                     </div>
-                    <span className="font-semibold text-base text-[#1C1B1C]">
-                      {formatBookingMoney(line.amountCents + line.addons.reduce((sum, a) => sum + a.priceCents, 0))}
-                    </span>
+
+                    {line.addons.map((addon) => (
+                      <div
+                        key={addon.addonId}
+                        className="flex items-center justify-between gap-4 pl-3 text-sm"
+                      >
+                        <span className="text-[#4E5F78]">Add-on · {addon.name}</span>
+                        <span className="shrink-0 font-medium text-[#1C1B1C]">
+                          {formatBookingMoney(addon.priceCents)}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 ))}
 
@@ -217,22 +228,42 @@ function BookingViewContent() {
 
                 <hr className="border-t border-[#757575] w-full my-1" />
 
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold text-base text-[#1C1B1C]">Subtotal</span>
+                {booking.financials.serviceDiscountCents > 0 ? (
+                  <div className="flex items-center justify-between gap-4 text-sm text-[#1F8900]">
+                    <span>Service discount</span>
+                    <span className="shrink-0 font-semibold">
+                      −{formatBookingMoney(booking.financials.serviceDiscountCents)}
+                    </span>
+                  </div>
+                ) : null}
+
+                {booking.financials.travelFeeCents > 0 ? (
+                  <div className="flex items-center justify-between gap-4 text-sm">
+                    <span className="text-[#4E5F78]">Travel fee</span>
+                    <span className="shrink-0 font-semibold text-[#1C1B1C]">
+                      {formatBookingMoney(booking.financials.travelFeeCents)}
+                    </span>
+                  </div>
+                ) : null}
+
+                <div className="flex items-center justify-between gap-4">
                   <span className="font-semibold text-base text-[#1C1B1C]">
-                    {formatBookingMoney(booking.financials.servicesSubtotalCents + booking.financials.addonsSubtotalCents)}
+                    {packageLine ? "Total purchase amount" : "Total appointment amount"}
+                  </span>
+                  <span className="shrink-0 font-bold text-lg text-[#1C1B1C]">
+                    {formatBookingMoney(booking.financials.totalCents)}
                   </span>
                 </div>
 
                 <div className="w-full bg-[#F5F4EE] rounded-lg p-4 flex justify-between items-center text-sm font-medium">
                   <span className="text-[#1C1B1C]">
-                    {bookingClientBadge(booking.source, booking.financials.platformFeeCents) === "New" ? "Platform fee (charged now)" : "Deposit"}
+                    Deposit paid online
                   </span>
                   <span className="text-[#1C1B1C] font-semibold">{formatBookingMoney(booking.financials.depositCents)}</span>
                 </div>
 
                 <div className="w-full bg-[#F5F4EE] rounded-lg p-4 flex justify-between items-center text-sm font-medium">
-                  <span className="text-[#1C1B1C]">Remaining balance due at appointment</span>
+                  <span className="text-[#1C1B1C]">Remaining purchase balance due at venue</span>
                   <span className="text-[#1C1B1C] font-bold text-lg">{formatBookingMoney(booking.financials.balanceDueCents)}</span>
                 </div>
               </div>

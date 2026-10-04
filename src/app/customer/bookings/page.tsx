@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { Suspense, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import SearchBar from "@/components/landing-page/SearchBar";
@@ -12,21 +13,36 @@ import { CUSTOMER_BOOKING_TAB_STATUSES, formatBookingMoney, type CustomerBooking
 import { toUserMessage } from "@/lib/auth/messages";
 import BookingCard from "./BookingCard";
 import RescheduleModal from "./RescheduleModal";
+import CustomerPackagesList from "../packages/CustomerPackagesList";
 
 export default function BookingsPage() {
   return (
     <RequireCustomer>
-      <BookingsPageContent />
+      <Suspense fallback={<div className="min-h-screen bg-[#FDFBF9]" />}>
+        <BookingsPageContent />
+      </Suspense>
     </RequireCustomer>
   );
 }
 
 function BookingsPageContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const logout = useAuthStore((state) => state.logout);
   const isLoggedIn = true;
 
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
   const [activeTab, setActiveTab] = useState<CustomerBookingTab>("upcoming");
+  const activeView = searchParams.get("view") === "packages" ? "packages" : "appointments";
+
+  const setActiveView = (view: "appointments" | "packages") => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (view === "packages") params.set("view", "packages");
+    else params.delete("view");
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname);
+  };
 
   const bookingsQuery = useCustomerBookingsQuery({
     status: CUSTOMER_BOOKING_TAB_STATUSES[activeTab],
@@ -78,53 +94,82 @@ function BookingsPageContent() {
             <h1 className="font-manrope font-bold text-[30px] leading-[36px] tracking-[-0.75px] text-[#020305] flex items-center">
               My Bookings
             </h1>
+
+            <div
+              role="tablist"
+              aria-label="Booking area"
+              className="grid w-full grid-cols-2 rounded-xl bg-[#F1EFEC] p-1 sm:w-auto sm:min-w-[360px]"
+            >
+              {(["appointments", "packages"] as const).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeView === view}
+                  onClick={() => setActiveView(view)}
+                  className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors sm:px-6 ${
+                    activeView === view
+                      ? "bg-white text-[#020305] shadow-sm"
+                      : "text-[#5F5E5A] hover:text-[#020305]"
+                  }`}
+                >
+                  {view === "appointments" ? "Appointments" : "Packages"}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="flex flex-row items-start p-0 gap-8 w-full border-b border-[#C6C6CB]">
-            {(["upcoming", "completed", "noshow", "canceled"] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`flex flex-col justify-center items-center pb-3 border-b-2 cursor-pointer transition-all duration-200 w-auto px-1 whitespace-nowrap ${
-                  activeTab === tab
-                    ? "border-[#020305] text-[#020305]"
-                    : "border-transparent text-[#45474B] hover:text-[#020305]"
-                }`}
-              >
-                <span className={`font-manrope text-base leading-6 flex items-center text-center ${activeTab === tab ? "font-bold" : "font-normal"}`}>
-                  {tab === "upcoming" ? "Upcoming" : tab === "completed" ? "Completed" : tab === "noshow" ? "No-show" : "Canceled"}
-                </span>
-              </button>
-            ))}
-          </div>
+          {activeView === "appointments" ? (
+            <>
+              <div className="flex w-full items-start gap-5 overflow-x-auto border-b border-[#C6C6CB] sm:gap-8">
+                {(["upcoming", "completed", "noshow", "canceled"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`flex w-auto cursor-pointer flex-col items-center justify-center whitespace-nowrap border-b-2 px-1 pb-3 transition-all duration-200 ${
+                      activeTab === tab
+                        ? "border-[#020305] text-[#020305]"
+                        : "border-transparent text-[#45474B] hover:text-[#020305]"
+                    }`}
+                  >
+                    <span className={`flex items-center text-center font-manrope text-sm leading-6 sm:text-base ${activeTab === tab ? "font-bold" : "font-normal"}`}>
+                      {tab === "upcoming" ? "Upcoming" : tab === "completed" ? "Completed" : tab === "noshow" ? "No-show" : "Canceled"}
+                    </span>
+                  </button>
+                ))}
+              </div>
 
-          <div className="flex flex-col items-start gap-6 w-full mt-2">
-            {bookingsQuery.isLoading ? (
-              <div className="w-full text-center py-20 bg-white border border-[#C6C6CB] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                <p className="text-[#45474B] text-lg font-medium">Loading your bookings…</p>
+              <div className="mt-2 flex w-full flex-col items-start gap-6">
+                {bookingsQuery.isLoading ? (
+                  <div className="w-full rounded-xl border border-[#C6C6CB] bg-white py-20 text-center shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                    <p className="text-lg font-medium text-[#45474B]">Loading your bookings…</p>
+                  </div>
+                ) : bookingsQuery.isError ? (
+                  <div className="w-full rounded-xl border border-[#C6C6CB] bg-white py-20 text-center shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                    <p className="text-lg font-medium text-[#45474B]">Your bookings could not be loaded right now.</p>
+                  </div>
+                ) : bookings.length > 0 ? (
+                  bookings.map((booking) => (
+                    <BookingCard
+                      key={booking.id}
+                      booking={booking}
+                      onReschedule={(id) => setRescheduleBookingId(id)}
+                      onCancel={(id) => {
+                        setCancelBookingId(id);
+                        setCancelError(undefined);
+                      }}
+                    />
+                  ))
+                ) : (
+                  <div className="w-full rounded-xl border border-[#C6C6CB] bg-white py-20 text-center shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                    <p className="text-lg font-medium text-[#45474B]">No bookings found in this category.</p>
+                  </div>
+                )}
               </div>
-            ) : bookingsQuery.isError ? (
-              <div className="w-full text-center py-20 bg-white border border-[#C6C6CB] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                <p className="text-[#45474B] text-lg font-medium">Your bookings could not be loaded right now.</p>
-              </div>
-            ) : bookings.length > 0 ? (
-              bookings.map((booking) => (
-                <BookingCard
-                  key={booking.id}
-                  booking={booking}
-                  onReschedule={(id) => setRescheduleBookingId(id)}
-                  onCancel={(id) => {
-                    setCancelBookingId(id);
-                    setCancelError(undefined);
-                  }}
-                />
-              ))
-            ) : (
-              <div className="w-full text-center py-20 bg-white border border-[#C6C6CB] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                <p className="text-[#45474B] text-lg font-medium">No bookings found in this category.</p>
-              </div>
-            )}
-          </div>
+            </>
+          ) : (
+            <CustomerPackagesList />
+          )}
         </div>
       </main>
 

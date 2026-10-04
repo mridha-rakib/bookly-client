@@ -14,6 +14,8 @@ interface TimeStepProps {
   onNextMonth: () => void;
   availability?: AvailabilityResult;
   isLoading?: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
   selectedDateIso?: string;
   onSelectDate: (dateIso: string) => void;
   selectedSlot?: AvailabilitySlot;
@@ -39,6 +41,8 @@ export default function TimeStep({
   onNextMonth,
   availability,
   isLoading,
+  isError,
+  onRetry,
   selectedDateIso,
   onSelectDate,
   selectedSlot,
@@ -76,6 +80,7 @@ export default function TimeStep({
   }, [availability]);
 
   const selectedDay = selectedDateIso ? dayByIso.get(selectedDateIso) : undefined;
+  const hasBookableDates = (availability?.days ?? []).some((day) => day.slots.length > 0);
   const morningSlots = (selectedDay?.slots ?? []).filter(
     (slot) => localHour(slot.startAt, timezone) < 12,
   );
@@ -87,6 +92,7 @@ export default function TimeStep({
     const isSelected = selectedSlot?.startAt === slot.startAt;
     return (
       <button
+        type="button"
         key={slot.startAt}
         onClick={() => onSelectSlot(slot)}
         className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
@@ -99,35 +105,67 @@ export default function TimeStep({
   };
 
   return (
-    <div className="flex flex-col w-full lg:w-[714px]">
-      <h1 className="font-semibold text-3xl md:text-4xl text-[#1C1B1C]">Select Time</h1>
+    <div className="flex w-full max-w-[714px] min-w-0 flex-col">
+      <h1 className="text-2xl font-semibold text-[#1C1B1C] sm:text-3xl md:text-4xl">Select Time</h1>
 
       {/* Date Picker Section */}
-      <div className="w-full bg-white border border-[#EBEAE6] rounded-2xl p-6 mt-[60px] shadow-sm">
-        <div className="flex justify-between items-center w-full mb-6 px-1">
-          <span className="font-semibold text-[17.5px] text-[#0A0D14] font-poppins">
+      <div className="mt-6 w-full rounded-2xl border border-[#EBEAE6] bg-white p-3 shadow-sm sm:mt-10 sm:p-4 md:p-6 lg:mt-[60px]">
+        <div className="mb-4 flex w-full items-center justify-between gap-3 px-1 sm:mb-6">
+          <span className="font-poppins text-base font-semibold text-[#0A0D14] sm:text-[17.5px]">
             {new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" }).format(visibleMonth)}
           </span>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={onPrevMonth}
-              className="w-10 h-10 border border-[#E0DED9] rounded-lg flex items-center justify-center cursor-pointer hover:bg-neutral-50 text-[#141B34]"
+              aria-label="Show previous month"
+              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[#E0DED9] text-[#141B34] hover:bg-neutral-50 sm:h-10 sm:w-10"
             >
               <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />
             </button>
             <button
+              type="button"
               onClick={onNextMonth}
-              className="w-10 h-10 border border-[#E0DED9] rounded-lg flex items-center justify-center cursor-pointer hover:bg-neutral-50 text-[#141B34]"
+              aria-label="Show next month"
+              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[#E0DED9] text-[#141B34] hover:bg-neutral-50 sm:h-10 sm:w-10"
             >
               <HugeiconsIcon icon={ArrowRight02Icon} size={20} />
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-7 gap-3 w-full text-center">
-          {["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].map((day) => (
-            <span key={day} className="text-xs font-semibold text-[#8C8A85] tracking-widest py-1 font-poppins uppercase">
-              {day}
+        {isLoading ? (
+          <p role="status" className="mb-3 rounded-lg bg-[#F5F4EE] p-3 text-sm text-[#5F5E5A]">
+            Loading availability…
+          </p>
+        ) : isError ? (
+          <div role="alert" className="mb-3 flex flex-col gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between">
+            <span>We couldn&apos;t load availability. Try again.</span>
+            {onRetry ? (
+              <button type="button" onClick={onRetry} className="w-fit font-semibold underline">
+                Retry
+              </button>
+            ) : null}
+          </div>
+        ) : availability && !hasBookableDates ? (
+          <p className="mb-3 rounded-lg bg-[#F5F4EE] p-3 text-sm text-[#5F5E5A]">
+            No available dates this month. Try another month.
+          </p>
+        ) : null}
+
+        <div className={`grid w-full grid-cols-7 gap-1 text-center min-[375px]:gap-2 sm:gap-3 ${isLoading ? "opacity-60" : ""}`}>
+          {[
+            ["M", "MON"],
+            ["T", "TUE"],
+            ["W", "WED"],
+            ["T", "THU"],
+            ["F", "FRI"],
+            ["S", "SAT"],
+            ["S", "SUN"],
+          ].map(([shortDay, fullDay], index) => (
+            <span key={`${fullDay}-${index}`} className="py-1 font-poppins text-[10px] font-semibold uppercase tracking-wide text-[#8C8A85] sm:text-xs sm:tracking-widest">
+              <span className="sm:hidden">{shortDay}</span>
+              <span className="hidden sm:inline">{fullDay}</span>
             </span>
           ))}
 
@@ -140,28 +178,27 @@ export default function TimeStep({
             const isToday = cell.dateIso === todayIso;
             const isPast = cell.dateIso < todayIso;
             const hasSlots = (day?.slots.length ?? 0) > 0;
-            const isBookable = !isPast && (day === undefined || day.isOpen);
+            const isBookable = Boolean(!isLoading && !isError && day?.isOpen && hasSlots);
 
             return (
               <button
                 key={cell.dateIso}
-                disabled={isPast || (day !== undefined && !hasSlots)}
+                type="button"
+                disabled={isPast || !isBookable}
                 onClick={() => onSelectDate(cell.dateIso)}
-                className={`aspect-square flex flex-col items-center justify-center rounded-xl text-sm font-semibold transition-all border ${
+                className={`flex aspect-square min-w-0 flex-col items-center justify-center rounded-lg border text-xs font-semibold transition-all sm:rounded-xl sm:text-sm ${
                   isSelected
                     ? "bg-[#2E9DA7] border-[#2E9DA7] text-white"
                     : isToday
                       ? "bg-[#D1D1D1] border-neutral-300 text-black hover:bg-neutral-200"
                       : isPast || !isBookable
-                        ? "bg-transparent border-transparent text-neutral-300 cursor-not-allowed"
-                        : day !== undefined && !hasSlots
-                          ? "bg-neutral-50 border-transparent text-neutral-300 cursor-not-allowed"
-                          : "bg-transparent border-transparent text-[#0A0D14] hover:bg-neutral-50 cursor-pointer"
+                        ? "cursor-not-allowed border-transparent bg-transparent text-neutral-300"
+                        : "cursor-pointer border-transparent bg-transparent text-[#0A0D14] hover:bg-neutral-50"
                 }`}
               >
                 <span>{cell.date.getDate()}</span>
                 {isToday && (
-                  <span className="text-[9px] mt-0.5 font-bold uppercase tracking-tighter opacity-80">TODAY</span>
+                  <span className="mt-0.5 hidden text-[9px] font-bold uppercase tracking-tighter opacity-80 min-[390px]:inline">TODAY</span>
                 )}
               </button>
             );
@@ -170,11 +207,15 @@ export default function TimeStep({
       </div>
 
       {/* Time Slots Section */}
-      <div className="w-full flex flex-col gap-8 mt-[65px]">
-        <h3 className="font-semibold text-[22px] text-[#111111] font-poppins">Select Time Slot</h3>
+      <div className="mt-8 flex w-full flex-col gap-5 sm:mt-10 sm:gap-8 lg:mt-[65px]">
+        <h3 className="font-poppins text-xl font-semibold text-[#111111] sm:text-[22px]">Select Time Slot</h3>
 
         {isLoading ? (
           <p className="text-sm text-neutral-500">Loading availability…</p>
+        ) : isError ? (
+          <p className="text-sm text-neutral-500">Availability must load before you can choose a time.</p>
+        ) : availability && !hasBookableDates ? (
+          <p className="text-sm text-neutral-500">Choose another month to see available times.</p>
         ) : !selectedDateIso ? (
           <p className="text-sm text-neutral-500">Pick a date above to see available times.</p>
         ) : (selectedDay?.slots.length ?? 0) === 0 ? (

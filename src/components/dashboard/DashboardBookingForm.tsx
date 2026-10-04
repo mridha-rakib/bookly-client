@@ -961,10 +961,24 @@ export default function DashboardBookingForm({
               <TimeStep
                 timezone={availabilityQuery.data?.timezone ?? "UTC"}
                 visibleMonth={visibleMonth}
-                onPrevMonth={() => setVisibleMonthOverride(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1))}
-                onNextMonth={() => setVisibleMonthOverride(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1))}
+                onPrevMonth={() => {
+                  setSelectedDateIso(undefined);
+                  setSelectedSlot(undefined);
+                  setVisibleMonthOverride(
+                    new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1),
+                  );
+                }}
+                onNextMonth={() => {
+                  setSelectedDateIso(undefined);
+                  setSelectedSlot(undefined);
+                  setVisibleMonthOverride(
+                    new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1),
+                  );
+                }}
                 availability={availabilityQuery.data}
                 isLoading={availabilityQuery.isLoading}
+                isError={availabilityQuery.isError}
+                onRetry={() => void availabilityQuery.refetch()}
                 selectedDateIso={selectedDateIso}
                 onSelectDate={(dateIso) => {
                   setSelectedDateIso(dateIso);

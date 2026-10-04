@@ -267,7 +267,7 @@ export default function Navbar({
                       className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
                       onClick={() => {
                         setShowUserDropdown(false);
-                        router.push("/customer/packages");
+                        router.push("/customer/bookings?view=packages");
                       }}
                     >
                       <HugeiconsIcon icon={GiftCardIcon} className="w-[18px] h-[18px] text-[#0C0C0C]" />
@@ -647,7 +647,7 @@ export default function Navbar({
             className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
             onClick={() => {
               setShowUserDropdown(false);
-              router.push("/customer/packages");
+              router.push("/customer/bookings?view=packages");
             }}
           >
             <HugeiconsIcon icon={GiftCardIcon} className="w-[18px] h-[18px] text-[#0C0C0C]" />
