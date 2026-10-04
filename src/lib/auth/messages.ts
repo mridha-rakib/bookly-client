@@ -74,6 +74,15 @@ const codeMessages: Record<string, string> = {
     "This time slot was just taken by someone else. Any payment you made for it has been automatically refunded — please choose another available time.",
   BOOKING_SCHEDULE_INVALID:
     "The selected time is no longer available. Please choose another available time.",
+  AVAILABILITY_CITY_REQUIRED: "Select a city for this travel appointment.",
+  AVAILABILITY_CITY_NOT_SERVED:
+    "This package cannot be redeemed at the selected city. Choose another eligible city.",
+  PACKAGE_PROGRESS_BALANCE_NOT_SETTLED:
+    "The remaining package balance must be settled before another session can be scheduled.",
+  PACKAGE_PROGRESS_NO_SESSIONS_REMAINING: "This package has no sessions remaining.",
+  PACKAGE_PROGRESS_VOIDED: "This package was refunded and can no longer be redeemed.",
+  PACKAGE_PROGRESS_FULFILMENT_INVALID:
+    "This package's fulfilment details are unavailable. Please contact support.",
 };
 
 export const toUserMessage = (error: unknown): string => {

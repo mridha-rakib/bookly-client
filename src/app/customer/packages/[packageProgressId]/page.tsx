@@ -59,12 +59,12 @@ function PackageDetailContent() {
   const scheduledCount =
     pkg?.sessions.filter((session) => session.status === "SCHEDULED").length ?? 0;
   const business = catalogQuery.data?.business;
-  const travelSchedulingUnsupported = business?.visitType === "TRAVEL_TO_CUSTOMER";
   const isAwaitingBalance = pkg?.status === "AWAITING_BALANCE";
   const canSchedule =
     pkg?.status === "ACTIVE" &&
     pkg.remainingSessions > 0 &&
-    business?.visitType === "AT_BUSINESS_LOCATION";
+    Boolean(pkg.fulfilmentEntitlement) &&
+    Boolean(business);
 
   const handleRefund = () => {
     if (!pkg || !window.confirm("Request a refund for this unused package? This cannot be undone.")) {
@@ -241,10 +241,9 @@ function PackageDetailContent() {
                     Further sessions can be scheduled after the remaining package balance is
                     recorded as paid.
                   </div>
-                ) : travelSchedulingUnsupported ? (
+                ) : pkg.status === "ACTIVE" && !pkg.fulfilmentEntitlement ? (
                   <div className="mt-4 rounded-xl bg-[#F5F4EE] p-4 text-sm leading-6 text-[#5F5E5A]">
-                    Online scheduling for mobile appointments is not available from this page yet.
-                    Please contact {business?.name ?? "the business"} to arrange your next session.
+                    This package&apos;s fulfilment details are unavailable. Please contact support.
                   </div>
                 ) : pkg.status === "ACTIVE" && catalogQuery.isLoading ? (
                   <p className="mt-4 text-sm text-[#5F5E5A]">Checking scheduling availability…</p>
@@ -304,6 +303,10 @@ function PackageDetailContent() {
           businessId={pkg.businessId}
           packageProgressId={pkg.id}
           serviceId={pkg.serviceId}
+          fulfilmentEntitlement={pkg.fulfilmentEntitlement!}
+          packageName={pkg.purchaseSnapshot.packageServicesName ?? pkg.purchaseSnapshot.name}
+          nextSessionIndex={pkg.totalSessions - pkg.remainingSessions + 1}
+          totalSessions={pkg.totalSessions}
           onClose={() => setIsScheduling(false)}
           onBooked={() => setIsScheduling(false)}
         />

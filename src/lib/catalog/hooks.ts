@@ -13,7 +13,7 @@ export const catalogKeys = {
   availability: (
     businessId: string,
     serviceId: string,
-    params: { fromDate: string; toDate: string; staffMembershipId?: string; partySize?: number; customerCity?: BusinessCity },
+    params: { fromDate: string; toDate: string; staffMembershipId?: string; partySize?: number; customerCity?: BusinessCity; packageProgressId?: string },
   ) => [...catalogKeys.all, "availability", businessId, serviceId, params] as const,
 };
 
@@ -40,6 +40,7 @@ export const useServiceAvailabilityQuery = (
     staffMembershipId?: string;
     partySize?: number;
     customerCity?: BusinessCity;
+    packageProgressId?: string;
   } | undefined,
 ) =>
   useQuery({

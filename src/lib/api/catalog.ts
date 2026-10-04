@@ -168,6 +168,7 @@ export const catalogApi = {
       staffMembershipId?: string;
       partySize?: number;
       customerCity?: BusinessCity;
+      packageProgressId?: string;
     },
   ) =>
     apiRequest<AvailabilityResult>({

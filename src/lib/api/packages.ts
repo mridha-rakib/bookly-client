@@ -55,6 +55,13 @@ export interface PackageProgress {
     sessionsInPackage: number;
     discountPercent?: number;
   };
+  fulfilmentEntitlement: {
+    mode: "AT_BUSINESS_LOCATION" | "TRAVEL_TO_CUSTOMER";
+    travelCities?: Array<{
+      city: NonNullable<PackagePurchaseInput["customerCity"]>;
+      feeCents: number;
+    }>;
+  } | null;
   voidedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -81,6 +88,31 @@ export interface RedeemPackageSessionInput {
   idempotencyKey: string;
 }
 
+export type PackageRedemptionPreviewInput = Pick<
+  RedeemPackageSessionInput,
+  "addonIds" | "travelAddress" | "customerCity"
+>;
+
+export interface PackageRedemptionPreview {
+  finalizable: true;
+  taxMode: "PRE_ACTIVATION";
+  fulfilment: {
+    mode: "AT_BUSINESS_LOCATION" | "TRAVEL_TO_CUSTOMER";
+    travelAddress?: NonNullable<PackagePurchaseInput["travelAddress"]>;
+  };
+  packageBaseCents: 0;
+  addonsSubtotalCents: number;
+  travelFeeCents: number;
+  subtotalCents: number;
+  totalCents: number;
+  depositCents: number;
+  customerChargeNowCents: number;
+  balanceDueCents: number;
+  currency: "EUR";
+  requiresSavedCard: boolean;
+  hasSavedCard: boolean;
+}
+
 export const packagesApi = {
   previewPurchase: (businessId: string, input: PackagePurchaseInput) =>
     apiRequest<BookingCreationPreview>({
@@ -100,6 +132,17 @@ export const packagesApi = {
     apiRequest<FinalizeBookingResult>({
       method: "POST",
       url: `/businesses/${businessId}/bookings/packages/${packageProgressId}/sessions`,
+      data: input,
+    }),
+
+  previewRedemption: (
+    businessId: string,
+    packageProgressId: string,
+    input: PackageRedemptionPreviewInput,
+  ) =>
+    apiRequest<PackageRedemptionPreview>({
+      method: "POST",
+      url: `/businesses/${businessId}/bookings/packages/${packageProgressId}/redemption-preview`,
       data: input,
     }),
 

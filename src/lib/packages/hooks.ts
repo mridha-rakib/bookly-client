@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   packagesApi,
+  type PackageRedemptionPreviewInput,
   type PackagePurchaseInput,
   type RedeemPackageSessionInput,
 } from "@/lib/api/packages";
@@ -79,6 +80,19 @@ export const useRedeemPackageSessionMutation = () => {
     },
   });
 };
+
+export const usePreviewPackageRedemptionMutation = () =>
+  useMutation({
+    mutationFn: ({
+      businessId,
+      packageProgressId,
+      input,
+    }: {
+      businessId: string;
+      packageProgressId: string;
+      input: PackageRedemptionPreviewInput;
+    }) => packagesApi.previewRedemption(businessId, packageProgressId, input),
+  });
 
 /** Whole-Package refund/void — only succeeds while completely unused (see packagesApi.voidPackage's
  * own doc comment). */
