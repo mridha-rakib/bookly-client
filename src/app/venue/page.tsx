@@ -21,6 +21,7 @@ import VenueLocationMap from "./components/VenueLocationMap";
 import { Suspense } from "react";
 
 import { useAuthStore } from "@/lib/auth/store";
+import { storePostLoginRedirect } from "@/lib/auth/post-login-redirect";
 import { BooklyApiError } from "@/lib/api/client";
 import { useBusinessCatalogQuery, useServiceAddonsQuery, useServiceAvailabilityQuery } from "@/lib/catalog/hooks";
 import { ANY_STAFF, type AvailabilitySlot, type CatalogService } from "@/lib/api/catalog";
@@ -88,14 +89,7 @@ function VenueDetailsContent() {
   // (or favouriting) requires a customer account. Stash where to come back to, then hand off to
   // the existing `/customer` login/register flow — the password page reads this back on success.
   const goToCustomerAuth = (returnTo: string) => {
-    try {
-      if (returnTo.startsWith("/") && !returnTo.startsWith("//")) {
-        sessionStorage.setItem("bookly:post_login_redirect", returnTo);
-      }
-    } catch {
-      // sessionStorage unavailable (private mode / disabled) — the login flow simply lands the
-      // user on the home page afterwards instead of returning here. Never block the hand-off.
-    }
+    storePostLoginRedirect(returnTo);
     router.push("/customer");
   };
 

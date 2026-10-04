@@ -300,6 +300,7 @@ function PackageDetailContent() {
 
       {isScheduling && pkg ? (
         <RedeemSessionModal
+          key={pkg.id}
           businessId={pkg.businessId}
           packageProgressId={pkg.id}
           serviceId={pkg.serviceId}

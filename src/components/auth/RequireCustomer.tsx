@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Spinner } from "@/components/ui/spinner";
 import { authRoutes, getAuthenticatedUserHomePath } from "@/lib/auth/routes";
 import { useAuthStore } from "@/lib/auth/store";
+import { storePostLoginRedirect } from "@/lib/auth/post-login-redirect";
 
 interface RequireCustomerProps {
   children: React.ReactNode;
@@ -26,6 +27,9 @@ export default function RequireCustomer({ children }: RequireCustomerProps) {
 
   useEffect(() => {
     if (status === "unauthenticated") {
+      // Keep the exact internal destination for the customer login flow. `replace` then
+      // removes the protected URL from history without losing its pathname/query string.
+      storePostLoginRedirect(`${window.location.pathname}${window.location.search}`);
       router.replace(authRoutes.customerAuth);
       return;
     }

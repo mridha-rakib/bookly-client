@@ -8,11 +8,12 @@ import AuthLayout from "@/components/auth/AuthLayout";
 import { Spinner } from "@/components/ui/spinner";
 import type { SocialAuthStatus } from "@/lib/api/auth";
 import { getAuthenticatedHomePath } from "@/lib/auth/routes";
+import { clearPostLoginRedirect, consumePostLoginRedirect } from "@/lib/auth/post-login-redirect";
 import { useAuthStore } from "@/lib/auth/store";
 
 /** Landing page for "Continue with Facebook" (LOGIN, not Settings linking). Mirrors the Google
  * callback page but only the customer + professional flows — Facebook staff-invitation OAuth is
- * not implemented. The Google page is intentionally left untouched. */
+ * not implemented. */
 
 const SESSION_WAIT_TIMEOUT_MS = 10_000;
 
@@ -123,6 +124,11 @@ function FacebookCallbackContent() {
         router.replace("/customer/complete-profile");
         return;
       }
+      if (user.role === "CUSTOMER") {
+        router.replace(consumePostLoginRedirect() ?? getAuthenticatedHomePath(user.role));
+        return;
+      }
+      clearPostLoginRedirect();
       router.replace(getAuthenticatedHomePath(user.role));
     }
   }, [waitingForSession, authStatus, user, status, router]);

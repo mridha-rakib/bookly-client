@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { consumePostLoginRedirect } from "@/lib/auth/post-login-redirect";
 
 import AuthCard from "@/components/auth/AuthCard";
 import AuthLayout from "@/components/auth/AuthLayout";
@@ -40,12 +41,19 @@ function CompleteProfileContent() {
   const [error, setError] = useState("");
 
   const alreadyComplete = Boolean(meQuery.data?.user.phoneVerifiedAt);
+  const redirectedRef = useRef(false);
+
+  const redirectAfterProfile = useCallback(() => {
+    if (redirectedRef.current) return;
+    redirectedRef.current = true;
+    router.replace(consumePostLoginRedirect() ?? "/");
+  }, [router]);
 
   useEffect(() => {
     if (alreadyComplete) {
-      router.replace("/");
+      redirectAfterProfile();
     }
-  }, [alreadyComplete, router]);
+  }, [alreadyComplete, redirectAfterProfile]);
 
   const handleRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,7 +73,7 @@ function CompleteProfileContent() {
   const handleVerify = async (code: string) => {
     try {
       await verifyPhoneChange.mutateAsync(code);
-      router.replace("/");
+      redirectAfterProfile();
     } catch (err) {
       toast.error(toUserMessage(err));
     }

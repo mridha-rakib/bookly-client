@@ -8,6 +8,7 @@ import AuthLayout from "@/components/auth/AuthLayout";
 import { Spinner } from "@/components/ui/spinner";
 import type { CustomerGoogleAuthStatus, GoogleAuthFlow } from "@/lib/api/auth";
 import { getAuthenticatedHomePath } from "@/lib/auth/routes";
+import { clearPostLoginRedirect, consumePostLoginRedirect } from "@/lib/auth/post-login-redirect";
 import { useAuthStore } from "@/lib/auth/store";
 
 /** How long to wait for the refresh-cookie session to come up before treating a
@@ -140,6 +141,11 @@ function GoogleCallbackContent() {
         router.replace("/customer/complete-profile");
         return;
       }
+      if (user.role === "CUSTOMER") {
+        router.replace(consumePostLoginRedirect() ?? getAuthenticatedHomePath(user.role));
+        return;
+      }
+      clearPostLoginRedirect();
       router.replace(getAuthenticatedHomePath(user.role));
     }
   }, [waitingForSession, authStatus, user, status, router]);

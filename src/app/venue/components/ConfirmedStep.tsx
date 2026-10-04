@@ -178,7 +178,7 @@ export default function ConfirmedStep({ booking, setBookingStep, isPackagePurcha
                   }}
                   className="mt-2 text-sm font-semibold text-[#2E9DA7] hover:underline cursor-pointer"
                 >
-                  View My Packages →
+                  {packageProgressId ? "View package →" : "View My Packages →"}
                 </button>
               </div>
             </div>
