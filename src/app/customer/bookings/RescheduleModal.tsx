@@ -168,10 +168,24 @@ export default function RescheduleModal({ bookingId, onClose, onSaved }: Resched
               <TimeStep
                 timezone={detail.schedule.timezone}
                 visibleMonth={visibleMonth}
-                onPrevMonth={() => setVisibleMonthOverride(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1))}
-                onNextMonth={() => setVisibleMonthOverride(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1))}
+                onPrevMonth={() => {
+                  setSelectedDateIso(undefined);
+                  setSelectedSlot(undefined);
+                  setVisibleMonthOverride(
+                    new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1),
+                  );
+                }}
+                onNextMonth={() => {
+                  setSelectedDateIso(undefined);
+                  setSelectedSlot(undefined);
+                  setVisibleMonthOverride(
+                    new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1),
+                  );
+                }}
                 availability={availabilityQuery.data}
                 isLoading={availabilityQuery.isLoading}
+                isError={availabilityQuery.isError}
+                onRetry={() => void availabilityQuery.refetch()}
                 selectedDateIso={selectedDateIso}
                 onSelectDate={(dateIso) => {
                   setSelectedDateIso(dateIso);

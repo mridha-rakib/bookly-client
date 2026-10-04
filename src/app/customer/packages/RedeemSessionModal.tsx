@@ -94,6 +94,7 @@ export default function RedeemSessionModal({
   const [confirming3ds, setConfirming3ds] = useState(false);
   const previewRequestId = useRef(0);
   const mounted = useRef(true);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(
     () => () => {
@@ -102,6 +103,24 @@ export default function RedeemSessionModal({
     },
     [],
   );
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0 });
+  }, [subStep]);
 
   const catalogQuery = useBusinessCatalogQuery(businessId);
   const service = catalogQuery.data?.services.find((candidate) => candidate.id === serviceId);
@@ -280,45 +299,212 @@ export default function RedeemSessionModal({
     if (subStep === "review") setSubStep("time");
   };
 
+  const changeVisibleMonth = (offset: number) => {
+    setSelectedDateIso(undefined);
+    setSelectedSlot(undefined);
+    setVisibleMonth(
+      (current) => new Date(current.getFullYear(), current.getMonth() + offset, 1),
+    );
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 font-poppins sm:p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="redeem-session-title" className="flex max-h-[92vh] w-full max-w-2xl flex-col gap-6 overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl md:p-8">
-        <div className="flex items-center justify-between gap-4">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-3 font-poppins sm:p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="redeem-session-title"
+        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)]"
+      >
+        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-neutral-100 px-5 py-4 md:px-8">
           <div>
-            <h2 id="redeem-session-title" className="text-xl font-semibold text-[#1C1B1C]">Book package session</h2>
-            <p className="mt-1 text-xs text-neutral-500">Session {nextSessionIndex} of {totalSessions} · {packageName}</p>
+            <h2 id="redeem-session-title" className="text-xl font-semibold text-[#1C1B1C]">
+              Book package session
+            </h2>
+            <p className="mt-1 text-xs text-neutral-500">
+              Session {nextSessionIndex} of {totalSessions} · {packageName}
+            </p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close session scheduler" className="text-neutral-400 hover:text-black"><HugeiconsIcon icon={Cancel01Icon} className="h-5 w-5" /></button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close session scheduler"
+            className="shrink-0 text-neutral-400 hover:text-black"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} className="h-5 w-5" />
+          </button>
+        </header>
+
+        <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-6 md:px-8">
+          {catalogQuery.isLoading ? (
+            <p className="text-sm text-neutral-500">Loading…</p>
+          ) : !service ? (
+            <p className="text-sm text-red-600">This service is no longer available for booking.</p>
+          ) : (
+            <div className="flex min-w-0 flex-col gap-6">
+              {subStep === "addons" ? (
+                <AddonsStep
+                  addons={addonsQuery.data?.addons ?? []}
+                  isLoading={addonsQuery.isLoading}
+                  selectedAddonIds={selectedAddonIds}
+                  setSelectedAddonIds={setSelectedAddonIds}
+                />
+              ) : null}
+              {subStep === "travel" ? (
+                <TravelAddressStep
+                  servedCities={servedCities}
+                  customerCity={customerCity}
+                  setCustomerCity={setCustomerCity}
+                  address={travelAddress}
+                  setAddress={(patch) =>
+                    setTravelAddress((current) => ({ ...current, ...patch }))
+                  }
+                />
+              ) : null}
+              {subStep === "professional" ? (
+                <ProfessionalsStep
+                  staff={eligibleStaff}
+                  selectedProfessional={selectedProfessional}
+                  setSelectedProfessional={(professional) => {
+                    setSelectedProfessional(professional);
+                    setSelectedSlot(undefined);
+                    setSelectedDateIso(undefined);
+                  }}
+                />
+              ) : null}
+              {subStep === "time" ? (
+                <TimeStep
+                  timezone={catalogQuery.data?.business.timezone ?? "UTC"}
+                  visibleMonth={visibleMonth}
+                  onPrevMonth={() => changeVisibleMonth(-1)}
+                  onNextMonth={() => changeVisibleMonth(1)}
+                  availability={availabilityQuery.data}
+                  isLoading={availabilityQuery.isLoading}
+                  isError={availabilityQuery.isError}
+                  onRetry={() => void availabilityQuery.refetch()}
+                  selectedDateIso={selectedDateIso}
+                  onSelectDate={(date) => {
+                    setSelectedDateIso(date);
+                    setSelectedSlot(undefined);
+                  }}
+                  selectedSlot={selectedSlot}
+                  onSelectSlot={setSelectedSlot}
+                />
+              ) : null}
+              {subStep === "review" && selectedSlot ? (
+                <div className="flex flex-col gap-5">
+                  <div>
+                    <h3 className="font-manrope text-2xl font-bold text-[#1C1B1C]">
+                      Review your session
+                    </h3>
+                    <p className="mt-1 text-sm text-[#5F5E5A]">
+                      Confirm the appointment and current payment details.
+                    </p>
+                  </div>
+                  <dl className="grid gap-4 rounded-xl bg-[#F7F6F2] p-4 text-sm sm:grid-cols-2">
+                    <div>
+                      <dt className="text-xs font-semibold uppercase text-[#888780]">Professional</dt>
+                      <dd className="mt-1 font-medium">
+                        {selectedStaff
+                          ? `${selectedStaff.firstName} ${selectedStaff.lastName ?? ""}`.trim()
+                          : "Professional"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold uppercase text-[#888780]">Date and time</dt>
+                      <dd className="mt-1 font-medium">
+                        {formatBookingDate(
+                          selectedSlot.startAt,
+                          catalogQuery.data?.business.timezone ?? "UTC",
+                        )}{" "}
+                        · {formatBookingTimeRange({
+                          startAt: selectedSlot.startAt,
+                          endAt: selectedSlot.endAt,
+                          timezone: catalogQuery.data?.business.timezone ?? "UTC",
+                        })}
+                      </dd>
+                    </div>
+                    {isTravel && customerCity ? (
+                      <div className="sm:col-span-2">
+                        <dt className="text-xs font-semibold uppercase text-[#888780]">Travel to customer</dt>
+                        <dd className="mt-1 font-medium">
+                          {travelAddress.streetNumber} {travelAddress.streetName},{" "}
+                          {travelAddress.area}, {customerCity}
+                          {travelAddress.floorUnit ? ` · ${travelAddress.floorUnit}` : ""}
+                          {travelAddress.aptRoom ? ` · Apt/room ${travelAddress.aptRoom}` : ""}
+                        </dd>
+                        {travelAddress.additionalDirections ? (
+                          <dd className="mt-1 text-[#5F5E5A]">
+                            {travelAddress.additionalDirections}
+                          </dd>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </dl>
+                  {isPreviewPending ? (
+                    <p className="rounded-xl bg-[#F5F4EE] p-4 text-sm text-[#5F5E5A]">
+                      Updating price…
+                    </p>
+                  ) : null}
+                  {previewError ? (
+                    <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{previewError}</p>
+                  ) : null}
+                  {preview && currentPreviewIsValid ? (
+                    <PriceSummary preview={preview} isTravel={isTravel} />
+                  ) : null}
+                  {paymentMethodMissing ? (
+                    <p className="rounded-xl bg-[#FFF8DF] p-4 text-sm text-[#725B00]">
+                      A saved payment card is required for this online charge.{" "}
+                      <Link href="/customer/payment-card" className="font-semibold underline">
+                        Manage payment card
+                      </Link>
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {submitError ? <p className="text-sm text-red-600">{submitError}</p> : null}
+            </div>
+          )}
         </div>
 
-        {catalogQuery.isLoading ? <p className="text-sm text-neutral-500">Loading…</p> : !service ? <p className="text-sm text-red-600">This service is no longer available for booking.</p> : (
-          <>
-            {subStep === "addons" ? <AddonsStep addons={addonsQuery.data?.addons ?? []} isLoading={addonsQuery.isLoading} selectedAddonIds={selectedAddonIds} setSelectedAddonIds={setSelectedAddonIds} /> : null}
-            {subStep === "travel" ? <TravelAddressStep servedCities={servedCities} customerCity={customerCity} setCustomerCity={setCustomerCity} address={travelAddress} setAddress={(patch) => setTravelAddress((current) => ({ ...current, ...patch }))} /> : null}
-            {subStep === "professional" ? <ProfessionalsStep staff={eligibleStaff} selectedProfessional={selectedProfessional} setSelectedProfessional={(professional) => { setSelectedProfessional(professional); setSelectedSlot(undefined); setSelectedDateIso(undefined); }} /> : null}
-            {subStep === "time" ? <TimeStep timezone={catalogQuery.data?.business.timezone ?? "UTC"} visibleMonth={visibleMonth} onPrevMonth={() => setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))} onNextMonth={() => setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))} availability={availabilityQuery.data} isLoading={availabilityQuery.isLoading} selectedDateIso={selectedDateIso} onSelectDate={(date) => { setSelectedDateIso(date); setSelectedSlot(undefined); }} selectedSlot={selectedSlot} onSelectSlot={setSelectedSlot} /> : null}
-            {subStep === "review" && selectedSlot ? (
-              <div className="flex flex-col gap-5">
-                <div><h3 className="font-manrope text-2xl font-bold text-[#1C1B1C]">Review your session</h3><p className="mt-1 text-sm text-[#5F5E5A]">Confirm the appointment and current payment details.</p></div>
-                <dl className="grid gap-4 rounded-xl bg-[#F7F6F2] p-4 text-sm sm:grid-cols-2">
-                  <div><dt className="text-xs font-semibold uppercase text-[#888780]">Professional</dt><dd className="mt-1 font-medium">{selectedStaff ? `${selectedStaff.firstName} ${selectedStaff.lastName ?? ""}`.trim() : "Professional"}</dd></div>
-                  <div><dt className="text-xs font-semibold uppercase text-[#888780]">Date and time</dt><dd className="mt-1 font-medium">{formatBookingDate(selectedSlot.startAt, catalogQuery.data?.business.timezone ?? "UTC")} · {formatBookingTimeRange({ startAt: selectedSlot.startAt, endAt: selectedSlot.endAt, timezone: catalogQuery.data?.business.timezone ?? "UTC" })}</dd></div>
-                  {isTravel && customerCity ? <div className="sm:col-span-2"><dt className="text-xs font-semibold uppercase text-[#888780]">Travel to customer</dt><dd className="mt-1 font-medium">{travelAddress.streetNumber} {travelAddress.streetName}, {travelAddress.area}, {customerCity}{travelAddress.floorUnit ? ` · ${travelAddress.floorUnit}` : ""}{travelAddress.aptRoom ? ` · Apt/room ${travelAddress.aptRoom}` : ""}</dd>{travelAddress.additionalDirections ? <dd className="mt-1 text-[#5F5E5A]">{travelAddress.additionalDirections}</dd> : null}</div> : null}
-                </dl>
-                {isPreviewPending ? <p className="rounded-xl bg-[#F5F4EE] p-4 text-sm text-[#5F5E5A]">Updating price…</p> : null}
-                {previewError ? <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{previewError}</p> : null}
-                {preview && currentPreviewIsValid ? <PriceSummary preview={preview} isTravel={isTravel} /> : null}
-                {paymentMethodMissing ? <p className="rounded-xl bg-[#FFF8DF] p-4 text-sm text-[#725B00]">A saved payment card is required for this online charge. <Link href="/customer/payment-card" className="font-semibold underline">Manage payment card</Link></p> : null}
-              </div>
-            ) : null}
-
-            {submitError ? <p className="text-sm text-red-600">{submitError}</p> : null}
-            <div className="flex flex-col-reverse gap-3 border-t border-neutral-100 pt-4 sm:flex-row sm:justify-end">
-              {subStep === "addons" ? <button type="button" onClick={onClose} className="rounded-lg bg-[#EBEBEB] px-5 py-2.5 text-sm font-medium text-[#757575]">Close</button> : <button type="button" onClick={goBack} className="rounded-lg bg-[#EBEBEB] px-5 py-2.5 text-sm font-medium text-[#757575]">Back</button>}
-              {subStep === "addons" ? <button type="button" onClick={() => setSubStep(isTravel ? "travel" : "professional")} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white">Continue</button> : subStep === "travel" ? <button type="button" disabled={!isCompleteTravelAddress(customerCity, travelAddress) || isPreviewPending || Boolean(previewError)} onClick={() => setSubStep("professional")} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">Continue</button> : subStep === "professional" ? <button type="button" disabled={!selectedProfessional} onClick={() => setSubStep("time")} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">Continue</button> : subStep === "time" ? <button type="button" disabled={!selectedSlot || !currentPreviewIsValid || isPreviewPending || Boolean(previewError)} onClick={() => setSubStep("review")} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">Review</button> : <button type="button" disabled={!selectedSlot || !currentPreviewIsValid || isPreviewPending || Boolean(previewError) || paymentMethodMissing || redeemMutation.isPending || confirming3ds} onClick={() => void handleConfirm()} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">{confirming3ds ? "Confirming payment…" : redeemMutation.isPending ? "Booking…" : "Confirm session"}</button>}
-            </div>
-          </>
-        )}
+        {service ? (
+          <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-neutral-100 bg-white px-5 py-4 sm:flex-row sm:justify-end md:px-8">
+            {subStep === "addons" ? (
+              <button type="button" onClick={onClose} className="rounded-lg bg-[#EBEBEB] px-5 py-2.5 text-sm font-medium text-[#757575]">
+                Close
+              </button>
+            ) : (
+              <button type="button" onClick={goBack} className="rounded-lg bg-[#EBEBEB] px-5 py-2.5 text-sm font-medium text-[#757575]">
+                Back
+              </button>
+            )}
+            {subStep === "addons" ? (
+              <button type="button" onClick={() => setSubStep(isTravel ? "travel" : "professional")} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white">
+                Continue
+              </button>
+            ) : subStep === "travel" ? (
+              <button type="button" disabled={!isCompleteTravelAddress(customerCity, travelAddress) || isPreviewPending || Boolean(previewError)} onClick={() => setSubStep("professional")} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                Continue
+              </button>
+            ) : subStep === "professional" ? (
+              <button type="button" disabled={!selectedProfessional} onClick={() => setSubStep("time")} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                Continue
+              </button>
+            ) : subStep === "time" ? (
+              <button type="button" disabled={!selectedSlot || !currentPreviewIsValid || isPreviewPending || Boolean(previewError)} onClick={() => setSubStep("review")} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                Review
+              </button>
+            ) : (
+              <button type="button" disabled={!selectedSlot || !currentPreviewIsValid || isPreviewPending || Boolean(previewError) || paymentMethodMissing || redeemMutation.isPending || confirming3ds} onClick={() => void handleConfirm()} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                {confirming3ds
+                  ? "Confirming payment…"
+                  : redeemMutation.isPending
+                    ? "Booking…"
+                    : "Confirm session"}
+              </button>
+            )}
+          </footer>
+        ) : null}
       </div>
     </div>
   );

@@ -100,8 +100,11 @@ function PackageDetailContent() {
 
         <div className="max-w-[1005px] w-full pb-20 font-poppins">
           <nav aria-label="Breadcrumb" className="mb-6 text-sm text-[#5F5E5A]">
-            <Link href="/customer/packages" className="hover:text-black hover:underline">
-              ← Back to My Packages
+            <Link
+              href="/customer/bookings?view=packages"
+              className="hover:text-black hover:underline"
+            >
+              ← Back to Packages in My Bookings
             </Link>
           </nav>
 
@@ -116,10 +119,10 @@ function PackageDetailContent() {
                 This package could not be found, or it may not belong to your account.
               </p>
               <Link
-                href="/customer/packages"
+                href="/customer/bookings?view=packages"
                 className="mt-6 inline-flex rounded-lg bg-[#0D0D0D] px-5 py-2.5 text-sm font-semibold text-white"
               >
-                View My Packages
+                View packages in My Bookings
               </Link>
             </div>
           ) : (
@@ -147,7 +150,7 @@ function PackageDetailContent() {
                     </p>
                   </div>
 
-                  <div className="grid w-full grid-cols-3 gap-2 md:w-auto md:min-w-[360px]">
+                  <div className="grid w-full grid-cols-1 gap-2 min-[375px]:grid-cols-3 md:w-auto md:min-w-[360px]">
                     <SummaryStat
                       label={isAwaitingBalance ? "Remaining" : "Available"}
                       value={pkg.remainingSessions}
@@ -156,12 +159,63 @@ function PackageDetailContent() {
                     <SummaryStat label="Completed" value={pkg.completedSessions} />
                   </div>
                 </div>
+
+                <div className="mt-5 border-t border-[#E2E0DF] pt-5">
+                  {isAwaitingBalance ? (
+                    <div className="rounded-xl bg-[#FFF8DF] p-4 text-sm leading-6 text-[#725B00]">
+                      <p className="font-semibold">Scheduling locked</p>
+                      <p className="mt-1">
+                        {pkg.remainingSessions === 1
+                          ? "1 session remains, but it can be scheduled only after the outstanding purchase balance is recorded as paid."
+                          : `${pkg.remainingSessions} sessions remain, but they can be scheduled only after the outstanding purchase balance is recorded as paid.`}
+                      </p>
+                    </div>
+                  ) : canSchedule ? (
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-semibold text-[#1C1B1C]">
+                          {pkg.remainingSessions === 1
+                            ? "1 session is ready to schedule"
+                            : `${pkg.remainingSessions} sessions are ready to schedule`}
+                        </p>
+                        <p className="mt-1 text-sm text-[#5F5E5A]">
+                          Choose the professional, date, and time for your next appointment.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsScheduling(true)}
+                        className="w-full shrink-0 rounded-lg bg-[#0D0D0D] px-5 py-3 text-sm font-semibold text-white hover:bg-black sm:w-auto"
+                      >
+                        Schedule next session
+                      </button>
+                    </div>
+                  ) : pkg.status === "ACTIVE" && !pkg.fulfilmentEntitlement ? (
+                    <p className="rounded-xl bg-[#F5F4EE] p-4 text-sm leading-6 text-[#5F5E5A]">
+                      This package&apos;s fulfilment details are unavailable. Please contact support.
+                    </p>
+                  ) : pkg.status === "ACTIVE" && catalogQuery.isLoading ? (
+                    <p className="text-sm text-[#5F5E5A]">Checking scheduling availability…</p>
+                  ) : pkg.status === "ACTIVE" && catalogQuery.isError ? (
+                    <p className="rounded-xl bg-[#F5F4EE] p-4 text-sm text-[#5F5E5A]">
+                      Online scheduling is temporarily unavailable. Please try again later.
+                    </p>
+                  ) : pkg.status === "DEPLETED" ? (
+                    <p className="text-sm font-medium text-[#5F5E5A]">
+                      All package sessions have been scheduled or used.
+                    </p>
+                  ) : pkg.status === "VOIDED" ? (
+                    <p className="text-sm font-medium text-[#5F5E5A]">
+                      This package was refunded and cannot be used for new appointments.
+                    </p>
+                  ) : null}
+                </div>
               </section>
 
               <section className="grid gap-4 rounded-2xl border border-[#C6C6CB] bg-white p-5 md:grid-cols-3 md:p-7">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-[#888780]">
-                    Package price
+                    Base package price
                   </p>
                   <p className="mt-2 font-manrope text-xl font-bold text-[#020305]">
                     {formatBookingMoney(pkg.purchaseSnapshot.bundlePriceCents)}
@@ -169,13 +223,19 @@ function PackageDetailContent() {
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-[#888780]">
-                    Package balance
+                    Outstanding purchase balance
                   </p>
                   <p className="mt-2 font-semibold text-[#020305]">
                     {pkg.balanceSettled
                       ? "Settled"
                       : `${formatBookingMoney(pkg.outstandingBalanceCents)} due at venue`}
                   </p>
+                  {!pkg.balanceSettled ? (
+                    <p className="mt-1 text-xs leading-5 text-[#5F5E5A]">
+                      Includes any applicable add-ons and travel charges from the original
+                      package purchase, less the deposit paid online.
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-[#888780]">
@@ -220,56 +280,6 @@ function PackageDetailContent() {
                     })}
                   </ol>
                 )}
-              </section>
-
-              <section className="rounded-2xl border border-[#C6C6CB] bg-white p-5 md:p-7">
-                <h2 className="font-manrope text-xl font-bold text-[#020305]">
-                  {isAwaitingBalance ? "Remaining sessions" : "Available sessions"}
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-[#5F5E5A]">
-                  {isAwaitingBalance
-                    ? pkg.remainingSessions === 1
-                      ? "1 session remains in this package."
-                      : `${pkg.remainingSessions} sessions remain in this package.`
-                    : pkg.remainingSessions === 1
-                    ? "1 package session is available to schedule."
-                    : `${pkg.remainingSessions} package sessions are available to schedule.`}
-                </p>
-
-                {isAwaitingBalance ? (
-                  <div className="mt-4 rounded-xl bg-[#FFF8DF] p-4 text-sm leading-6 text-[#725B00]">
-                    Further sessions can be scheduled after the remaining package balance is
-                    recorded as paid.
-                  </div>
-                ) : pkg.status === "ACTIVE" && !pkg.fulfilmentEntitlement ? (
-                  <div className="mt-4 rounded-xl bg-[#F5F4EE] p-4 text-sm leading-6 text-[#5F5E5A]">
-                    This package&apos;s fulfilment details are unavailable. Please contact support.
-                  </div>
-                ) : pkg.status === "ACTIVE" && catalogQuery.isLoading ? (
-                  <p className="mt-4 text-sm text-[#5F5E5A]">Checking scheduling availability…</p>
-                ) : pkg.status === "ACTIVE" && catalogQuery.isError ? (
-                  <p className="mt-4 rounded-xl bg-[#F5F4EE] p-4 text-sm text-[#5F5E5A]">
-                    Online scheduling is temporarily unavailable. Please try again later.
-                  </p>
-                ) : pkg.status === "DEPLETED" ? (
-                  <p className="mt-4 text-sm font-medium text-[#5F5E5A]">
-                    All package sessions have been scheduled or used.
-                  </p>
-                ) : pkg.status === "VOIDED" ? (
-                  <p className="mt-4 text-sm font-medium text-[#5F5E5A]">
-                    This package was refunded and cannot be used for new appointments.
-                  </p>
-                ) : null}
-
-                {canSchedule ? (
-                  <button
-                    type="button"
-                    onClick={() => setIsScheduling(true)}
-                    className="mt-5 w-full rounded-lg bg-[#0D0D0D] px-5 py-3 text-sm font-semibold text-white hover:bg-black sm:w-auto"
-                  >
-                    Schedule next session
-                  </button>
-                ) : null}
               </section>
 
               {isLikelyVoidEligible(pkg) ? (
