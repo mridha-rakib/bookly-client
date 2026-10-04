@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import { clearPostLoginRedirect } from "@/lib/auth/post-login-redirect";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { User02Icon, Building03Icon } from "@hugeicons/core-free-icons";
 
@@ -17,6 +18,8 @@ export default function SelectRolePage() {
     if (selectedRole === "customer") {
       router.push("/customer");
     } else if (selectedRole === "professional") {
+      // A customer-only saved URL must not follow a professional authentication path.
+      clearPostLoginRedirect();
       router.push("/professional");
     }
   };

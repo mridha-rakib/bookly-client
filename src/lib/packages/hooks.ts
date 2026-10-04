@@ -50,6 +50,8 @@ export const usePurchasePackageMutation = () => {
       packagesApi.purchase(businessId, input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: packageKeys.list() });
+      // Session 1 is a real Booking; refresh the cross-business customer list explicitly.
+      void queryClient.invalidateQueries({ queryKey: customerBookingListsKey });
     },
   });
 };
