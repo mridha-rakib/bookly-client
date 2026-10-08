@@ -2,9 +2,18 @@
 
 import React, { useMemo } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft02Icon, ArrowRight02Icon, Clock04Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowLeft02Icon,
+  ArrowRight02Icon,
+  Clock04Icon,
+  Tick01Icon,
+} from "@hugeicons/core-free-icons";
 
-import type { AvailabilityResult, AvailabilitySlot } from "@/lib/api/catalog";
+import type {
+  AvailabilityBlockedSlot,
+  AvailabilityResult,
+  AvailabilitySlot,
+} from "@/lib/api/catalog";
 import { formatBookingTime } from "@/lib/bookings/format";
 
 interface TimeStepProps {
@@ -81,25 +90,47 @@ export default function TimeStep({
 
   const selectedDay = selectedDateIso ? dayByIso.get(selectedDateIso) : undefined;
   const hasBookableDates = (availability?.days ?? []).some((day) => day.slots.length > 0);
-  const morningSlots = (selectedDay?.slots ?? []).filter(
+  const displayedSlots: Array<AvailabilitySlot | AvailabilityBlockedSlot> = [
+    ...(selectedDay?.slots ?? []),
+    ...(selectedDay?.blockedSlots ?? []),
+  ].sort((left, right) => left.startAt.localeCompare(right.startAt));
+  const morningSlots = displayedSlots.filter(
     (slot) => localHour(slot.startAt, timezone) < 12,
   );
-  const afternoonSlots = (selectedDay?.slots ?? []).filter(
+  const afternoonSlots = displayedSlots.filter(
     (slot) => localHour(slot.startAt, timezone) >= 12,
   );
 
-  const renderSlotButton = (slot: AvailabilitySlot) => {
+  const renderSlotButton = (slot: AvailabilitySlot | AvailabilityBlockedSlot) => {
+    const timeLabel = formatBookingTime(slot.startAt, timezone);
+    if ("status" in slot) {
+      return (
+        <button
+          type="button"
+          key={slot.startAt}
+          disabled
+          aria-label={`${timeLabel}, Booked`}
+          className="flex cursor-not-allowed flex-col items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 py-2 text-neutral-400"
+        >
+          <span className="text-sm font-semibold">{timeLabel}</span>
+          <span className="text-[10px] font-medium uppercase tracking-wide">Booked</span>
+        </button>
+      );
+    }
+
     const isSelected = selectedSlot?.startAt === slot.startAt;
     return (
       <button
         type="button"
         key={slot.startAt}
         onClick={() => onSelectSlot(slot)}
-        className={`py-3 border rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+        aria-pressed={isSelected}
+        className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border py-3 text-sm font-semibold transition-all ${
           isSelected ? "bg-black border-black text-white" : "border-neutral-200 text-[#111111] hover:bg-neutral-50"
         }`}
       >
-        {formatBookingTime(slot.startAt, timezone)}
+        <span>{formatBookingTime(slot.startAt, timezone)}</span>
+        {isSelected ? <HugeiconsIcon icon={Tick01Icon} size={15} aria-hidden="true" /> : null}
       </button>
     );
   };
@@ -208,7 +239,16 @@ export default function TimeStep({
 
       {/* Time Slots Section */}
       <div className="mt-8 flex w-full flex-col gap-5 sm:mt-10 sm:gap-8 lg:mt-[65px]">
-        <h3 className="font-poppins text-xl font-semibold text-[#111111] sm:text-[22px]">Select Time Slot</h3>
+        <div>
+          <h3 className="font-poppins text-xl font-semibold text-[#111111] sm:text-[22px]">
+            Select Time Slot
+          </h3>
+          <p className="mt-2 text-sm text-[#5F5E5A]" aria-live="polite">
+            {selectedSlot
+              ? `Selected: ${formatBookingTime(selectedSlot.startAt, timezone)}`
+              : "Select a time slot to continue."}
+          </p>
+        </div>
 
         {isLoading ? (
           <p className="text-sm text-neutral-500">Loading availability…</p>
@@ -218,6 +258,10 @@ export default function TimeStep({
           <p className="text-sm text-neutral-500">Choose another month to see available times.</p>
         ) : !selectedDateIso ? (
           <p className="text-sm text-neutral-500">Pick a date above to see available times.</p>
+        ) :
+          (selectedDay?.slots.length ?? 0) === 0 &&
+          (selectedDay?.blockedSlots?.length ?? 0) > 0 ? (
+          <p className="text-sm text-neutral-500">This date is fully booked. Try another day.</p>
         ) : (selectedDay?.slots.length ?? 0) === 0 ? (
           <p className="text-sm text-neutral-500">No times are available on this date. Try another day.</p>
         ) : (

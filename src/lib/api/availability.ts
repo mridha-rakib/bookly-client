@@ -11,10 +11,18 @@ export interface AvailabilitySlot {
   source: "AUTO" | "MANUAL";
 }
 
+export interface AvailabilityBlockedSlot {
+  startAt: string;
+  endAt: string;
+  status: "BOOKED";
+  source: "AUTO" | "MANUAL";
+}
+
 export interface AvailabilityDay {
   date: string;
   isOpen: boolean;
   slots: AvailabilitySlot[];
+  blockedSlots?: AvailabilityBlockedSlot[];
 }
 
 export interface AvailabilityResult {
