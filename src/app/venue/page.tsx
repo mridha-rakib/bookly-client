@@ -520,25 +520,27 @@ function VenueDetailsContent() {
           ? purchasePackageMutation.mutateAsync({ businessId: venueId, input })
           : finalizeMutation.mutateAsync({ businessId: venueId, input });
 
-      // P1 retry safety — every path below that ends the CURRENT finalize attempt (anything
-      // short of a confirmed booking) mints a fresh idempotencyKey before Confirm can be used
-      // again. Reusing the same key across logically separate attempts would hand it straight
-      // back to Stripe (see StripePaymentGateway.createAndConfirmPaymentIntent's own
-      // `idempotencyKey` option): a genuinely new attempt with different/retried card details
-      // risks Stripe replaying the prior cached result (or rejecting the request outright for
-      // not matching the original parameters) instead of actually re-attempting payment. The
-      // ONE exception — the requires_action → confirmCardPayment → same-call retry below —
-      // never goes through this helper, so it correctly keeps reusing the original key captured
-      // in `input`, exactly as BookingCreationService.finalizeCustomerBooking's own doc comment
-      // requires.
+      // P0 durable retry safety — an error with no HTTP response (or a 5xx) is ambiguous: the
+      // provider may have moved money even though this browser never received the response.
+      // Keep the same logical key in that case so the server resumes/reconciles its durable
+      // PaymentAttempt. A definitive 4xx response or client-side 3DS failure ends this attempt;
+      // the next explicit Confirm is a new logical action and receives a fresh key.
       // For BOOKING_SLOT_RESERVATION_CONFLICT specifically (the backend already compensated
       // with a synchronous refund before this error ever reaches the client — see
       // BookingCreationService.compensateFailedBookingAfterPayment) the now-confirmed-gone slot
       // must not be silently resubmitted: clear it and send the customer back to Time so the
       // existing stale-slot Continue gate (isSelectedSlotValid) can never let them retry with it.
-      const failFinalize = (messageOrError: string | unknown) => {
+      const failFinalize = (
+        messageOrError: string | unknown,
+        options: { preserveLogicalKey?: boolean } = {},
+      ) => {
         setWalletError(typeof messageOrError === "string" ? messageOrError : toUserMessage(messageOrError));
-        setIdempotencyKey(crypto.randomUUID());
+        const isAmbiguousServerOutcome =
+          messageOrError instanceof BooklyApiError &&
+          (messageOrError.status === undefined || messageOrError.status >= 500);
+        if (!isAmbiguousServerOutcome && !options.preserveLogicalKey) {
+          setIdempotencyKey(crypto.randomUUID());
+        }
         if (messageOrError instanceof BooklyApiError && messageOrError.code === "BOOKING_SLOT_RESERVATION_CONFLICT") {
           setSelectedSlot(undefined);
           setBookingStep("time");
@@ -561,12 +563,16 @@ function VenueDetailsContent() {
         try {
           const stripe = await getStripe();
           if (!stripe) {
-            failFinalize("Payment could not be initialized. Please try again.");
+            failFinalize("Payment could not be initialized. Please try again.", {
+              preserveLogicalKey: true,
+            });
             return;
           }
           const confirmResult = await stripe.confirmCardPayment(result.clientSecret);
           if (confirmResult.error) {
-            failFinalize(confirmResult.error.message ?? "Payment authentication failed.");
+            failFinalize(confirmResult.error.message ?? "Payment authentication failed.", {
+              preserveLogicalKey: true,
+            });
             return;
           }
           const retry = await submitFinalize();
@@ -574,10 +580,12 @@ function VenueDetailsContent() {
             setConfirmedBooking(retry);
             setBookingStep("confirmed");
           } else {
-            failFinalize("Payment could not be confirmed. Please try again.");
+            failFinalize("Payment could not be confirmed. Please try again.", {
+              preserveLogicalKey: true,
+            });
           }
         } catch (error) {
-          failFinalize(error);
+          failFinalize(error, { preserveLogicalKey: true });
         } finally {
           setConfirming3ds(false);
         }

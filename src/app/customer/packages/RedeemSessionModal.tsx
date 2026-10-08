@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -18,9 +19,11 @@ import type {
   PackageRedemptionPreview,
   PackageRedemptionPreviewInput,
 } from "@/lib/api/packages";
+import { BooklyApiError } from "@/lib/api/client";
 import { toUserMessage } from "@/lib/auth/messages";
 import { formatBookingDate, formatBookingMoney, formatBookingTimeRange } from "@/lib/bookings/format";
 import {
+  catalogKeys,
   useBusinessCatalogQuery,
   useServiceAddonsQuery,
   useServiceAvailabilityQuery,
@@ -90,19 +93,21 @@ export default function RedeemSessionModal({
   const [acceptedPreviewKey, setAcceptedPreviewKey] = useState<string>();
   const [previewError, setPreviewError] = useState<string>();
   const [isPreviewPending, setIsPreviewPending] = useState(false);
+  const [previewRetryKey, setPreviewRetryKey] = useState(0);
   const [submitError, setSubmitError] = useState<string>();
   const [confirming3ds, setConfirming3ds] = useState(false);
   const previewRequestId = useRef(0);
   const mounted = useRef(true);
   const contentRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
       mounted.current = false;
       previewRequestId.current += 1;
-    },
-    [],
-  );
+    };
+  }, []);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -191,11 +196,11 @@ export default function RedeemSessionModal({
           setIsPreviewPending(false);
         }
       },
-      (error: unknown) => {
+      () => {
         if (mounted.current && requestId === previewRequestId.current) {
           setPreview(undefined);
           setAcceptedPreviewKey(undefined);
-          setPreviewError(toUserMessage(error));
+          setPreviewError("We couldn't calculate the session price. Try again.");
           setIsPreviewPending(false);
         }
       },
@@ -216,23 +221,23 @@ export default function RedeemSessionModal({
     travelAddress.floorUnit,
     travelAddress.aptRoom,
     travelAddress.additionalDirections,
+    previewRetryKey,
   ]);
 
   const availabilityFromDate = `${visibleMonth.getFullYear()}-${String(visibleMonth.getMonth() + 1).padStart(2, "0")}-01`;
   const availabilityToDateObj = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0);
   const availabilityToDate = `${availabilityToDateObj.getFullYear()}-${String(availabilityToDateObj.getMonth() + 1).padStart(2, "0")}-${String(availabilityToDateObj.getDate()).padStart(2, "0")}`;
+  const availabilityParams = {
+    fromDate: availabilityFromDate,
+    toDate: availabilityToDate,
+    staffMembershipId: selectedProfessional ?? undefined,
+    customerCity: isTravel ? customerCity : undefined,
+    packageProgressId,
+  };
   const availabilityQuery = useServiceAvailabilityQuery(
     businessId,
     subStep === "time" ? serviceId : undefined,
-    subStep === "time"
-      ? {
-          fromDate: availabilityFromDate,
-          toDate: availabilityToDate,
-          staffMembershipId: selectedProfessional ?? undefined,
-          customerCity: isTravel ? customerCity : undefined,
-          packageProgressId,
-        }
-      : undefined,
+    subStep === "time" ? availabilityParams : undefined,
   );
 
   const selectedStaffMembershipId = selectedSlot
@@ -245,9 +250,23 @@ export default function RedeemSessionModal({
   const paymentMethodMissing = Boolean(
     preview?.requiresSavedCard && currentPreviewIsValid && !preview.hasSavedCard,
   );
+  const selectedSlotIsCurrentlyAvailable = Boolean(
+    selectedDateIso &&
+      selectedSlot &&
+      availabilityQuery.data?.days
+        .find((day) => day.date === selectedDateIso)
+        ?.slots.some((slot) => slot.startAt === selectedSlot.startAt),
+  );
+  const reviewDisabled =
+    !selectedSlotIsCurrentlyAvailable || availabilityQuery.isLoading || availabilityQuery.isError;
 
   const handleConfirm = async () => {
-    if (!selectedSlot || !selectedStaffMembershipId || !previewInput || !currentPreviewIsValid) return;
+    if (
+      !selectedSlot ||
+      !selectedStaffMembershipId ||
+      !previewInput ||
+      !currentPreviewIsValid
+    ) return;
     setSubmitError(undefined);
     const idempotencyKey = crypto.randomUUID();
     const submit = () =>
@@ -288,6 +307,19 @@ export default function RedeemSessionModal({
       }
       onBooked();
     } catch (error) {
+      if (
+        error instanceof BooklyApiError &&
+        (error.code === "BOOKING_SLOT_RESERVATION_CONFLICT" ||
+          error.code === "AVAILABILITY_SLOT_NOT_BOOKABLE")
+      ) {
+        setSelectedSlot(undefined);
+        setSubStep("time");
+        setSubmitError("That time is no longer available. Choose another available time.");
+        void queryClient.invalidateQueries({
+          queryKey: catalogKeys.availability(businessId, serviceId, availabilityParams),
+        });
+        return;
+      }
       setSubmitError(toUserMessage(error));
     }
   };
@@ -300,6 +332,7 @@ export default function RedeemSessionModal({
   };
 
   const changeVisibleMonth = (offset: number) => {
+    setSubmitError(undefined);
     setSelectedDateIso(undefined);
     setSelectedSlot(undefined);
     setVisibleMonth(
@@ -365,6 +398,7 @@ export default function RedeemSessionModal({
                   staff={eligibleStaff}
                   selectedProfessional={selectedProfessional}
                   setSelectedProfessional={(professional) => {
+                    setSubmitError(undefined);
                     setSelectedProfessional(professional);
                     setSelectedSlot(undefined);
                     setSelectedDateIso(undefined);
@@ -383,11 +417,15 @@ export default function RedeemSessionModal({
                   onRetry={() => void availabilityQuery.refetch()}
                   selectedDateIso={selectedDateIso}
                   onSelectDate={(date) => {
+                    setSubmitError(undefined);
                     setSelectedDateIso(date);
                     setSelectedSlot(undefined);
                   }}
                   selectedSlot={selectedSlot}
-                  onSelectSlot={setSelectedSlot}
+                  onSelectSlot={(slot) => {
+                    setSubmitError(undefined);
+                    setSelectedSlot(slot);
+                  }}
                 />
               ) : null}
               {subStep === "review" && selectedSlot ? (
@@ -446,18 +484,39 @@ export default function RedeemSessionModal({
                     </p>
                   ) : null}
                   {previewError ? (
-                    <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{previewError}</p>
+                    <div
+                      role="alert"
+                      className="flex flex-col gap-2 rounded-xl bg-red-50 p-4 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <span>{previewError}</span>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewRetryKey((current) => current + 1)}
+                        className="w-fit font-semibold underline"
+                      >
+                        Retry
+                      </button>
+                    </div>
                   ) : null}
                   {preview && currentPreviewIsValid ? (
                     <PriceSummary preview={preview} isTravel={isTravel} />
                   ) : null}
-                  {paymentMethodMissing ? (
-                    <p className="rounded-xl bg-[#FFF8DF] p-4 text-sm text-[#725B00]">
-                      A saved payment card is required for this online charge.{" "}
-                      <Link href="/customer/payment-card" className="font-semibold underline">
-                        Manage payment card
-                      </Link>
-                    </p>
+                  {preview && currentPreviewIsValid && preview.requiresSavedCard ? (
+                    <div className="rounded-xl border border-[#E2E0DF] p-4 text-sm">
+                      <h4 className="font-semibold text-[#1C1B1C]">Payment method</h4>
+                      {preview.hasSavedCard ? (
+                        <p className="mt-2 text-[#5F5E5A]">
+                          Your saved payment card will be charged when you confirm this session.
+                        </p>
+                      ) : (
+                        <p className="mt-2 rounded-lg bg-[#FFF8DF] p-3 text-[#725B00]">
+                          A saved payment card is required for this online charge.{" "}
+                          <Link href="/customer/payment-card" className="font-semibold underline">
+                            Add a payment card
+                          </Link>
+                        </p>
+                      )}
+                    </div>
                   ) : null}
                 </div>
               ) : null}
@@ -491,7 +550,7 @@ export default function RedeemSessionModal({
                 Continue
               </button>
             ) : subStep === "time" ? (
-              <button type="button" disabled={!selectedSlot || !currentPreviewIsValid || isPreviewPending || Boolean(previewError)} onClick={() => setSubStep("review")} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" disabled={reviewDisabled} onClick={() => setSubStep("review")} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
                 Review
               </button>
             ) : (
@@ -513,7 +572,8 @@ export default function RedeemSessionModal({
 function PriceSummary({ preview, isTravel }: { preview: PackageRedemptionPreview; isTravel: boolean }) {
   return (
     <div className="rounded-xl border border-[#E2E0DF] p-4">
-      <div className="flex justify-between py-1.5 text-sm"><span>Package session</span><span className="font-medium">Included</span></div>
+      <h4 className="mb-2 font-semibold text-[#1C1B1C]">Price summary</h4>
+      <div className="flex justify-between py-1.5 text-sm"><span>Package session</span><span className="font-medium">Included in package</span></div>
       <div className="flex justify-between py-1.5 text-sm"><span>Add-ons</span><span>{formatBookingMoney(preview.addonsSubtotalCents)}</span></div>
       {isTravel ? <div className="flex justify-between py-1.5 text-sm"><span>Travel fee</span><span>{formatBookingMoney(preview.travelFeeCents)}</span></div> : null}
       <div className="mt-2 flex justify-between border-t border-[#E2E0DF] pt-3 font-semibold"><span>Due online now</span><span>{formatBookingMoney(preview.customerChargeNowCents)}</span></div>
