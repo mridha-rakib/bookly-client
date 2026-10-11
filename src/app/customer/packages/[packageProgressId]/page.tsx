@@ -233,7 +233,7 @@ function PackageDetailContent() {
                   {!pkg.balanceSettled ? (
                     <p className="mt-1 text-xs leading-5 text-[#5F5E5A]">
                       Includes any applicable add-ons and travel charges from the original
-                      package purchase, less the deposit paid online.
+                      package purchase, less any deposit paid online.
                     </p>
                   ) : null}
                 </div>
