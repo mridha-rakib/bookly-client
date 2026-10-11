@@ -45,6 +45,9 @@ export interface BookingFinancialsDto {
   servicesSubtotalCents: number;
   addonsSubtotalCents: number;
   serviceDiscountCents: number;
+  /** P2 — present only on a promo booking: the promo discount off the booking price. `totalCents`
+   * (and every amount derived from it) is already after this discount. */
+  promoDiscountCents?: number;
   travelFeeCents: number;
   eligiblePlatformFeeBasisCents: number;
   platformFeeCents: number;
@@ -331,14 +334,16 @@ export interface BookingCreationPreview {
   balanceDueCents: number;
   requiresSavedCard: boolean;
   hasSavedCard: boolean;
-  /** Batch 13 — present only when a valid `promoCode` was submitted and resolved server-side.
-   * `depositBeforePromoCents` always equals `financials.depositCents`; `preTaxChargeCents` above
-   * is already the post-promo taxable charge — never recompute the discount in the client. */
+  /** Present only when a valid `promoCode` was submitted and resolved server-side. P2: the promo
+   * discounts the booking price — `financials.totalCents`, `preTaxChargeCents` and
+   * `balanceDueCents` are already post-promo. Never recompute any of them in the client. */
   promo?: {
     code: string;
     type: "PERCENTAGE" | "FIXED";
+    /** PERCENTAGE: percent. FIXED: integer cents. */
     value: number;
-    depositBeforePromoCents: number;
+    /** The booking price before the promo (services + add-ons − service discount, no travel). */
+    promoEligibleBaseCents: number;
     discountCents: number;
   };
 }

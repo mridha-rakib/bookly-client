@@ -323,9 +323,10 @@ export default function CreatePromoDrawer({ isOpen, onClose, editingPromo }: Cre
             <div className="flex flex-col gap-1.5">
               <span className="text-sm font-semibold font-sans">Important rules:</span>
               <ul className="text-xs font-sans list-disc list-inside space-y-1 opacity-90 leading-normal">
-                <li>Discount applies to the online deposit charge only — never the service price</li>
-                <li>Bookly funds every promo discount — Businesses always receive their full entitlement</li>
-                <li>If a code covers the full deposit, €0 is charged but a card is still saved via Stripe</li>
+                <li>Discount applies to the booking price (services + add-ons, after any service discount) — never the travel fee</li>
+                <li>The Business funds the discount — the booking price and the Business&apos;s earnings are reduced by it</li>
+                <li>Not available for package deals</li>
+                <li>If a code brings a first booking&apos;s price to €0, nothing is charged online but a card is still saved via Stripe</li>
                 <li>Codes are not stackable — one per booking</li>
               </ul>
             </div>

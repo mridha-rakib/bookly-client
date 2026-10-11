@@ -237,6 +237,15 @@ function BookingViewContent() {
                   </div>
                 ) : null}
 
+                {booking.financials.promoDiscountCents ? (
+                  <div className="flex items-center justify-between gap-4 text-sm text-[#1F8900]">
+                    <span>Promo discount{booking.promo ? ` (${booking.promo.code})` : ""}</span>
+                    <span className="shrink-0 font-semibold">
+                      −{formatBookingMoney(booking.financials.promoDiscountCents)}
+                    </span>
+                  </div>
+                ) : null}
+
                 {booking.financials.travelFeeCents > 0 ? (
                   <div className="flex items-center justify-between gap-4 text-sm">
                     <span className="text-[#4E5F78]">Travel fee</span>
