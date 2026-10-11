@@ -12,6 +12,7 @@ import {
   usePromoRedemptionsQuery,
   useSetPromoStatusMutation,
 } from "@/lib/promo/hooks";
+import { formatEuro } from "@/lib/services/format";
 import { formatClockTime12Hour } from "@/lib/staff/format";
 
 interface SuperAdminPromoCodeProps {
@@ -27,7 +28,7 @@ const scopeLabel: Record<PromoScope, string> = {
 const typeLabel = (type: PromoType) => (type === "PERCENTAGE" ? "%" : "Fixed €");
 
 const formatValue = (promo: Pick<PromoListItem, "type" | "value">) =>
-  promo.type === "PERCENTAGE" ? `${promo.value}% off` : `€${promo.value} off`;
+  promo.type === "PERCENTAGE" ? `${promo.value}% off` : `${formatEuro(promo.value)} off`;
 
 const formatDate = (iso?: string) =>
   iso
