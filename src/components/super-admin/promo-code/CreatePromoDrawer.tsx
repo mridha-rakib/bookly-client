@@ -7,6 +7,7 @@ import { Cancel01Icon, InformationCircleIcon, Search01Icon } from "@hugeicons/co
 import type { PromoDetail, PromoScope, PromoType, PromoWriteInput } from "@/lib/api/promo";
 import { useSuperAdminBusinessesQuery } from "@/lib/superAdminBusiness/hooks";
 import { useCreatePromoMutation, useUpdatePromoMutation } from "@/lib/promo/hooks";
+import { centsToEuroText, euroTextToCents } from "@/lib/services/format";
 
 interface CreatePromoDrawerProps {
   isOpen: boolean;
@@ -16,10 +17,24 @@ interface CreatePromoDrawerProps {
 
 const toDateInputValue = (iso?: string): string => (iso ? iso.slice(0, 10) : "");
 
+/** The value field is always in display units — euros for FIXED, percent for PERCENTAGE. The API
+ * stores FIXED as integer cents, so conversion happens only at hydrate/submit, keyed on the
+ * type selected at that moment (never the type the text was typed under). */
+const toDiscountValueText = (type: PromoType, value: number): string =>
+  type === "FIXED" ? centsToEuroText(value) : String(value);
+
+const toApiDiscountValue = (type: PromoType, text: string): number | null => {
+  if (type === "FIXED") {
+    const cents = euroTextToCents(text);
+    return cents !== null && cents > 0 ? cents : null;
+  }
+  return Number(text);
+};
+
 export default function CreatePromoDrawer({ isOpen, onClose, editingPromo }: CreatePromoDrawerProps) {
   const [codeText, setCodeText] = useState("");
   const [discountType, setDiscountType] = useState<PromoType>("PERCENTAGE");
-  const [discountValue, setDiscountValue] = useState<number>(5);
+  const [discountValue, setDiscountValue] = useState("5");
   const [startDate, setStartDate] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [totalLimit, setTotalLimit] = useState<string>("100");
@@ -49,7 +64,7 @@ export default function CreatePromoDrawer({ isOpen, onClose, editingPromo }: Cre
     if (editingPromo) {
       setCodeText(editingPromo.code);
       setDiscountType(editingPromo.type);
-      setDiscountValue(editingPromo.value);
+      setDiscountValue(toDiscountValueText(editingPromo.type, editingPromo.value));
       setStartDate(toDateInputValue(editingPromo.startAt));
       setExpiryDate(toDateInputValue(editingPromo.expiresAt));
       setTotalLimit(editingPromo.totalUsageLimit ? String(editingPromo.totalUsageLimit) : "");
@@ -59,7 +74,7 @@ export default function CreatePromoDrawer({ isOpen, onClose, editingPromo }: Cre
     } else {
       setCodeText("");
       setDiscountType("PERCENTAGE");
-      setDiscountValue(5);
+      setDiscountValue("5");
       setStartDate("");
       setExpiryDate("");
       setTotalLimit("100");
@@ -90,11 +105,16 @@ export default function CreatePromoDrawer({ isOpen, onClose, editingPromo }: Cre
       setFormError("Select at least one business for this scope.");
       return;
     }
+    const value = toApiDiscountValue(discountType, discountValue);
+    if (value === null) {
+      setFormError("Enter a fixed amount in euros, e.g. 5 or 5.50.");
+      return;
+    }
 
     const input: PromoWriteInput = {
       code: codeText,
       type: discountType,
-      value: discountValue,
+      value,
       scope,
       businessIds: scope === "SELECTED_BUSINESSES" ? selectedBusinessIds : [],
       startAt: startDate ? new Date(startDate).toISOString() : undefined,
@@ -177,9 +197,10 @@ export default function CreatePromoDrawer({ isOpen, onClose, editingPromo }: Cre
               <input
                 type="number"
                 value={discountValue}
-                onChange={(e) => setDiscountValue(Number(e.target.value))}
-                min={1}
+                onChange={(e) => setDiscountValue(e.target.value)}
+                min={discountType === "FIXED" ? 0.01 : 1}
                 max={discountType === "PERCENTAGE" ? 100 : undefined}
+                step={discountType === "FIXED" ? 0.01 : undefined}
                 required
                 className="flex-grow px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-sans focus:outline-none focus:border-[#2E9DA7] focus:bg-white transition-all text-[#111111]"
               />

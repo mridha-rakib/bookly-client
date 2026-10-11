@@ -107,7 +107,7 @@ export default function CheckoutSummaryAside({
                 {appliedPromo.code}
               </span>
               <span className="text-xs text-[#065F46] truncate">
-                {appliedPromo.type === "PERCENTAGE" ? `${appliedPromo.value}% off deposit` : `€${appliedPromo.value} off deposit`}
+                {appliedPromo.type === "PERCENTAGE" ? `${appliedPromo.value}% off deposit` : `${formatBookingMoney(appliedPromo.value)} off deposit`}
               </span>
             </div>
             <button
