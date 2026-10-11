@@ -187,13 +187,17 @@ export default function ConfirmedStep({ booking, setBookingStep, isPackagePurcha
           {/* Price Summary breakdown — real data from the booking's own financial snapshot */}
           <div className="flex flex-col gap-4 w-full">
             <div className="flex justify-between items-center w-full font-manrope">
-              <span className="font-medium text-base text-[#45474B] leading-[24px]">Deposit paid</span>
+              <span className="font-medium text-base text-[#45474B] leading-[24px]">
+                {booking.financials.depositCents > 0 ? "Deposit paid" : "Paid online"}
+              </span>
               <span className="font-extrabold text-xl text-[#020305] leading-[28px]">
                 {formatBookingMoney(booking.financials.depositCents)}
               </span>
             </div>
             <div className="flex justify-between items-center w-full font-manrope">
-              <span className="font-medium text-base text-[#45474B] leading-[24px]">Pay remaining at Venue</span>
+              <span className="font-medium text-base text-[#45474B] leading-[24px]">
+                {booking.financials.depositCents > 0 ? "Pay remaining at Venue" : "Pay at Venue"}
+              </span>
               <span className="font-extrabold text-xl text-[#020305] leading-[28px]">
                 {formatBookingMoney(booking.financials.balanceDueCents)}
               </span>
