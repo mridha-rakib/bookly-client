@@ -107,7 +107,7 @@ export default function CheckoutSummaryAside({
                 {appliedPromo.code}
               </span>
               <span className="text-xs text-[#065F46] truncate">
-                {appliedPromo.type === "PERCENTAGE" ? `${appliedPromo.value}% off deposit` : `${formatBookingMoney(appliedPromo.value)} off deposit`}
+                {appliedPromo.type === "PERCENTAGE" ? `${appliedPromo.value}% off booking price` : `${formatBookingMoney(appliedPromo.value)} off booking price`}
               </span>
             </div>
             <button
@@ -171,9 +171,26 @@ export default function CheckoutSummaryAside({
 
       <div className="border-t border-[#E5E5E5] w-full" />
 
+      {/* P2 — the promo lowers the booking price itself; every figure below is the server's
+          post-promo value (never recomputed here). */}
+      {appliedPromo && financials ? (
+        <>
+          <div className="flex justify-between items-center py-2.5 text-[#0CA678]">
+            <span>Promo discount ({appliedPromo.code})</span>
+            <span>-{formatBookingMoney(appliedPromo.discountCents)}</span>
+          </div>
+          <div className="border-t border-[#E5E5E5] w-full" />
+          <div className="flex justify-between items-center py-2.5">
+            <span>Booking total</span>
+            <span>{formatBookingMoney(financials.totalCents)}</span>
+          </div>
+          <div className="border-t border-[#E5E5E5] w-full" />
+        </>
+      ) : null}
+
       <div className="flex justify-between items-center py-2.5 relative">
         <div className="flex items-center gap-1.5">
-          <span>{appliedPromo ? "Deposit before promo" : "Deposit before VAT"}</span>
+          <span>Deposit before VAT</span>
           <div className="relative group">
             <button
               type="button"
@@ -187,37 +204,13 @@ export default function CheckoutSummaryAside({
               <span>
                 {isPackagePurchase
                   ? "Charged now to secure your first session — 20% of the package price, minimum €5, maximum €35. The remaining balance is paid at the venue, and settling it in full is what unlocks booking your remaining sessions."
-                  : "Charged now to secure your slot — 20% of the service price, minimum €5, maximum €35. Deducted from your total at the venue."}
+                  : "Charged now to secure your slot — 20% of the service price (after any promo discount), minimum €5, maximum €35. Deducted from your total at the venue."}
               </span>
             </div>
           </div>
         </div>
-        <span>
-          {preview
-            ? formatBookingMoney(appliedPromo ? appliedPromo.depositBeforePromoCents : preview.preTaxChargeCents)
-            : "—"}
-        </span>
+        <span>{preview ? formatBookingMoney(preview.preTaxChargeCents) : "—"}</span>
       </div>
-
-      {appliedPromo ? (
-        <>
-          <div className="border-t border-[#E5E5E5] w-full" />
-          <div className="flex justify-between items-center py-2.5 text-[#0CA678]">
-            <span>Promo discount ({appliedPromo.code})</span>
-            <span>-{formatBookingMoney(appliedPromo.discountCents)}</span>
-          </div>
-        </>
-      ) : null}
-
-      {appliedPromo ? (
-        <>
-          <div className="border-t border-[#E5E5E5] w-full" />
-          <div className="flex justify-between items-center py-2.5">
-            <span>Deposit before VAT</span>
-            <span>{preview ? formatBookingMoney(preview.preTaxChargeCents) : "—"}</span>
-          </div>
-        </>
-      ) : null}
 
       {renderPromoField()}
 
@@ -287,7 +280,7 @@ export default function CheckoutSummaryAside({
               <p>Payment is processed securely via Stripe. Your card is also stored for the Business&apos;s cancellation/no-show policy below.</p>
               <p className="pt-2 border-t border-neutral-100 text-[12px] leading-normal italic">
                 Cancellation and no-show fees, if any, are set by {business?.name ?? "this Business"} and are calculated
-                based on the full service price, not the deposit amount.
+                based on the {appliedPromo ? "booking price after your promo discount" : "full service price"}, not the deposit amount.
               </p>
             </>
           )}
