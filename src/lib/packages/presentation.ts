@@ -6,8 +6,8 @@ export const PACKAGE_STATUS_PRESENTATION: Record<
 > = {
   ACTIVE: { label: "Active", className: "bg-[#DFFDDF] text-[#176117]" },
   AWAITING_BALANCE: { label: "Balance due", className: "bg-[#FFF3CD] text-[#8A6D0B]" },
-  DEPLETED: { label: "All sessions used", className: "bg-neutral-100 text-neutral-600" },
-  VOIDED: { label: "Refunded", className: "bg-neutral-100 text-neutral-600" },
+  DEPLETED: { label: "No sessions available", className: "bg-neutral-100 text-neutral-600" },
+  VOIDED: { label: "Cancelled", className: "bg-neutral-100 text-neutral-600" },
 };
 
 export const PACKAGE_SESSION_STATUS_PRESENTATION: Record<

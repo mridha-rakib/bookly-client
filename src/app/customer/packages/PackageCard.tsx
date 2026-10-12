@@ -51,7 +51,7 @@ export default function PackageCard({
         <div className="flex items-center justify-between gap-4">
           <dt className="text-[#45474B]">Sessions remaining</dt>
           <dd className="font-semibold text-[#020305]">
-            {pkg.remainingSessions} / {pkg.totalSessions}
+            {pkg.status === "VOIDED" ? 0 : pkg.remainingSessions} / {pkg.totalSessions}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-4">

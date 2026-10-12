@@ -21,6 +21,7 @@ import {
   Car04Icon
 } from "@hugeicons/core-free-icons";
 
+import PackageActionControls from "@/components/packages/PackageActionControls";
 import type { BookingDetail } from "@/lib/api/bookings";
 import {
   BOOKING_STATUS_LABELS,
@@ -369,7 +370,7 @@ export default function ClientBookingHistoryCard({
                 </div>
                 {aggregate ? (
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 font-poppins">
-                    <OperationalValue label="Remaining sessions" value={String(aggregate.remainingSessions)} />
+                    <OperationalValue label={aggregate.packageStatus === "VOIDED" ? "Historical remaining" : "Remaining sessions"} value={String(aggregate.remainingSessions)} />
                     <OperationalValue label="Completed" value={String(aggregate.completedSessions)} />
                     <OperationalValue
                       label="Package balance"
@@ -400,6 +401,9 @@ export default function ClientBookingHistoryCard({
         </div>
       )}
 
+      {showOperationalContext && booking.packageSessions.map(session => (
+        <PackageActionControls key={session.packageProgressId} businessId={businessId} packageId={session.packageProgressId} />
+      ))}
       {/* 2.5 SERVICE LOCATION */}
       <div className="bg-white border border-neutral-200/60 rounded-2xl p-6 flex flex-col gap-5 w-full shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">

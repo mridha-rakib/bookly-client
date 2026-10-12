@@ -54,7 +54,7 @@ function BookingsPageContent() {
   const [cancelBookingId, setCancelBookingId] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | undefined>(undefined);
   const cancelMutation = useCancelByCustomerMutation();
-  const [cancelResult, setCancelResult] = useState<{ additionalChargeCents: number; refundOwedCents: number } | undefined>(
+  const [cancelResult, setCancelResult] = useState<{ additionalChargeCents: number; refundOwedCents: number; settlementStatus: string } | undefined>(
     undefined,
   );
 
@@ -67,6 +67,7 @@ function BookingsPageContent() {
       setCancelResult({
         additionalChargeCents: booking.cancellationOutcome?.additionalChargeCents ?? 0,
         refundOwedCents: booking.cancellationOutcome?.refundOwedCents ?? 0,
+        settlementStatus: booking.cancellationOutcome?.settlementStatus ?? "NOT_APPLICABLE",
       });
     } catch (error) {
       setCancelError(toUserMessage(error));
@@ -185,8 +186,8 @@ function BookingsPageContent() {
             <h2 className="font-bold text-[32px] leading-10 text-[#020305] mb-2">Cancel your booking?</h2>
 
             <p className="text-sm text-[#4E5F78] leading-6 mb-8 px-2">
-              Cancellation and no-show fees, if any, are set by the Business and calculated on the full service
-              price, not your deposit. We&apos;ll show you the exact result — refund or additional charge — right
+              Cancellation and no-show fees, if any, are set by the Business and calculated on discounted service and add-ons, excluding travel.
+              We&apos;ll show you the exact result — refund or additional charge — right
               after you confirm.
             </p>
 
@@ -229,13 +230,15 @@ function BookingsPageContent() {
               Your booking has been cancelled and the changes are updated in your bookings list.
             </p>
 
-            {cancelResult.additionalChargeCents > 0 ? (
+            {cancelResult.additionalChargeCents > 0 && cancelResult.settlementStatus === "SUCCEEDED" ? (
               <p className="text-sm font-semibold text-[#BA1A1A] mb-6">
                 A cancellation fee of {formatBookingMoney(cancelResult.additionalChargeCents)} was charged to your saved card.
               </p>
+            ) : cancelResult.additionalChargeCents > 0 ? (
+              <p className="text-sm font-semibold text-[#BA1A1A] mb-6">Cancellation charge status: {cancelResult.settlementStatus.toLowerCase()}. No successful charge has been confirmed.</p>
             ) : cancelResult.refundOwedCents > 0 ? (
               <p className="text-sm font-semibold text-[#1F8900] mb-6">
-                {formatBookingMoney(cancelResult.refundOwedCents)} will be refunded to your card within 3-5 business days.
+                {formatBookingMoney(cancelResult.refundOwedCents)} refund status: {cancelResult.settlementStatus.toLowerCase()}.
               </p>
             ) : (
               <p className="text-sm font-semibold text-[#1F8900] mb-6">No charge applied.</p>

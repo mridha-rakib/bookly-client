@@ -41,6 +41,7 @@ export interface PackageProgress {
   serviceId: string;
   totalSessions: number;
   remainingSessions: number;
+  availableSessions: number;
   completedSessions: number;
   status: "ACTIVE" | "AWAITING_BALANCE" | "DEPLETED" | "VOIDED";
   balanceSettled: boolean;
@@ -63,6 +64,7 @@ export interface PackageProgress {
     }>;
   } | null;
   voidedAt?: string;
+  voidRefundSettlement?: { status: "PENDING" | "SUCCEEDED" | "FAILED"; amountCents: number; refundOperationId?: string; providerRefundId?: string };
   createdAt: string;
   updatedAt: string;
 }
@@ -113,7 +115,15 @@ export interface PackageRedemptionPreview {
   hasSavedCard: boolean;
 }
 
+export interface PackageActionResult {
+  packageProgressId: string; voidedAt?: string; cancelledBookingIds: string[]; availableSessions: number;
+  refundSettlement?: PackageProgress["voidRefundSettlement"];
+}
+
 export const packagesApi = {
+  getForBusiness: (businessId: string, packageId: string) => apiRequest<PackageProgress>({ method: "GET", url: `/businesses/${businessId}/bookings/packages/${packageId}` }),
+  cancelFuture: (businessId: string, packageId: string) => apiRequest<PackageActionResult>({ method: "POST", url: `/businesses/${businessId}/bookings/packages/${packageId}/cancel-future`, data: {} }),
+  terminate: (businessId: string, packageId: string) => apiRequest<PackageActionResult>({ method: "POST", url: `/businesses/${businessId}/bookings/packages/${packageId}/terminate`, data: {} }),
   previewPurchase: (businessId: string, input: PackagePurchaseInput) =>
     apiRequest<BookingCreationPreview>({
       method: "POST",

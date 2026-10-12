@@ -66,6 +66,7 @@ export const useBookingDetailQuery = (
     queryKey: bookingKeys.detail(businessId ?? "", bookingId ?? ""),
     queryFn: () => bookingsApi.getDetailForBusiness(businessId as string, bookingId as string),
     enabled: Boolean(businessId) && Boolean(bookingId),
+    refetchInterval: query => query.state.data?.cancellationOutcome?.settlementStatus === "PENDING" && query.state.data.cancellationOutcome.refundOwedCents > 0 ? 3000 : false,
   });
 
 export const useBusinessCalendarQuery = (
@@ -256,6 +257,7 @@ export const useCustomerBookingDetailQuery = (bookingId: string | undefined) =>
     queryKey: bookingKeys.customerDetail(bookingId ?? ""),
     queryFn: () => bookingsApi.getDetailForCustomer(bookingId as string),
     enabled: Boolean(bookingId),
+    refetchInterval: query => query.state.data?.cancellationOutcome?.settlementStatus === "PENDING" && query.state.data.cancellationOutcome.refundOwedCents > 0 ? 3000 : false,
   });
 
 // Batch 16 — Book Again, same "cross-business, own-history" scope as the rest of this section.
