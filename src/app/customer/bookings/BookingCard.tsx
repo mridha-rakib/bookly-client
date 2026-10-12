@@ -261,7 +261,7 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
                 <hr className="border-t border-[#B3B3B3] my-1" />
                 <p className="text-xs text-[#4E5F78]">
                   Cancellation and no-show fees, if any, are set by {business?.name ?? "the Business"}, not by Bookly, and
-                  are based on the full service price.
+                  use discounted service and add-ons, excluding travel.
                 </p>
               </>
             )}

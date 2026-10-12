@@ -29,6 +29,7 @@ export const usePackageDetailQuery = (packageProgressId: string | undefined) =>
     queryKey: packageKeys.detail(packageProgressId ?? ""),
     queryFn: () => packagesApi.getForCustomer(packageProgressId as string),
     enabled: Boolean(packageProgressId),
+    refetchInterval: query => query.state.data?.voidRefundSettlement?.status === "PENDING" ? 3000 : false,
   });
 
 /** Read-only quote for a Package purchase — same "recompute the real, server-trusted quote"

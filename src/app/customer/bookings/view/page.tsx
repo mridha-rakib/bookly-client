@@ -399,7 +399,7 @@ function BookingViewContent() {
             <p className="text-sm text-[#4E5F78] leading-6 mb-8 px-2">
               {packageLine
                 ? "This cancels only this appointment, not your whole package. Depending on the existing cancellation policy, the session may be restored or forfeited. We’ll show the exact result after you confirm."
-                : `Cancellation and no-show fees, if any, are set by ${business?.name ?? "the Business"} and calculated on the full service price, not your deposit. We’ll show you the exact result right after you confirm.`}
+                : `Cancellation and no-show fees, if any, are set by ${business?.name ?? "the Business"} and calculated on discounted service and add-ons, excluding travel. We’ll show you the exact result right after you confirm.`}
             </p>
             {cancelError ? <p className="text-sm text-red-600 font-medium mb-4">{cancelError}</p> : null}
             <div className="flex flex-col-reverse sm:flex-row gap-3 sm:gap-4 w-full">

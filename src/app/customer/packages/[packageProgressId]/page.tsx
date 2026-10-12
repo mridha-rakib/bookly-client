@@ -22,6 +22,7 @@ import {
   PACKAGE_SESSION_STATUS_PRESENTATION,
   PACKAGE_STATUS_PRESENTATION,
 } from "@/lib/packages/presentation";
+import PackageActionControls from "@/components/packages/PackageActionControls";
 import RedeemSessionModal from "../RedeemSessionModal";
 
 const attemptsBySessionIndex = (sessions: PackageProgressSession[]): Map<number, number> => {
@@ -153,7 +154,7 @@ function PackageDetailContent() {
                   <div className="grid w-full grid-cols-1 gap-2 min-[375px]:grid-cols-3 md:w-auto md:min-w-[360px]">
                     <SummaryStat
                       label={isAwaitingBalance ? "Remaining" : "Available"}
-                      value={pkg.remainingSessions}
+                      value={pkg.status === "VOIDED" ? 0 : pkg.remainingSessions}
                     />
                     <SummaryStat label="Scheduled" value={scheduledCount} />
                     <SummaryStat label="Completed" value={pkg.completedSessions} />
@@ -206,12 +207,13 @@ function PackageDetailContent() {
                     </p>
                   ) : pkg.status === "VOIDED" ? (
                     <p className="text-sm font-medium text-[#5F5E5A]">
-                      This package was refunded and cannot be used for new appointments.
+                      This package has been cancelled and cannot be used for new appointments.
                     </p>
                   ) : null}
                 </div>
               </section>
 
+              <PackageActionControls businessId={pkg.businessId} packageId={pkg.id} />
               <section className="grid gap-4 rounded-2xl border border-[#C6C6CB] bg-white p-5 md:grid-cols-3 md:p-7">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-[#888780]">
@@ -242,7 +244,7 @@ function PackageDetailContent() {
                     Sessions
                   </p>
                   <p className="mt-2 font-semibold text-[#020305]">
-                    {pkg.totalSessions} total · {pkg.remainingSessions}{" "}
+                    {pkg.totalSessions} total · {pkg.status === "VOIDED" ? 0 : pkg.remainingSessions}{" "}
                     {isAwaitingBalance ? "remaining" : "available"}
                   </p>
                 </div>
@@ -420,7 +422,7 @@ function SessionHistoryItem({
                   href={bookingUrl}
                   className="rounded-lg border border-red-200 px-4 py-2 text-center text-sm font-semibold text-[#BA1A1A] hover:bg-red-50"
                 >
-                  Cancel session
+                  Cancel this appointment
                 </Link>
               </>
             ) : null}
