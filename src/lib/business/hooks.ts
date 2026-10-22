@@ -26,10 +26,15 @@ export const businessKeys = {
 // (BusinessDashboardApprovalGate). While the owner's primary business is still PENDING, this
 // query refetches on window focus and on a short interval so admin approval becomes visible
 // without a manual reload or re-login; both stop automatically once status leaves PENDING.
+// Outside PENDING the result stays fresh briefly: the approval gate fetches it first and only then
+// mounts the dashboard, whose own observers would otherwise refetch it immediately (one extra
+// GET /businesses/my-profile per dashboard load). PENDING keeps staleTime 0 so focus refetch
+// behaves exactly as before; mutations still invalidate it and refetch() always fetches.
 export const useMyBusinessProfileQuery = () =>
   useQuery({
     queryKey: businessKeys.profile(),
     queryFn: businessApi.getMyProfile,
+    staleTime: (query) => (query.state.data?.primary?.status === "PENDING" ? 0 : 30_000),
     refetchOnWindowFocus: (query) => query.state.data?.primary?.status === "PENDING",
     refetchInterval: (query) => (query.state.data?.primary?.status === "PENDING" ? 45_000 : false),
   });

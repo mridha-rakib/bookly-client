@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
+import SessionRecovery from "@/components/auth/SessionRecovery";
 import { Spinner } from "@/components/ui/spinner";
 import { authRoutes, getAuthenticatedUserHomePath } from "@/lib/auth/routes";
 import { useAuthStore } from "@/lib/auth/store";
@@ -37,6 +38,10 @@ export default function RequireSuperAdmin({ children }: RequireSuperAdminProps) 
       router.replace(user ? getAuthenticatedUserHomePath(user) : authRoutes.professionalAuth);
     }
   }, [router, status, user]);
+
+  if (status === "unverified") {
+    return <SessionRecovery />;
+  }
 
   if (status !== "authenticated" || isInitializing || user?.role !== "SUPER_ADMIN") {
     return (

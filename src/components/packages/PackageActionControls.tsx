@@ -1,10 +1,11 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { formatBookingDate, formatBookingTimeRange } from "@/lib/bookings/format";
 import { packagesApi } from "@/lib/api/packages";
 import { useAuthStore } from "@/lib/auth/store";
+import { useBusinessPackageDetailQuery, usePackageDetailQuery } from "@/lib/packages/hooks";
 
 export default function PackageActionControls({
   businessId,
@@ -17,14 +18,15 @@ export default function PackageActionControls({
   const cache = useQueryClient();
   const [action, setAction] = useState<"future" | "terminate" | null>(null);
   const permitted = role === "CUSTOMER" || role === "BUSINESS_OWNER" || role === "SUPERVISOR";
-  const query = useQuery({
-    queryKey: ["packageActionDetail", role, businessId, packageId],
-    queryFn: () => role === "CUSTOMER"
-      ? packagesApi.getForCustomer(packageId)
-      : packagesApi.getForBusiness(businessId, packageId),
-    enabled: permitted,
-    refetchInterval: (query) => query.state.data?.voidRefundSettlement?.status === "PENDING" ? 3000 : false,
+  const customerQuery = usePackageDetailQuery(packageId, {
+    enabled: role === "CUSTOMER",
+    refetchOnMount: false,
   });
+  const businessQuery = useBusinessPackageDetailQuery(businessId, packageId, {
+    enabled: role === "BUSINESS_OWNER" || role === "SUPERVISOR",
+    refetchOnMount: false,
+  });
+  const query = role === "CUSTOMER" ? customerQuery : businessQuery;
   const mutation = useMutation({
     mutationFn: (kind: "future" | "terminate") => kind === "future"
       ? packagesApi.cancelFuture(businessId, packageId)
@@ -32,7 +34,6 @@ export default function PackageActionControls({
     onSuccess: () => {
       setAction(null);
       void cache.invalidateQueries({ queryKey: ["packages"] });
-      void cache.invalidateQueries({ queryKey: ["packageActionDetail"] });
       void cache.invalidateQueries({ queryKey: ["bookings"] });
       void cache.invalidateQueries({ queryKey: ["customerBookings"] });
     },

@@ -13,6 +13,7 @@ const SLUG_TO_LABEL: Record<string, string> = {
   "canceled": "Canceled",
   "business-profile": "Business Profile",
   "services": "Services",
+  "packages": "Packages",
   "archived-services": "Archived Services",
   "add-ons": "Add-ons",
   "archived-add-ons": "Archived Add-ons",

@@ -6,6 +6,7 @@ import Image from "next/image";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Mail01Icon, SquareLock01Icon, ShieldKeyIcon } from "@hugeicons/core-free-icons";
 
+import SessionRecovery from "@/components/auth/SessionRecovery";
 import AuthCard from "@/components/auth/AuthCard";
 import { InputField } from "@/components/auth/InputField";
 import { Spinner } from "@/components/ui/spinner";
@@ -41,6 +42,10 @@ export default function SuperAdminLoginPage() {
   }, [router, status, user]);
 
   const isRedirecting = status === "unknown" || isInitializing || (status === "authenticated" && !!user);
+
+  if (status === "unverified") {
+    return <SessionRecovery />;
+  }
 
   if (isRedirecting) {
     return (

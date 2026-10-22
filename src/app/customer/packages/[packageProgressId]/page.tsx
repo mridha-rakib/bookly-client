@@ -2,36 +2,26 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import RequireCustomer from "@/components/auth/RequireCustomer";
 import SearchBar from "@/components/landing-page/SearchBar";
-import type { PackageProgressSession } from "@/lib/api/packages";
+import PackageAppointmentHistory from "@/components/packages/PackageAppointmentHistory";
 import { useAuthStore } from "@/lib/auth/store";
 import {
-  formatBookingDate,
   formatBookingMoney,
-  formatBookingTimeRange,
 } from "@/lib/bookings/format";
 import { useBusinessCatalogQuery } from "@/lib/catalog/hooks";
 import { usePackageDetailQuery, useVoidPackageMutation } from "@/lib/packages/hooks";
 import {
   isLikelyVoidEligible,
-  PACKAGE_SESSION_STATUS_PRESENTATION,
   PACKAGE_STATUS_PRESENTATION,
 } from "@/lib/packages/presentation";
 import PackageActionControls from "@/components/packages/PackageActionControls";
 import RedeemSessionModal from "../RedeemSessionModal";
 
-const attemptsBySessionIndex = (sessions: PackageProgressSession[]): Map<number, number> => {
-  const counts = new Map<number, number>();
-  for (const session of sessions) {
-    counts.set(session.sessionIndex, (counts.get(session.sessionIndex) ?? 0) + 1);
-  }
-  return counts;
-};
 
 export default function PackageDetailPage() {
   return (
@@ -53,10 +43,6 @@ function PackageDetailContent() {
   const catalogQuery = useBusinessCatalogQuery(pkg?.businessId);
   const voidPackageMutation = useVoidPackageMutation();
 
-  const attemptCounts = useMemo(
-    () => attemptsBySessionIndex(pkg?.sessions ?? []),
-    [pkg?.sessions],
-  );
   const scheduledCount =
     pkg?.sessions.filter((session) => session.status === "SCHEDULED").length ?? 0;
   const business = catalogQuery.data?.business;
@@ -258,30 +244,12 @@ function PackageDetailContent() {
                   </p>
                 </div>
 
-                {pkg.sessions.length === 0 ? (
-                  <p className="rounded-xl bg-[#F5F4EE] p-5 text-sm text-[#5F5E5A]">
-                    No session appointments are available to show yet.
-                  </p>
-                ) : (
-                  <ol className="flex flex-col gap-4">
-                    {pkg.sessions.map((session, index) => {
-                      const repeatedAttempts = attemptCounts.get(session.sessionIndex) ?? 1;
-                      const attemptNumber =
-                        pkg.sessions
-                          .slice(0, index + 1)
-                          .filter((item) => item.sessionIndex === session.sessionIndex).length;
-                      return (
-                        <SessionHistoryItem
-                          key={session.bookingId}
-                          session={session}
-                          totalSessions={pkg.totalSessions}
-                          attemptNumber={attemptNumber}
-                          repeatedAttempts={repeatedAttempts}
-                        />
-                      );
-                    })}
-                  </ol>
-                )}
+                <PackageAppointmentHistory
+                  sessions={pkg.sessions}
+                  totalSessions={pkg.totalSessions}
+                  customer
+                  showCustomerActions={pkg.status !== "VOIDED"}
+                />
               </section>
 
               {isLikelyVoidEligible(pkg) ? (
@@ -337,101 +305,6 @@ function SummaryStat({ label, value }: { label: string; value: number }) {
   );
 }
 
-function SessionHistoryItem({
-  session,
-  totalSessions,
-  attemptNumber,
-  repeatedAttempts,
-}: {
-  session: PackageProgressSession;
-  totalSessions: number;
-  attemptNumber: number;
-  repeatedAttempts: number;
-}) {
-  const presentation = PACKAGE_SESSION_STATUS_PRESENTATION[session.status];
-  const isActionable = session.status === "SCHEDULED" && session.booking?.status === "UPCOMING";
-  const bookingUrl = `/customer/bookings/view?id=${encodeURIComponent(session.bookingId)}`;
-
-  return (
-    <li className="rounded-xl border border-[#E2E0DF] p-4 md:p-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-manrope font-bold text-[#020305]">
-              Session {session.sessionIndex} of {totalSessions}
-            </h3>
-            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${presentation.className}`}>
-              {presentation.label}
-            </span>
-          </div>
-          {repeatedAttempts > 1 ? (
-            <p className="mt-1 text-xs font-medium text-[#725B00]">
-              Appointment attempt {attemptNumber} of {repeatedAttempts}
-            </p>
-          ) : null}
-          <p className="mt-2 text-sm text-[#5F5E5A]">{presentation.description}</p>
-
-          {session.booking ? (
-            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-              <div>
-                <dt className="text-xs font-semibold uppercase tracking-wider text-[#888780]">
-                  Date and time
-                </dt>
-                <dd className="mt-1 font-medium text-[#1C1B1C]">
-                  {formatBookingDate(
-                    session.booking.schedule.startAt,
-                    session.booking.schedule.timezone,
-                  )}
-                  {" · "}
-                  {formatBookingTimeRange(session.booking.schedule)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs font-semibold uppercase tracking-wider text-[#888780]">
-                  Professional
-                </dt>
-                <dd className="mt-1 font-medium text-[#1C1B1C]">
-                  {session.booking.professional.displayName ?? "Professional"}
-                </dd>
-              </div>
-            </dl>
-          ) : (
-            <p className="mt-4 rounded-lg bg-[#F5F4EE] p-3 text-sm text-[#5F5E5A]">
-              Booking details are unavailable.
-            </p>
-          )}
-        </div>
-
-        {session.booking ? (
-          <div className="flex w-full flex-col gap-2 sm:w-[180px] sm:flex-none">
-            <Link
-              href={bookingUrl}
-              className="rounded-lg border border-[#C6C6CB] px-4 py-2 text-center text-sm font-semibold text-[#020305] hover:bg-neutral-50"
-            >
-              View booking
-            </Link>
-            {isActionable ? (
-              <>
-                <Link
-                  href={bookingUrl}
-                  className="rounded-lg border border-[#C6C6CB] px-4 py-2 text-center text-sm font-semibold text-[#020305] hover:bg-neutral-50"
-                >
-                  Reschedule session
-                </Link>
-                <Link
-                  href={bookingUrl}
-                  className="rounded-lg border border-red-200 px-4 py-2 text-center text-sm font-semibold text-[#BA1A1A] hover:bg-red-50"
-                >
-                  Cancel this appointment
-                </Link>
-              </>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    </li>
-  );
-}
 
 function PackageDetailSkeleton() {
   return (

@@ -55,6 +55,9 @@ export const usePublicFaqsQuery = (audience: FaqAudience) =>
   useQuery({
     queryKey: contentKeys.publicFaqs(audience),
     queryFn: () => contentApi.listPublicFaqs(audience),
+    // Same 5-min freshness as the discovery reads beside it on the homepage. Without it, the
+    // auth-boundary remount (Providers' cacheEpoch key) re-sent this already-carried public read.
+    staleTime: 5 * 60 * 1000,
   });
 
 export const useCreateFaqMutation = () => {

@@ -121,6 +121,14 @@ const onBookingMutated = (
   // Lifecycle mutation DTOs remain generic; refresh this Business-only detail read so package
   // counters and the origin-balance scheduling gate are immediately re-enriched.
   void queryClient.invalidateQueries({ queryKey: bookingKeys.detail(businessId, booking.id) });
+  // Lifecycle DTOs retain the line linkage even when their aggregate enrichment is absent.
+  // Completion/cancellation/reschedule/no-show also change the shared package history read.
+  const packageIds = new Set(booking.serviceLines.flatMap(line =>
+    line.packageProgressId ? [line.packageProgressId] : [],
+  ));
+  for (const packageId of packageIds) {
+    void queryClient.invalidateQueries({ queryKey: packageKeys.businessDetail(businessId, packageId) });
+  }
   invalidateBookingCaches(queryClient, businessId);
 };
 
