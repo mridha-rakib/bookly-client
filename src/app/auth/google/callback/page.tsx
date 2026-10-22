@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import SessionRecovery from "@/components/auth/SessionRecovery";
+import OAuthCallbackRecovery from "@/components/auth/OAuthCallbackRecovery";
 import AuthCard from "@/components/auth/AuthCard";
 import AuthLayout from "@/components/auth/AuthLayout";
 import { Spinner } from "@/components/ui/spinner";
@@ -10,6 +12,7 @@ import type { CustomerGoogleAuthStatus, GoogleAuthFlow } from "@/lib/api/auth";
 import { getAuthenticatedHomePath } from "@/lib/auth/routes";
 import { clearPostLoginRedirect, consumePostLoginRedirect } from "@/lib/auth/post-login-redirect";
 import { useAuthStore } from "@/lib/auth/store";
+import { useOAuthCallbackSession } from "@/lib/auth/oauth-callback";
 
 /** How long to wait for the refresh-cookie session to come up before treating a
  * success/onboarding return as a failure. The cookie is set by the backend before this page
@@ -86,7 +89,6 @@ function GoogleCallbackContent() {
 
   const authStatus = useAuthStore((state) => state.status);
   const user = useAuthStore((state) => state.user);
-  const restoreSession = useAuthStore((state) => state.restoreSession);
 
   const [timedOut, setTimedOut] = useState(false);
   const redirectedRef = useRef(false);
@@ -98,27 +100,20 @@ function GoogleCallbackContent() {
   const waitingForSession =
     (status === "success" || status === "onboarding") && !professionalOnboarding;
 
-  // Pull the freshly-issued session up from the refresh cookie the backend just set. `Providers`
-  // also calls this on app mount; `restoreSession` is guarded against concurrent runs, so a
-  // second call is a harmless no-op that guarantees we don't depend on effect ordering.
-  useEffect(() => {
-    if (waitingForSession) {
-      void restoreSession();
-    }
-  }, [waitingForSession, restoreSession]);
+  const { interrupted, isBlocked } = useOAuthCallbackSession(waitingForSession);
 
   // Professional onboarding: hand straight off to the existing signup flow, in `provider=google`
   // mode, carrying the RegistrationSession id the backend signed into the redirect. Visit type is
   // no longer threaded through here — it's a later onboarding step (/professional/visit-type),
   // collected well after this OAuth round trip.
   useEffect(() => {
-    if (!professionalOnboarding || redirectedRef.current) {
+    if (isBlocked() || !professionalOnboarding || redirectedRef.current) {
       return;
     }
     redirectedRef.current = true;
     const sessionId = searchParams.get("sessionId") ?? "";
     router.replace(`/professional/signup?provider=google&sessionId=${encodeURIComponent(sessionId)}`);
-  }, [professionalOnboarding, searchParams, router]);
+  }, [professionalOnboarding, searchParams, router, isBlocked]);
 
   // Safety net: never spin forever on a success return.
   useEffect(() => {
@@ -131,7 +126,7 @@ function GoogleCallbackContent() {
 
   // Once the session is authenticated, hand off to the existing destination logic.
   useEffect(() => {
-    if (!waitingForSession || redirectedRef.current) {
+    if (isBlocked() || !waitingForSession || redirectedRef.current) {
       return;
     }
     if (authStatus === "authenticated" && user) {
@@ -148,7 +143,9 @@ function GoogleCallbackContent() {
       clearPostLoginRedirect();
       router.replace(getAuthenticatedHomePath(user.role));
     }
-  }, [waitingForSession, authStatus, user, status, router]);
+  }, [waitingForSession, authStatus, user, status, router, isBlocked]);
+
+  if (interrupted) return <OAuthCallbackRecovery signInPath={config.signInPath} />;
 
   if (professionalOnboarding) {
     return <LoadingScreen caption="Setting up your account…" />;
@@ -189,7 +186,10 @@ function GoogleCallbackContent() {
   }
 
   if (status === "success" || status === "onboarding") {
-    if (authStatus === "unauthenticated" || timedOut) {
+    if (authStatus === "unverified") {
+      return <SessionRecovery />;
+    }
+    if (authStatus === "unauthenticated" || (timedOut && authStatus !== "authenticated")) {
       return (
         <ResultCard
           title="Sign-in didn't complete"

@@ -166,6 +166,10 @@ export default function SupervisorDashboard() {
                   businessId={bookingsBusinessId ?? ""}
                   showFooterActions={true}
                   showOperationalContext={true}
+                  onViewRelatedBooking={(bookingId) => {
+                    setViewingBookingId(bookingId);
+                    setIsViewingBookingDetails(true);
+                  }}
                   onCompleteBooking={() => setShowCompleteModalForBooking(true)}
                   onWaiveFeeClick={() => setShowWaiveFeeModal(true)}
                   onCancelNoShowClick={() => setShowNoShowModal(true)}

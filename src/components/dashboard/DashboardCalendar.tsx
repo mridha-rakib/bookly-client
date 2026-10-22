@@ -141,7 +141,13 @@ export default function DashboardCalendar({
     : viewMode === "Monthly" ? new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
     : rangeStart;
 
-  const calendarQuery = useBusinessCalendarQuery(businessId, isoDateOnly(rangeStart), isoDateOnly(rangeEnd));
+  // The calendar endpoint takes full ISO instants (date-only values are rejected with 400).
+  // Columns are browser-local dates while cards bucket by each booking's own timezone
+  // (bookingLocalDateKey), so the window is padded one day either side; only visible dates are
+  // ever matched below, so a padded row can never render.
+  const queryFromDate = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate() - 1).toISOString();
+  const queryToDate = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate() + 1, 23, 59, 59, 999).toISOString();
+  const calendarQuery = useBusinessCalendarQuery(businessId, queryFromDate, queryToDate);
   const staffListQuery = useStaffListQuery(businessId);
   const bookings = calendarQuery.data?.bookings ?? [];
 
@@ -524,6 +530,11 @@ export default function DashboardCalendar({
             {calendarQuery.isLoading ? (
               <div className="flex items-center justify-center py-16">
                 <span className="font-poppins text-sm text-neutral-400">Loading calendar…</span>
+              </div>
+            ) : calendarQuery.isError ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
+                <span className="font-poppins text-sm font-semibold text-[#BA1A1A]">Couldn&apos;t load calendar</span>
+                <span className="font-poppins text-xs text-[#ABAAA6]">Please try again in a moment.</span>
               </div>
             ) : viewMode === "Monthly" ? (
               /* MONTHLY VIEW: Calendar Dates Grid, real per-day booking summaries */

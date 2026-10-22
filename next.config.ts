@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: __dirname,
+  },
+  experimental: {
+    // The existing dev filesystem cache opens over 150,000 file handles on Windows.
+    turbopackFileSystemCacheForDev: false,
+  },
   images: {
     // Business media is served from a self-hosted S3-compatible store (MinIO in dev,
     // reachable only via loopback/private hostnames). Next 16 blocks image optimization

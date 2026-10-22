@@ -264,7 +264,6 @@ export const useProfessionalRegistrationProgressQuery = (sessionId: string) =>
     queryKey: ["professional-registration-progress", sessionId],
     queryFn: () => authApi.professionalProgress(sessionId),
     enabled: Boolean(sessionId),
-    retry: 1,
   });
 
 // GET /auth/me — the only source for a SUPERVISOR's (or STAFF's) businessId today; Business

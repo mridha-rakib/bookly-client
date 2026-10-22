@@ -1,6 +1,8 @@
 import { BooklyApiError, normalizeApiError } from "@/lib/api/client";
 
 const codeMessages: Record<string, string> = {
+  LOGOUT_PENDING:
+    "Your previous sign-out hasn't been confirmed yet. Retry sign-out, or choose \"Sign in again anyway\".",
   INVALID_CREDENTIALS: "The email or password is incorrect.",
   PORTAL_MISMATCH: "This email belongs to a different Bookly portal.",
   USER_SUSPENDED: "This account is suspended. Please contact support.",

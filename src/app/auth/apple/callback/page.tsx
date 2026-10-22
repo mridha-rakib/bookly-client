@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import SessionRecovery from "@/components/auth/SessionRecovery";
+import OAuthCallbackRecovery from "@/components/auth/OAuthCallbackRecovery";
 import AuthCard from "@/components/auth/AuthCard";
 import AuthLayout from "@/components/auth/AuthLayout";
 import { Spinner } from "@/components/ui/spinner";
@@ -10,6 +12,7 @@ import type { SocialAuthStatus } from "@/lib/api/auth";
 import { getAuthenticatedHomePath } from "@/lib/auth/routes";
 import { clearPostLoginRedirect, consumePostLoginRedirect } from "@/lib/auth/post-login-redirect";
 import { useAuthStore } from "@/lib/auth/store";
+import { useOAuthCallbackSession } from "@/lib/auth/oauth-callback";
 
 /** Landing page for "Continue with Apple" (LOGIN, not Settings linking). Customer + Professional
  * flows only — Apple staff-invitation OAuth is not implemented. */
@@ -76,7 +79,6 @@ function AppleCallbackContent() {
 
   const authStatus = useAuthStore((state) => state.status);
   const user = useAuthStore((state) => state.user);
-  const restoreSession = useAuthStore((state) => state.restoreSession);
 
   const [timedOut, setTimedOut] = useState(false);
   const redirectedRef = useRef(false);
@@ -85,22 +87,18 @@ function AppleCallbackContent() {
   const waitingForSession =
     (status === "success" || status === "onboarding") && !professionalOnboarding;
 
-  useEffect(() => {
-    if (waitingForSession) {
-      void restoreSession();
-    }
-  }, [waitingForSession, restoreSession]);
+  const { interrupted, isBlocked } = useOAuthCallbackSession(waitingForSession);
 
   // Visit type is no longer threaded through here — it's a later onboarding step
   // (/professional/visit-type), collected well after this OAuth round trip.
   useEffect(() => {
-    if (!professionalOnboarding || redirectedRef.current) {
+    if (isBlocked() || !professionalOnboarding || redirectedRef.current) {
       return;
     }
     redirectedRef.current = true;
     const sessionId = searchParams.get("sessionId") ?? "";
     router.replace(`/professional/signup?provider=apple&sessionId=${encodeURIComponent(sessionId)}`);
-  }, [professionalOnboarding, searchParams, router]);
+  }, [professionalOnboarding, searchParams, router, isBlocked]);
 
   useEffect(() => {
     if (!waitingForSession) {
@@ -111,7 +109,7 @@ function AppleCallbackContent() {
   }, [waitingForSession]);
 
   useEffect(() => {
-    if (!waitingForSession || redirectedRef.current) {
+    if (isBlocked() || !waitingForSession || redirectedRef.current) {
       return;
     }
     if (authStatus === "authenticated" && user) {
@@ -127,7 +125,9 @@ function AppleCallbackContent() {
       clearPostLoginRedirect();
       router.replace(getAuthenticatedHomePath(user.role));
     }
-  }, [waitingForSession, authStatus, user, status, router]);
+  }, [waitingForSession, authStatus, user, status, router, isBlocked]);
+
+  if (interrupted) return <OAuthCallbackRecovery signInPath={config.signInPath} />;
 
   if (professionalOnboarding) {
     return <LoadingScreen caption="Setting up your account…" />;
@@ -145,7 +145,10 @@ function AppleCallbackContent() {
   }
 
   if (status === "success" || status === "onboarding") {
-    if (authStatus === "unauthenticated" || timedOut) {
+    if (authStatus === "unverified") {
+      return <SessionRecovery />;
+    }
+    if (authStatus === "unauthenticated" || (timedOut && authStatus !== "authenticated")) {
       return (
         <ResultCard
           title="Sign-in didn't complete"

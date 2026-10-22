@@ -13,6 +13,8 @@ export const packageKeys = {
   all: ["packages"] as const,
   list: () => [...packageKeys.all, "list"] as const,
   detail: (packageProgressId: string) => [...packageKeys.all, "detail", packageProgressId] as const,
+  businessDetail: (businessId: string, packageProgressId: string) =>
+    [...packageKeys.all, "business", businessId, "detail", packageProgressId] as const,
 };
 
 const customerBookingListsKey = ["customerBookings", "list"] as const;
@@ -24,13 +26,30 @@ export const useMyPackagesQuery = () =>
     queryFn: () => packagesApi.listForCustomer(),
   });
 
-export const usePackageDetailQuery = (packageProgressId: string | undefined) =>
+export const usePackageDetailQuery = (
+  packageProgressId: string | undefined,
+  { enabled = true, refetchOnMount = true }: { enabled?: boolean; refetchOnMount?: boolean } = {},
+) =>
   useQuery({
     queryKey: packageKeys.detail(packageProgressId ?? ""),
     queryFn: () => packagesApi.getForCustomer(packageProgressId as string),
-    enabled: Boolean(packageProgressId),
+    enabled: enabled && Boolean(packageProgressId),
+    refetchOnMount,
     refetchInterval: query => query.state.data?.voidRefundSettlement?.status === "PENDING" ? 3000 : false,
   });
+
+/** One business-scoped cache entry shared by appointment history and package actions. */
+export const useBusinessPackageDetailQuery = (
+  businessId: string,
+  packageProgressId: string,
+  { enabled = true, refetchOnMount = true }: { enabled?: boolean; refetchOnMount?: boolean } = {},
+) => useQuery({
+  queryKey: packageKeys.businessDetail(businessId, packageProgressId),
+  queryFn: () => packagesApi.getForBusiness(businessId, packageProgressId),
+  enabled: enabled && Boolean(businessId) && Boolean(packageProgressId),
+  refetchOnMount,
+  refetchInterval: query => query.state.data?.voidRefundSettlement?.status === "PENDING" ? 3000 : false,
+});
 
 /** Read-only quote for a Package purchase — same "recompute the real, server-trusted quote"
  * pattern as usePreviewCustomerBookingMutation. Never trust a client-computed total. */

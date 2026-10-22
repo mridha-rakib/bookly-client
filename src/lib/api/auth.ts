@@ -350,10 +350,11 @@ export const authApi = {
       url: "/auth/refresh",
     }),
 
-  logout: () =>
-    apiRequest<undefined>({
+  logout: (intent: { intentId: string; familyId: string }) =>
+    apiRequest<{ intentId: string; familyId: string; outcome: "revoked" }>({
       method: "POST",
       url: "/auth/logout",
+      data: intent,
     }),
 
   me: () =>

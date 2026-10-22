@@ -22,6 +22,7 @@ import {
 } from "@hugeicons/core-free-icons";
 
 import PackageActionControls from "@/components/packages/PackageActionControls";
+import BusinessPackageAppointmentHistory from "@/components/packages/BusinessPackageAppointmentHistory";
 import type { BookingDetail } from "@/lib/api/bookings";
 import {
   BOOKING_STATUS_LABELS,
@@ -48,6 +49,7 @@ interface ClientBookingHistoryCardProps {
   /** Business Booking Detail-only operational context. Client-history cards keep their existing
    * density while the dedicated detail view gets persistent payment/package truth. */
   showOperationalContext?: boolean;
+  onViewRelatedBooking?: (bookingId: string) => void;
   onCompleteBooking?: () => void;
   /** Fires with a real, chosen ISO `startAt` — the caller is responsible for calling
    * bookingsApi.rescheduleByOwner (never computed/validated here). */
@@ -127,6 +129,7 @@ export default function ClientBookingHistoryCard({
   showNotesDetails = true,
   showFooterActions = false,
   showOperationalContext = false,
+  onViewRelatedBooking,
   onCompleteBooking,
   onReschedule,
   isReschedulePending = false,
@@ -394,6 +397,9 @@ export default function ClientBookingHistoryCard({
                   <p className="font-poppins text-xs text-[#675A82]">
                     Package aggregate details are unavailable. Session identity is shown only from this booking&apos;s historical service line.
                   </p>
+                )}
+                {aggregate && (
+                  <BusinessPackageAppointmentHistory businessId={businessId} packageId={aggregate.packageProgressId} currentBookingId={booking.id} onViewBooking={onViewRelatedBooking} />
                 )}
               </div>
             );

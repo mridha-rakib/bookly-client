@@ -41,6 +41,7 @@ import ClientBookingHistoryCard from "@/components/clients/ClientBookingHistoryC
 import DashboardBusinessProfile from "@/components/dashboard/DashboardBusinessProfile";
 import DashboardCreateBusiness from "@/components/dashboard/DashboardCreateBusiness";
 import ServicesListPage from "@/components/dashboard/services/ServicesListPage";
+import PackagesListPage from "@/components/dashboard/packages/PackagesListPage";
 import ArchivedServicesList from "@/components/dashboard/services/ArchivedServicesList";
 import AddonsListPage from "@/components/dashboard/addons/AddonsListPage";
 import ArchivedAddonsList from "@/components/dashboard/addons/ArchivedAddonsList";
@@ -322,6 +323,10 @@ function BusinessDashboardContent() {
                   businessId={bookingsBusinessId ?? ""}
                   showFooterActions={true}
                   showOperationalContext={true}
+                  onViewRelatedBooking={(bookingId) => {
+                    setViewingBookingId(bookingId);
+                    setIsViewingBookingDetails(true);
+                  }}
                   onCompleteBooking={() => setShowCompleteModalForBooking(true)}
                   onWaiveFeeClick={() => setShowWaiveFeeModal(true)}
                   onCancelNoShowClick={() => setShowNoShowModal(true)}
@@ -395,6 +400,10 @@ function BusinessDashboardContent() {
 
     if (activeTab === "Services") {
       return <ServicesListPage />;
+    }
+
+    if (activeTab === "Packages") {
+      return <PackagesListPage />;
     }
 
     if (activeTab === "Archived Services") {
