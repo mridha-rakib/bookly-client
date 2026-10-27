@@ -1,4 +1,7 @@
 "use client";
+import VenueServices from "./components/VenueServices";
+import { usePackageView } from "@/lib/packages/view-hooks";
+import type { PackageOffer } from "@/lib/api/package-views";
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -7,8 +10,6 @@ import Footer from "@/components/Footer";
 import Image from "next/image";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft01Icon, ArrowRight01Icon, Clock04Icon, Location05Icon, SquareLock01Icon, InformationCircleIcon, Cancel01Icon, FavouriteIcon } from "@hugeicons/core-free-icons";
-import ServiceCard, { Recommendation } from "@/components/ServiceCard";
-import Carousel from "@/components/landing-page/Carousel";
 import AddonsStep from "./components/AddonsStep";
 import TravelAddressStep, { emptyTravelAddress, type TravelAddressFields } from "./components/TravelAddressStep";
 import ProfessionalsStep from "./components/ProfessionalsStep";
@@ -17,10 +18,17 @@ import PaymentStep from "./components/PaymentStep";
 import ConfirmedStep from "./components/ConfirmedStep";
 import CheckoutSummaryAside from "./components/CheckoutSummaryAside";
 import VenueLocationMap from "./components/VenueLocationMap";
+import {
+  availabilityPartySize,
+  effectivePricingInput,
+  stepPricingInput,
+  type VenuePricingInput,
+} from "./pricing-input";
 
 import { Suspense } from "react";
 
 import { useAuthStore } from "@/lib/auth/store";
+import { customerPaymentSession } from "@/lib/bookings/payment-session";
 import { storePostLoginRedirect } from "@/lib/auth/post-login-redirect";
 import { BooklyApiError } from "@/lib/api/client";
 import { useBusinessCatalogQuery, useServiceAddonsQuery, useServiceAvailabilityQuery } from "@/lib/catalog/hooks";
@@ -59,6 +67,8 @@ function VenueDetailsContent() {
 
   // Real Business + Service catalog (Batch 9) — replaces mockVenueDetails' hardcoded services.
   const catalogQuery = useBusinessCatalogQuery(venueId);
+  const packageQuery = usePackageView("catalogue", venueId);
+  const packageOffers = (packageQuery.data as { packages: PackageOffer[] } | undefined)?.packages ?? [];
 
   // Batch 17 — real Business profile (name/phone/address/category/about/open-status/hours/
   // media) + real Staff team, replacing every remaining mockVenueDetails.* field on this page.
@@ -96,7 +106,7 @@ function VenueDetailsContent() {
   // Booking Wizard Steps States
   const [bookingStep, setBookingStep] = useState<"addons" | "travel" | "professionals" | "time" | "payment" | "confirmed" | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<string | undefined>(undefined);
-  const [pricingInputByService, setPricingInputByService] = useState<Record<string, { hours?: number; personCount?: number }>>({});
+  const [pricingInputByService, setPricingInputByService] = useState<Record<string, VenuePricingInput>>({});
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [selectedProfessional, setSelectedProfessional] = useState<string | null>(null);
   // Travel/visit-type (Phase 1 fix) — only meaningful when the business is TRAVEL_TO_CUSTOMER;
@@ -119,8 +129,23 @@ function VenueDetailsContent() {
   const [confirmedBooking, setConfirmedBooking] = useState<BookingDetail | undefined>(undefined);
   const [confirming3ds, setConfirming3ds] = useState(false);
   const [walletError, setWalletError] = useState<string | undefined>(undefined);
+  const paymentAction = useRef<object | null>(null);
+  React.useEffect(() => () => { paymentAction.current = null; }, []);
+  const closeBookingWizard = () => {
+    paymentAction.current = null;
+    setConfirming3ds(false);
+    setBookingStep(null);
+  };
 
   const selectedService = catalogQuery.data?.services.find((s) => s.id === selectedServiceId);
+  // F1: the quantity actually booked (the stepper's displayed default when untouched), and the
+  // group party size derived from it. Both come from effectivePricingInput only.
+  const selectedPricingInput: VenuePricingInput = selectedService
+    ? effectivePricingInput(selectedService, pricingInputByService[selectedService.id])
+    : {};
+  const selectedPartySize = selectedService
+    ? availabilityPartySize(selectedService, pricingInputByService[selectedService.id])
+    : undefined;
   const eligibleStaff = (catalogQuery.data?.staff ?? []).filter((member) =>
     selectedService?.assignedStaffMembershipIds.includes(member.id),
   );
@@ -147,6 +172,11 @@ function VenueDetailsContent() {
           fromDate: availabilityFromDate,
           toDate: availabilityToDate,
           staffMembershipId: selectedProfessional ?? undefined,
+          // F1: a group (PER_PERSON) Service's slots and eligible staff depend on the party
+          // size; omitted for every other Service (the API defaults to 1). Part of the query
+          // key, so a different party size never reuses another size's response.
+          partySize: selectedPartySize,
+          hours: selectedPricingInput.hours,
           customerCity: isTravelBooking ? customerCity : undefined,
         }
       : undefined,
@@ -159,7 +189,12 @@ function VenueDetailsContent() {
   // because it's non-null — see the Time→Payment stale-slot audit.
   const selectedAvailabilityDay = availabilityQuery.data?.days.find((day) => day.date === selectedDateIso);
   const isSelectedSlotValid = Boolean(
-    selectedSlot && selectedAvailabilityDay?.slots.some((slot) => slot.startAt === selectedSlot.startAt),
+    selectedSlot && selectedAvailabilityDay?.slots.some((slot) =>
+      slot.startAt === selectedSlot.startAt && slot.endAt === selectedSlot.endAt &&
+      (selectedProfessional && selectedProfessional !== ANY_STAFF
+        ? slot.eligibleStaffMembershipIds.includes(selectedProfessional)
+        : slot.eligibleStaffMembershipIds.includes(selectedSlot.eligibleStaffMembershipIds[0]!)),
+    ),
   );
 
   // Safety net: once a fresh (non-loading, non-fetching) availability response is in for the
@@ -179,6 +214,20 @@ function VenueDetailsContent() {
     !isSelectedSlotValid
   ) {
     setSelectedSlot(undefined);
+  }
+
+  // F1/F1B: a slot chosen for one quantity is never carried over to another. Its offered time and
+  // `eligibleStaffMembershipIds` (used for "any professional") were computed for the old size,
+  // and the same start time can still appear for the new size with different eligible staff,
+  // so the startAt check above cannot catch it. The size can only change while the wizard is
+  // closed, but the wizard can be re-entered without re-selecting the Service. Same "adjusting
+  // state during render" pattern as above.
+  const [slotPartySize, setSlotPartySize] = useState<number | undefined>(selectedPartySize);
+  const [slotHours, setSlotHours] = useState<number | undefined>(selectedPricingInput.hours);
+  if (slotPartySize !== selectedPartySize || slotHours !== selectedPricingInput.hours) {
+    setSlotPartySize(selectedPartySize);
+    setSlotHours(selectedPricingInput.hours);
+    if (selectedSlot) setSelectedSlot(undefined);
   }
 
   const previewMutation = usePreviewCustomerBookingMutation();
@@ -222,12 +271,13 @@ function VenueDetailsContent() {
   // booking mid-wizard can never show the WRONG flow's stale preview: a Package's preview shape/
   // summary is not a smaller version of a normal booking's, so `preview` below only ever exposes
   // an accepted response that actually matches the CURRENT flow — a pure derivation during render,
-  // no extra effect/state-reset needed. An ordinary same-flow input change is unaffected and keeps
-  // showing the last accepted preview while a fresh one loads, matching this page's existing
-  // loading-state UX.
+  // no extra effect/state-reset needed. F1B also tags the quantity so a quote for an older
+  // duration/group size stays hidden until a matching response arrives. Other same-flow changes
+  // keep the existing loading-state UX.
   const [acceptedPreview, setAcceptedPreview] = useState<
-    { isPackage: boolean; data: BookingCreationPreview } | undefined
+    { isPackage: boolean; quantityKey: string; data: BookingCreationPreview } | undefined
   >(undefined);
+  const previewQuantityKey = JSON.stringify([selectedServiceId, selectedPricingInput.hours, selectedPricingInput.personCount]);
   const [isPreviewPending, setIsPreviewPending] = useState(false);
   const [previewFetchFailed, setPreviewFetchFailed] = useState(false);
 
@@ -243,6 +293,7 @@ function VenueDetailsContent() {
   ): Promise<BookingCreationPreview> => {
     const requestId = ++previewRequestIdRef.current;
     const isPackage = isPackagePurchaseFlow;
+    const quantityKey = previewQuantityKey;
     return Promise.resolve()
       .then(() => {
         setIsPreviewPending(true);
@@ -251,7 +302,7 @@ function VenueDetailsContent() {
       .then(
         (result) => {
           if (isMountedRef.current && requestId === previewRequestIdRef.current) {
-            setAcceptedPreview({ isPackage, data: result });
+            setAcceptedPreview({ isPackage, quantityKey, data: result });
             setPreviewFetchFailed(false);
             setIsPreviewPending(false);
           }
@@ -286,7 +337,8 @@ function VenueDetailsContent() {
   };
 
   const preview =
-    acceptedPreview?.isPackage === isPackagePurchaseFlow ? acceptedPreview.data : undefined;
+    acceptedPreview?.isPackage === isPackagePurchaseFlow && acceptedPreview.quantityKey === previewQuantityKey
+      ? acceptedPreview.data : undefined;
 
   // Batch 13 — Promo Code. `appliedPromoCode` is the server-CONFIRMED code (only set after a
   // successful preview resolves it); `promoCodeInput` is the raw, uncommitted text field.
@@ -322,7 +374,8 @@ function VenueDetailsContent() {
           serviceId: selectedService.id,
           staffMembershipId,
           addonIds: selectedAddonIds,
-          pricingInput: pricingInputByService[selectedService.id] ?? {},
+          // F1: never `{}` for HOURLY/PER_PERSON; the API requires the quantity.
+          pricingInput: selectedPricingInput,
         },
       ],
       startAt: selectedSlot.startAt,
@@ -381,7 +434,7 @@ function VenueDetailsContent() {
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookingStep, selectedServiceId, selectedAddonIds.join(","), selectedProfessional, selectedSlot?.startAt, appliedPromoCode, isPackagePurchaseFlow, customerCity, travelAddress.propertyType, travelAddress.area, travelAddress.streetName, travelAddress.streetNumber, travelAddress.floorUnit, travelAddress.aptRoom, travelAddress.additionalDirections]);
+  }, [bookingStep, selectedServiceId, selectedPricingInput.hours, selectedPricingInput.personCount, selectedAddonIds.join(","), selectedProfessional, selectedSlot?.startAt, appliedPromoCode, isPackagePurchaseFlow, customerCity, travelAddress.propertyType, travelAddress.area, travelAddress.streetName, travelAddress.streetNumber, travelAddress.floorUnit, travelAddress.aptRoom, travelAddress.additionalDirections]);
 
   const handleApplyPromo = async () => {
     const code = promoCodeInput.trim();
@@ -501,98 +554,114 @@ function VenueDetailsContent() {
     } else if (bookingStep === "time") {
       setBookingStep("payment");
     } else if (bookingStep === "payment") {
+      if (paymentAction.current || !canContinueWizard) return;
+      const session = customerPaymentSession(useAuthStore.getState());
+      if (!session) return;
       const input = buildBookingInput();
       if (!input) return;
-      setWalletError(undefined);
-
-      // Batch 9 completion pass — a real gap found and fixed here: neither this call nor the
-      // 3DS-retry call below had a catch, so a genuine decline, a stale-slot conflict, or any
-      // network/API failure threw uncaught inside this handler — the Confirm button quietly
-      // re-enabled (React Query resets `isPending` regardless of whether the rejection is
-      // awaited) with NO error shown, leaving the customer staring at a dead button. Every
-      // finalize call in this flow must always resolve to either a confirmed booking or a
-      // visible, real error — never a silent no-op (see spec section 6's own requirement).
-      // A Package purchase goes through its own finalize call (still returns the exact same
-      // FinalizeBookingResult shape, so the 3DS/confirmation handling below is identical either
-      // way — see BookingCreationService.finalizePackagePurchase's own doc comment).
-      const submitFinalize = () =>
-        isPackagePurchaseFlow
-          ? purchasePackageMutation.mutateAsync({ businessId: venueId, input })
-          : finalizeMutation.mutateAsync({ businessId: venueId, input });
-
-      // P0 durable retry safety — an error with no HTTP response (or a 5xx) is ambiguous: the
-      // provider may have moved money even though this browser never received the response.
-      // Keep the same logical key in that case so the server resumes/reconciles its durable
-      // PaymentAttempt. A definitive 4xx response or client-side 3DS failure ends this attempt;
-      // the next explicit Confirm is a new logical action and receives a fresh key.
-      // For BOOKING_SLOT_RESERVATION_CONFLICT specifically (the backend already compensated
-      // with a synchronous refund before this error ever reaches the client — see
-      // BookingCreationService.compensateFailedBookingAfterPayment) the now-confirmed-gone slot
-      // must not be silently resubmitted: clear it and send the customer back to Time so the
-      // existing stale-slot Continue gate (isSelectedSlotValid) can never let them retry with it.
-      const failFinalize = (
-        messageOrError: string | unknown,
-        options: { preserveLogicalKey?: boolean } = {},
-      ) => {
-        setWalletError(typeof messageOrError === "string" ? messageOrError : toUserMessage(messageOrError));
-        const isAmbiguousServerOutcome =
-          messageOrError instanceof BooklyApiError &&
-          (messageOrError.status === undefined || messageOrError.status >= 500);
-        if (!isAmbiguousServerOutcome && !options.preserveLogicalKey) {
-          setIdempotencyKey(crypto.randomUUID());
-        }
-        if (messageOrError instanceof BooklyApiError && messageOrError.code === "BOOKING_SLOT_RESERVATION_CONFLICT") {
-          setSelectedSlot(undefined);
-          setBookingStep("time");
-        }
-      };
-
-      let result: Awaited<ReturnType<typeof submitFinalize>>;
+      const action = {};
+      paymentAction.current = action;
+      const isCurrentAction = () => paymentAction.current === action &&
+        session === customerPaymentSession(useAuthStore.getState());
       try {
-        result = await submitFinalize();
-      } catch (error) {
-        failFinalize(error);
-        return;
-      }
+        setWalletError(undefined);
 
-      if ("clientSecret" in result) {
-        // 3DS/SCA required — confirm using the already-attached payment method, then retry the
-        // SAME idempotencyKey (see BookingCreationService.finalizeCustomerBooking's own doc
-        // comment: this is the confirmed, correct saga, never a second charge).
-        setConfirming3ds(true);
+        // Batch 9 completion pass — a real gap found and fixed here: neither this call nor the
+        // 3DS-retry call below had a catch, so a genuine decline, a stale-slot conflict, or any
+        // network/API failure threw uncaught inside this handler — the Confirm button quietly
+        // re-enabled (React Query resets `isPending` regardless of whether the rejection is
+        // awaited) with NO error shown, leaving the customer staring at a dead button. Every
+        // finalize call in this flow must always resolve to either a confirmed booking or a
+        // visible, real error — never a silent no-op (see spec section 6's own requirement).
+        // A Package purchase goes through its own finalize call (still returns the exact same
+        // FinalizeBookingResult shape, so the 3DS/confirmation handling below is identical either
+        // way — see BookingCreationService.finalizePackagePurchase's own doc comment).
+        const submitFinalize = () =>
+          isPackagePurchaseFlow
+            ? purchasePackageMutation.mutateAsync({ businessId: venueId, input })
+            : finalizeMutation.mutateAsync({ businessId: venueId, input });
+
+        // P0 durable retry safety — an error with no HTTP response (or a 5xx) is ambiguous: the
+        // provider may have moved money even though this browser never received the response.
+        // Keep the same logical key in that case so the server resumes/reconciles its durable
+        // PaymentAttempt. A definitive 4xx response may end this attempt;
+        // 3DS errors and unclassified failures keep its key for authoritative reconciliation.
+        // For BOOKING_SLOT_RESERVATION_CONFLICT specifically, the server rejected admission;
+        // compensation status remains a separate persisted financial fact. The rejected slot
+        // must not be silently resubmitted: clear it and send the customer back to Time so the
+        // existing stale-slot Continue gate (isSelectedSlotValid) can never let them retry with it.
+        const failFinalize = (
+          messageOrError: string | unknown,
+          options: { preserveLogicalKey?: boolean } = {},
+        ) => {
+          if (!isCurrentAction()) return;
+          setWalletError(typeof messageOrError === "string" ? messageOrError : toUserMessage(messageOrError));
+          const isAmbiguousServerOutcome =
+            !(messageOrError instanceof BooklyApiError) ||
+            messageOrError.status === undefined || messageOrError.status >= 500;
+          if (!isAmbiguousServerOutcome && !options.preserveLogicalKey) {
+            setIdempotencyKey(crypto.randomUUID());
+          }
+          if (messageOrError instanceof BooklyApiError && messageOrError.code === "BOOKING_SLOT_RESERVATION_CONFLICT") {
+            setSelectedSlot(undefined);
+            setBookingStep("time");
+          }
+        };
+
+        let result: Awaited<ReturnType<typeof submitFinalize>>;
         try {
-          const stripe = await getStripe();
-          if (!stripe) {
-            failFinalize("Payment could not be initialized. Please try again.", {
-              preserveLogicalKey: true,
-            });
-            return;
-          }
-          const confirmResult = await stripe.confirmCardPayment(result.clientSecret);
-          if (confirmResult.error) {
-            failFinalize(confirmResult.error.message ?? "Payment authentication failed.", {
-              preserveLogicalKey: true,
-            });
-            return;
-          }
-          const retry = await submitFinalize();
-          if (!("clientSecret" in retry)) {
-            setConfirmedBooking(retry);
-            setBookingStep("confirmed");
-          } else {
-            failFinalize("Payment could not be confirmed. Please try again.", {
-              preserveLogicalKey: true,
-            });
-          }
+          result = await submitFinalize();
+          if (!isCurrentAction()) return;
         } catch (error) {
-          failFinalize(error, { preserveLogicalKey: true });
-        } finally {
-          setConfirming3ds(false);
+          failFinalize(error);
+          return;
         }
-        return;
+
+        if ("clientSecret" in result) {
+          // 3DS/SCA required — confirm using the already-attached payment method, then retry the
+          // SAME idempotencyKey (see BookingCreationService.finalizeCustomerBooking's own doc
+          // comment: this is the confirmed, correct saga, never a second charge).
+          setConfirming3ds(true);
+          try {
+            const stripe = await getStripe();
+            if (!isCurrentAction()) return;
+            if (!stripe) {
+              failFinalize("Payment could not be initialized. Please try again.", {
+                preserveLogicalKey: true,
+              });
+              return;
+            }
+            const confirmResult = await stripe.confirmCardPayment(result.clientSecret);
+            if (!isCurrentAction()) return;
+            if (confirmResult.error) {
+              failFinalize(confirmResult.error.message ?? "Payment authentication failed.", {
+                preserveLogicalKey: true,
+              });
+              return;
+            }
+            const retry = await submitFinalize();
+            if (!isCurrentAction()) return;
+            if (!("clientSecret" in retry)) {
+              setConfirmedBooking(retry);
+              setBookingStep("confirmed");
+            } else {
+              failFinalize("Payment could not be confirmed. Please try again.", {
+                preserveLogicalKey: true,
+              });
+            }
+          } catch (error) {
+            failFinalize(error, { preserveLogicalKey: true });
+          } finally {
+            if (isCurrentAction()) setConfirming3ds(false);
+          }
+          return;
+        }
+        setConfirmedBooking(result);
+        setBookingStep("confirmed");
+      } finally {
+        if (isCurrentAction()) setConfirming3ds(false);
+        if (paymentAction.current === action) paymentAction.current = null;
       }
-      setConfirmedBooking(result);
-      setBookingStep("confirmed");
     }
   };
 
@@ -810,7 +879,8 @@ function VenueDetailsContent() {
    * moment the wizard opens, the real, server-computed `preview` (via
    * usePreviewCustomerBookingMutation) is the only amount ever shown as authoritative or
    * charged (rule #1/#14: never trust a client-computed total). */
-  const estimateServicePriceCents = (service: CatalogService, input: { hours?: number; personCount?: number }): number => {
+  const estimateServicePriceCents = (service: CatalogService, stored: VenuePricingInput | undefined): number => {
+    const input = effectivePricingInput(service, stored);
     if (service.fixedPricing) return service.fixedPricing.priceCents;
     if (service.hourlyPricing) return (input.hours ?? service.hourlyPricing.minHours) * service.hourlyPricing.ratePerHourCents;
     if (service.perPersonPricing) return (input.personCount ?? service.perPersonPricing.minPersons) * service.perPersonPricing.ratePerPersonCents;
@@ -827,8 +897,8 @@ function VenueDetailsContent() {
             selectedService.fixedPricing?.durationMin ?? selectedService.perPersonPricing?.durationMin ?? selectedService.packagePricing?.durationMin
               ? `${selectedService.fixedPricing?.durationMin ?? selectedService.perPersonPricing?.durationMin ?? selectedService.packagePricing?.durationMin} min${selectedService.isPackageDeal ? " per session" : ""}`
               : "",
-          priceVal: estimateServicePriceCents(selectedService, pricingInputByService[selectedService.id] ?? {}) / 100,
-          priceText: formatBookingMoney(estimateServicePriceCents(selectedService, pricingInputByService[selectedService.id] ?? {})),
+          priceVal: estimateServicePriceCents(selectedService, pricingInputByService[selectedService.id]) / 100,
+          priceText: formatBookingMoney(estimateServicePriceCents(selectedService, pricingInputByService[selectedService.id])),
           onRemove: () => setSelectedServiceId(undefined),
         },
       ]
@@ -1057,48 +1127,21 @@ function VenueDetailsContent() {
             <div className={`w-full ${isMobile ? "flex flex-col gap-12" : ""}`}>
               {(isMobile || activeTab === "services") && (
                 <section id="services" className="scroll-mt-24 flex flex-col gap-6">
-                  {/* Category Filter Badges */}
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {["All", "Featured", "Packages", "Hair", "Beard", "Color", "Hair Treatment", "NAILS", "Facial", "Waxing & Trimming"].map((cat, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => setSelectedCategory(cat)}
-                        className={`px-4 py-2 rounded-full text-xs font-semibold tracking-wider uppercase border transition-all cursor-pointer ${selectedCategory === cat
-                          ? "bg-black border-black text-white"
-                          : "bg-white border-neutral-200 text-[#4E5F78] hover:bg-neutral-50"
-                          }`}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Services List Card Stack — real Business services (Batch 9), replacing the
-                      previous 5 hardcoded "Wedding Pic" mock cards. */}
-                  <div className="flex flex-col gap-4">
-                    {catalogQuery.isLoading && (
-                      <p className="text-sm text-neutral-500">Loading services…</p>
-                    )}
-                    {catalogQuery.isError && (
-                      <p className="text-sm text-red-600">Services could not be loaded right now.</p>
-                    )}
-                    {!catalogQuery.isLoading && (catalogQuery.data?.services.length ?? 0) === 0 && (
-                      <p className="text-sm text-neutral-500">This business has no bookable services yet.</p>
-                    )}
-
-                    {(catalogQuery.data?.services ?? [])
-                      .filter(
-                        (service) =>
-                          selectedCategory === "All" ||
-                          service.category === selectedCategory ||
-                          service.subcategory === selectedCategory ||
-                          (selectedCategory === "Featured" && service.isFeatured) ||
-                          (selectedCategory === "Packages" && service.isPackageDeal),
-                      )
-                      .map((service) => {
+                  <VenueServices
+                    services={catalogQuery.data?.services ?? []}
+                    subcategories={business?.subcategories ?? []}
+                    selectedFilter={selectedCategory}
+                    onSelectFilter={setSelectedCategory}
+                    serviceLoading={catalogQuery.isLoading}
+                    serviceError={catalogQuery.isError}
+                    packages={packageOffers}
+                    packageLoading={packageQuery.isPending}
+                    packageError={packageQuery.error}
+                    isCustomer={isLoggedIn}
+                    renderService={(service) => {
                         const isActive = selectedServiceId === service.id && bookingStep !== null;
-                        const input = pricingInputByService[service.id] ?? {};
-                        const priceCents = estimateServicePriceCents(service, input);
+                        const input = effectivePricingInput(service, pricingInputByService[service.id]);
+                        const priceCents = estimateServicePriceCents(service, pricingInputByService[service.id]);
 
                         const durationMin =
                           service.fixedPricing?.durationMin ??
@@ -1166,9 +1209,7 @@ function VenueDetailsContent() {
                                       onClick={() =>
                                         setPricingInputByService((prev) => ({
                                           ...prev,
-                                          [service.id]: {
-                                            hours: Math.max((prev[service.id]?.hours ?? service.hourlyPricing!.minHours) - 1, service.hourlyPricing!.minHours),
-                                          },
+                                          [service.id]: stepPricingInput(service, prev[service.id], -1),
                                         }))
                                       }
                                       className="px-3 hover:bg-neutral-100 font-bold border-r border-neutral-300 text-lg"
@@ -1182,9 +1223,7 @@ function VenueDetailsContent() {
                                       onClick={() =>
                                         setPricingInputByService((prev) => ({
                                           ...prev,
-                                          [service.id]: {
-                                            hours: Math.min((prev[service.id]?.hours ?? service.hourlyPricing!.minHours) + 1, service.hourlyPricing!.maxHours),
-                                          },
+                                          [service.id]: stepPricingInput(service, prev[service.id], 1),
                                         }))
                                       }
                                       className="px-3 hover:bg-neutral-100 font-bold border-l border-neutral-300 text-lg"
@@ -1202,9 +1241,7 @@ function VenueDetailsContent() {
                                       onClick={() =>
                                         setPricingInputByService((prev) => ({
                                           ...prev,
-                                          [service.id]: {
-                                            personCount: Math.max((prev[service.id]?.personCount ?? service.perPersonPricing!.minPersons) - 1, service.perPersonPricing!.minPersons),
-                                          },
+                                          [service.id]: stepPricingInput(service, prev[service.id], -1),
                                         }))
                                       }
                                       className="px-3 hover:bg-neutral-100 font-bold border-r border-neutral-300 text-lg"
@@ -1218,9 +1255,7 @@ function VenueDetailsContent() {
                                       onClick={() =>
                                         setPricingInputByService((prev) => ({
                                           ...prev,
-                                          [service.id]: {
-                                            personCount: Math.min((prev[service.id]?.personCount ?? service.perPersonPricing!.minPersons) + 1, service.perPersonPricing!.maxPersons),
-                                          },
+                                          [service.id]: stepPricingInput(service, prev[service.id], 1),
                                         }))
                                       }
                                       className="px-3 hover:bg-neutral-100 font-bold border-l border-neutral-300 text-lg"
@@ -1269,30 +1304,22 @@ function VenueDetailsContent() {
                             </div>
                             <button
                               onClick={() => handleBookService(service.id)}
-                              className={`text-sm font-semibold rounded-full border transition-all cursor-pointer shadow-sm shrink-0 ${isActive
+                              aria-label={isActive ? `Selected ${service.name}` : `Book ${service.name}`}
+                              className={`text-sm font-semibold rounded-full border transition-all duration-200 ease-out cursor-pointer shadow-sm shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2E9DA7] focus-visible:ring-offset-2 ${isActive
                                 ? "bg-[#2BB54F] border-[#2BB54F] text-white w-8 h-8 min-w-[32px] min-h-[32px] flex items-center justify-center p-0 rounded-full aspect-square"
-                                : "bg-[#FCFAF9] border-[#B3B3B3] text-[#0D0D0D] hover:bg-neutral-50 px-5 py-2"
+                                : "bg-[#FCFAF9] border-[#B3B3B3] text-[#0D0D0D] [@media(hover:hover)]:hover:bg-[#0D0D0D] [@media(hover:hover)]:hover:text-white [@media(hover:hover)]:hover:border-[#0D0D0D] [@media(hover:hover)]:hover:shadow-md [@media(hover:hover)]:motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-95 motion-safe:active:translate-y-0 px-5 py-2"
                                 }`}
                             >
                               {isActive ? (
-                                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5} aria-hidden="true">
                                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                 </svg>
                               ) : "Book"}
                             </button>
                           </div>
                         );
-                      })}
-
-                    {/* See all button */}
-                    <button
-                      onClick={() => setSelectedCategory("All")}
-                      className="self-start bg-[#FFFFFF] border border-[#C6C6CB] rounded-full px-6 py-2.5 text-sm font-semibold hover:bg-neutral-50 transition-colors cursor-pointer"
-                    >
-                      See all
-                    </button>
-
-                  </div>
+                    }}
+                  />
                 </section>
               )}
 
@@ -1325,7 +1352,9 @@ function VenueDetailsContent() {
                           <VenueLocationMap
                             lat={business.location.lat}
                             lng={business.location.lng}
-                            label={business.name}
+                            businessName={business.name}
+                            displayAddress={venueLocationText}
+                            profileImageUrl={business.media.find((m) => m.role === "PROFILE")?.url}
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center px-6 text-center">
@@ -1917,101 +1946,6 @@ function VenueDetailsContent() {
 
         </div>
 
-        {/* Full-width sections for Other locations and Services nearby */}
-        {(() => {
-          const mockLocations: Recommendation[] = [
-            {
-              id: "2001",
-              title: "Soho Vintage Barbers | Sheikh Zayed Road",
-              rating: 4.9,
-              reviews: 120,
-              categories: ["Barber", "Salon"],
-              travelsToYou: true,
-              travelLocations: ["Larnaca"],
-              lastVisited: "Last visited 1 week ago",
-              startingPrice: 15,
-              image: "/image/imgOfService.png",
-              hasDiamond: true
-            },
-            {
-              id: "2002",
-              title: "Zara Hair & Beauty | Limassol Marina",
-              rating: 4.8,
-              reviews: 85,
-              categories: ["Hair", "Salon"],
-              location: "Limassol Marina",
-              distance: "2.5km away",
-              lastVisited: "Last visited 3 weeks ago",
-              startingPrice: 25,
-              image: "/image/imgOfService.png",
-              noDeposit: true
-            },
-            {
-              id: "2003",
-              title: "Gold Gym Spa & Massage | Nicosia",
-              rating: 4.7,
-              reviews: 310,
-              categories: ["Massage", "Wellness"],
-              location: "Nicosia",
-              distance: "5km away",
-              lastVisited: "Last visited 1 month ago",
-              startingPrice: 40,
-              image: "/image/imgOfService.png",
-              hasDiamond: true
-            },
-            {
-              id: "2004",
-              title: "Elite Car Detailing | Paphos",
-              rating: 4.9,
-              reviews: 145,
-              categories: ["Automotive"],
-              location: "Paphos",
-              distance: "8km away",
-              lastVisited: "Last visited 2 months ago",
-              startingPrice: 50,
-              image: "/image/imgOfService.png",
-              noDeposit: true
-            }
-          ];
-
-          const renderFullWidthSection = (title: string) => (
-            <div className="flex flex-col gap-6 mt-10 w-full font-poppins">
-              <div className="flex justify-between items-baseline w-full">
-                <h4 className="font-semibold text-2xl md:text-[28px] tracking-tight text-[#1C1B1C]">
-                  {title}
-                </h4>
-                <span
-                  onClick={() => router.push("/explore")}
-                  className="text-sm md:text-base font-medium text-[#1C1B1C] cursor-pointer hover:underline"
-                >
-                  See all
-                </span>
-              </div>
-
-              {/* Carousel container */}
-              <Carousel>
-                {mockLocations.map((loc) => (
-                  <div key={loc.id} className="w-[calc(50%-7.5px)] sm:w-[360px] md:w-[406px] shrink-0 snap-start">
-                    <ServiceCard
-                      rec={loc}
-                      isFavorite={false}
-                      onToggleFavorite={() => { }}
-                      onBookNow={(id) => router.push(`/venue?id=${id}`)}
-                    />
-                  </div>
-                ))}
-              </Carousel>
-            </div>
-          );
-
-          return (
-            <div className="w-full flex flex-col gap-6 mt-8">
-              {renderFullWidthSection("Other locations")}
-              {renderFullWidthSection("Services nearby")}
-            </div>
-          );
-        })()}
-
       </main>
 
       {/* Footer */}
@@ -2027,8 +1961,10 @@ function VenueDetailsContent() {
                 {/* Back Button */}
                 <button
                   onClick={() => {
+                    paymentAction.current = null;
+                    setConfirming3ds(false);
                     if (bookingStep === "addons") {
-                      setBookingStep(null);
+                      closeBookingWizard();
                     } else if (bookingStep === "travel") {
                       setBookingStep("addons");
                     } else if (bookingStep === "professionals") {
@@ -2047,7 +1983,7 @@ function VenueDetailsContent() {
 
                 {/* Breadcrumbs List */}
                 <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm font-medium font-poppins overflow-x-auto scrollbar-hide whitespace-nowrap max-w-[calc(100%-100px)] sm:max-w-none pr-4">
-                  <span className="text-[#ACAAB4] cursor-pointer" onClick={() => setBookingStep(null)}>Services</span>
+                  <span className="text-[#ACAAB4] cursor-pointer" onClick={closeBookingWizard}>Services</span>
                   <HugeiconsIcon icon={ArrowRight01Icon} size={14} className="text-[#ACAAB4]" />
 
                   <span className={bookingStep === "addons" ? "text-black font-semibold" : "text-[#ACAAB4]"}>Add-ons</span>
@@ -2074,7 +2010,7 @@ function VenueDetailsContent() {
 
                 {/* Close button on the right */}
                 <button
-                  onClick={() => setBookingStep(null)}
+                  onClick={closeBookingWizard}
                   className="absolute right-0 text-neutral-400 hover:text-black transition-colors cursor-pointer p-1"
                   aria-label="Close modal"
                 >
@@ -2156,7 +2092,11 @@ function VenueDetailsContent() {
                   setHasSavedCard={setHasSavedCard}
                   isReplacingCard={isReplacingCard}
                   setIsReplacingCard={setIsReplacingCard}
-                  setBookingStep={setBookingStep}
+                  setBookingStep={(step) => {
+                    paymentAction.current = null;
+                    setConfirming3ds(false);
+                    setBookingStep(step);
+                  }}
                   notes={bookingNotes}
                   setNotes={setBookingNotes}
                 />
@@ -2165,7 +2105,11 @@ function VenueDetailsContent() {
               {bookingStep === "confirmed" && confirmedBooking && (
                 <ConfirmedStep
                   booking={confirmedBooking}
-                  setBookingStep={setBookingStep}
+                  setBookingStep={(step) => {
+                    paymentAction.current = null;
+                    setConfirming3ds(false);
+                    setBookingStep(step);
+                  }}
                   isPackagePurchase={isPackagePurchaseFlow}
                   packageSessionsTotal={selectedService?.packagePricing?.sessionsInPackage}
                 />
@@ -2382,9 +2326,10 @@ function VenueDetailsContent() {
 }
 
 export default function VenueDetailsPage() {
+  const session = useAuthStore(customerPaymentSession);
   return (
     <Suspense fallback={<div>Loading...</div>}>
-      <VenueDetailsContent />
+      <VenueDetailsContent key={session ?? "no-customer-session"} />
     </Suspense>
   );
 }

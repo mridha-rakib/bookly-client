@@ -1,4 +1,5 @@
-import { loadStripe, type Stripe } from "@stripe/stripe-js";
+import type { Stripe } from "@stripe/stripe-js";
+import { loadStripe } from "@stripe/stripe-js/pure";
 
 /**
  * The ONLY Stripe key this codebase ever sends to the browser — `NEXT_PUBLIC_*` is Next.js's own

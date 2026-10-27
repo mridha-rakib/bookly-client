@@ -1,5 +1,6 @@
 import RequireCustomer from "@/components/auth/RequireCustomer";
-import PackageConsentReview from "@/components/packages/PackageConsentReview";
+import { PackageCatalogue } from "@/components/packages/FirstClassPackageIntegration";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 export default async function PackageConsentPage({
@@ -9,23 +10,14 @@ export default async function PackageConsentPage({
   params: Promise<{ businessId: string; packageId: string }>;
   searchParams: Promise<{ operation?: string }>;
 }) {
-  // Server-side UI gate; API independently enforces its own default-off gate.
-  if (process.env.PACKAGE_CONSENT_UI_ENABLED !== "true")
-    return (
-      <main className="min-h-screen bg-[#FDFBF9] p-8 font-poppins">
-        <h1>Package terms review is unavailable</h1>
-      </main>
-    );
   const { businessId, packageId } = await params;
-  const { operation } = await searchParams;
+  await searchParams;
   return (
     <RequireCustomer>
-      <PackageConsentReview
-        key={`${businessId}:${packageId}:${operation ?? "new"}`}
-        businessId={businessId}
-        packageId={packageId}
-        initialOperationId={operation}
-      />
+      <main className="min-h-screen bg-[#FDFBF9] px-4 py-8 sm:px-8"><div className="mx-auto max-w-[1005px] space-y-6">
+        <Link className="text-[#240183] underline" href={`/venue?id=${encodeURIComponent(businessId)}`}>← Back to venue</Link>
+        <PackageCatalogue businessId={businessId} packageId={packageId} />
+      </div></main>
     </RequireCustomer>
   );
 }

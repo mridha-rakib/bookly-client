@@ -7,6 +7,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Tick01Icon, ScissorIcon, User02Icon, Calendar03Icon, Location01Icon, MapsIcon, Appointment02Icon, Clock04Icon, PackageIcon } from "@hugeicons/core-free-icons";
 
 import type { BookingDetail } from "@/lib/api/bookings";
+import { presentOnlineSnapshot } from "@/lib/bookings/customer-financial";
 import { formatBookingDate, formatBookingMoney, formatBookingTimeRange } from "@/lib/bookings/format";
 
 interface ConfirmedStepProps {
@@ -21,6 +22,7 @@ interface ConfirmedStepProps {
 
 export default function ConfirmedStep({ booking, setBookingStep, isPackagePurchase, packageSessionsTotal }: ConfirmedStepProps) {
   const router = useRouter();
+  const onlineSnapshot = presentOnlineSnapshot(booking);
   const primaryLine = booking.serviceLines[0];
   const packageProgressId = primaryLine?.packageProgressId;
   const resolvedPackageSessionsTotal = primaryLine?.sessionsInPackage ?? packageSessionsTotal;
@@ -187,12 +189,10 @@ export default function ConfirmedStep({ booking, setBookingStep, isPackagePurcha
           {/* Price Summary breakdown — real data from the booking's own financial snapshot */}
           <div className="flex flex-col gap-4 w-full">
             <div className="flex justify-between items-center w-full font-manrope">
-              <span className="font-medium text-base text-[#45474B] leading-[24px]">
-                {booking.financials.depositCents > 0 ? "Deposit paid" : "Paid online"}
-              </span>
-              <span className="font-extrabold text-xl text-[#020305] leading-[28px]">
-                {formatBookingMoney(booking.financials.depositCents)}
-              </span>
+              <span className="font-medium text-base text-[#45474B] leading-[24px]">{onlineSnapshot.label}</span>
+              {onlineSnapshot.amountCents !== undefined && <span className="font-extrabold text-xl text-[#020305] leading-[28px]">
+                {formatBookingMoney(onlineSnapshot.amountCents)}
+              </span>}
             </div>
             <div className="flex justify-between items-center w-full font-manrope">
               <span className="font-medium text-base text-[#45474B] leading-[24px]">

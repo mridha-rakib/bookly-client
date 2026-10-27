@@ -1,6 +1,13 @@
 import { apiRequest } from "@/lib/api/client";
+import type { AvailabilityResult } from "@/lib/api/availability";
 import type { CatalogAddon, CatalogService } from "@/lib/api/catalog";
 import type { BusinessCity } from "@/lib/constants/cities";
+
+export type RescheduleAvailabilityResult = AvailabilityResult & {
+  bookingId: string;
+  originalStartAt: string;
+  bookingUpdatedAt: string;
+};
 
 /**
  * Batch 3 frontend Booking domain foundation — types + API client only. Deliberately does NOT
@@ -30,6 +37,8 @@ export interface BookingServiceLineDto {
   name: string;
   pricingMode: string;
   durationMin: number;
+  hours?: number;
+  personCount?: number;
   discountPercent?: number;
   staffMembershipId: string;
   staffName?: string;
@@ -38,6 +47,8 @@ export interface BookingServiceLineDto {
   sessionsInPackage?: number;
   sessionIndex?: number;
   packageProgressId?: string;
+  packageItemId?: string;
+  packageRole?: "PURCHASE" | "REDEMPTION";
 }
 
 export interface BookingFinancialsDto {
@@ -93,6 +104,7 @@ export interface BookingFulfilmentDto {
 }
 
 export interface BookingDetail {
+  financialOutcome?: import("./customer-financial-outcome").CustomerFinancialOutcome;
   id: string;
   businessId: string;
   reference: string;
@@ -204,6 +216,7 @@ export interface BookingListFulfilmentLocation {
 }
 
 export interface BookingListItem {
+  firstClassPackage?: boolean;
   id: string;
   /** Batch 9 — lets the cross-business customer "My Bookings" list identify/link to each
    * row's Business (via `/catalog/businesses/:businessId`). */
@@ -377,6 +390,10 @@ export interface ListBookingsParams {
 }
 
 export const bookingsApi = {
+  getRescheduleAvailability: (scope: "customer" | "business", businessId: string, bookingId: string, params: { fromDate: string; toDate: string }) =>
+    apiRequest<RescheduleAvailabilityResult>({ method: "GET",
+      url: scope === "customer" ? `/me/bookings/${bookingId}/reschedule-availability`
+        : `/businesses/${businessId}/bookings/${bookingId}/reschedule-availability`, params }),
   // --- Business-side ---
   createManual: (businessId: string, input: CreateManualBookingInput) =>
     apiRequest<BookingDetail>({ method: "POST", url: `/businesses/${businessId}/bookings`, data: input }),

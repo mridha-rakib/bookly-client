@@ -14,12 +14,14 @@ import {
 } from "@hugeicons/core-free-icons";
 
 import type { BookingListItem } from "@/lib/api/bookings";
+import CustomerFinancialRows from "@/components/bookings/CustomerFinancialRows";
+import CustomerFinancialOutcome from "@/components/bookings/CustomerFinancialOutcome";
+import { presentCancellation, presentOnlineSnapshot, presentVenuePayment } from "@/lib/bookings/customer-financial";
 import { useBusinessCatalogQuery } from "@/lib/catalog/hooks";
 import { useCustomerBookingDetailQuery } from "@/lib/bookings/hooks";
 import {
   BOOKING_STATUS_LABELS,
   BOOKING_STATUS_TONE,
-  bookingClientBadge,
   buildBookingDirectionsUrl,
   formatBookingDate,
   formatBookingMoney,
@@ -171,6 +173,7 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
             <>
               <button
                 onClick={() => onReschedule(booking.id)}
+                disabled={booking.firstClassPackage}
                 className="w-full py-2 border rounded-lg text-sm font-medium transition-colors bg-[#FCF8F8] border-[#C6C6CB] text-[#020305] hover:bg-neutral-100 cursor-pointer"
               >
                 Reschedule
@@ -178,7 +181,7 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
 
               <button
                 onClick={() => onCancel(booking.id)}
-                disabled={!isUpcoming}
+                disabled={!isUpcoming || booking.firstClassPackage}
                 className={`w-full py-2 border rounded-lg text-sm font-medium transition-colors ${
                   !isUpcoming
                     ? "bg-red-50/30 border-red-100/50 text-red-300 cursor-not-allowed"
@@ -216,48 +219,16 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
                     {formatBookingMoney(detail.financials.servicesSubtotalCents + detail.financials.addonsSubtotalCents)}
                   </span>
                 </div>
-                <div className="flex justify-between items-center text-[#4E5F78]">
-                  <span>
-                    {bookingClientBadge(detail.source, detail.financials.platformFeeCents) === "New"
-                      ? "Platform booking fee (charged now)"
-                      : "Deposit paid online"}
-                  </span>
-                  <span className="font-manrope font-normal text-[#4E5F78]">{formatBookingMoney(detail.financials.depositCents)}</span>
-                </div>
-                <div className="flex justify-between items-center text-[#4E5F78]">
-                  <span>Balance due at venue</span>
-                  <span className="font-manrope font-normal text-[#4E5F78]">{formatBookingMoney(detail.financials.balanceDueCents)}</span>
-                </div>
-                {detail.completionPayment && (
-                  <div className="flex justify-between items-center text-[#4E5F78]">
-                    <span>Balance paid at venue</span>
-                    <span className="font-manrope font-semibold text-[#1C1B1C]">
-                      {detail.completionPayment.paid ? "Yes" : "Not recorded"}
-                    </span>
-                  </div>
-                )}
-
+                <CustomerFinancialRows rows={[presentOnlineSnapshot(detail), ...presentVenuePayment(detail)]} />
+                <p className="text-xs text-[#4E5F78]">Historical booking amounts are not a current net provider balance.</p>
+                {detailQuery.isError && <p role="status">The latest financial details could not be refreshed. Showing the last recorded information.</p>}
                 {detail.cancellationOutcome && (
                   <>
                     <hr className="border-t border-[#EBEBEB] my-1" />
-                    <div className="flex justify-between items-center text-[#4E5F78]">
-                      <span>{detail.cancellationOutcome.feeMode === "FREE" ? "Cancellation fee" : "Fee applied"}</span>
-                      <span className="font-manrope font-normal text-[#4E5F78]">
-                        {formatBookingMoney(detail.cancellationOutcome.additionalChargeCents)}
-                      </span>
-                    </div>
-                    {detail.cancellationOutcome.refundOwedCents > 0 && (
-                      <div className="flex justify-between items-center text-[#1F8900] font-semibold">
-                        <span>Refund</span>
-                        <span className="font-manrope">{formatBookingMoney(detail.cancellationOutcome.refundOwedCents)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between items-center text-xs text-gray-500 italic pt-1 border-t border-dashed border-gray-200">
-                      <span>Settlement: {detail.cancellationOutcome.settlementStatus.toLowerCase()}</span>
-                    </div>
+                    <CustomerFinancialRows rows={presentCancellation(detail.cancellationOutcome)} />
                   </>
                 )}
-
+                <CustomerFinancialOutcome booking={detail} />
                 <hr className="border-t border-[#B3B3B3] my-1" />
                 <p className="text-xs text-[#4E5F78]">
                   Cancellation and no-show fees, if any, are set by {business?.name ?? "the Business"}, not by Bookly, and
@@ -269,7 +240,8 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
         )}
       </div>
 
-      {isUpcoming && (
+      {booking.firstClassPackage && <p role="status" className="text-sm text-[#5F5E5A]">First-class Package session changes are unavailable. Open View for package details.</p>}
+      {isUpcoming && !booking.firstClassPackage && (
         <p className="text-xs text-[#4E5F78] font-poppins">
           {MAX_CUSTOMER_RESCHEDULE_COUNT} free reschedules per booking.
         </p>

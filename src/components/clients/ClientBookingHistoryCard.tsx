@@ -23,6 +23,7 @@ import {
 
 import PackageActionControls from "@/components/packages/PackageActionControls";
 import BusinessPackageAppointmentHistory from "@/components/packages/BusinessPackageAppointmentHistory";
+import { ManagementPackageSettlement } from "@/components/packages/FirstClassPackageIntegration";
 import type { BookingDetail } from "@/lib/api/bookings";
 import {
   BOOKING_STATUS_LABELS,
@@ -33,7 +34,10 @@ import {
   formatBookingTimeRange,
   formatPackageSessionLabel,
 } from "@/lib/bookings/format";
-import { useAvailabilityQuery } from "@/lib/availability/hooks";
+import { useBookingRescheduleAvailabilityQuery } from "@/lib/bookings/hooks";
+import type { AvailabilitySlot } from "@/lib/api/availability";
+import { isRescheduleSlotCurrent, matchesRescheduleContext, rescheduleContextKey } from "@/lib/bookings/reschedule-availability";
+import { toUserMessage } from "@/lib/auth/messages";
 
 interface ClientBookingHistoryCardProps {
   /** The real Booking, exactly as returned by GET /businesses/:id/bookings/:id — every value
@@ -53,7 +57,7 @@ interface ClientBookingHistoryCardProps {
   onCompleteBooking?: () => void;
   /** Fires with a real, chosen ISO `startAt` — the caller is responsible for calling
    * bookingsApi.rescheduleByOwner (never computed/validated here). */
-  onReschedule?: (startAtIso: string) => void;
+  onReschedule?: (startAtIso: string) => Promise<unknown> | void;
   isReschedulePending?: boolean;
   onWaiveFeeClick?: () => void;
   onCancelNoShowClick?: () => void;
@@ -148,6 +152,7 @@ export default function ClientBookingHistoryCard({
   const isManual = booking.source === "MANUAL";
   const primaryLine = booking.serviceLines[0];
   const packageLines = booking.serviceLines.filter((line) => line.packageProgressId);
+  const isFirstClass = booking.serviceLines.some((line) => line.packageItemId);
   const staffNames = Array.from(
     new Set(booking.serviceLines.map((line) => line.staffName).filter((n): n is string => Boolean(n))),
   );
@@ -330,7 +335,8 @@ export default function ClientBookingHistoryCard({
         </div>
       )}
 
-      {showOperationalContext && packageLines.length > 0 && (
+      {showOperationalContext && isFirstClass && <ManagementPackageSettlement businessId={businessId} bookingId={booking.id} />}
+      {showOperationalContext && !isFirstClass && packageLines.length > 0 && (
         <div className="bg-[#F7F4FF] border border-[#DDD2F7] rounded-2xl p-6 shadow-sm flex flex-col gap-5 w-full">
           <span className="font-poppins text-xs font-normal text-[#675A82] tracking-[0.075em] uppercase">
             Package context
@@ -407,7 +413,7 @@ export default function ClientBookingHistoryCard({
         </div>
       )}
 
-      {showOperationalContext && booking.packageSessions.map(session => (
+      {showOperationalContext && !isFirstClass && booking.packageSessions.map(session => (
         <PackageActionControls key={session.packageProgressId} businessId={businessId} packageId={session.packageProgressId} />
       ))}
       {/* 2.5 SERVICE LOCATION */}
@@ -663,7 +669,7 @@ export default function ClientBookingHistoryCard({
         </div>
       )}
 
-      {showFooterActions && (status === "UPCOMING" || status === "PENDING") && (
+      {showFooterActions && !isFirstClass && (status === "UPCOMING" || status === "PENDING") && (
         <div className="mt-4 flex w-full flex-col items-stretch gap-3 select-none lg:flex-row lg:items-center lg:justify-end">
           {status === "UPCOMING" && (
             <button
@@ -693,16 +699,14 @@ export default function ClientBookingHistoryCard({
       {/* RESCHEDULE MODAL — real availability, real slots */}
       {isRescheduling && primaryLine && (
         <RescheduleModal
-          businessId={businessId}
-          serviceId={primaryLine.serviceId}
-          staffMembershipId={primaryLine.staffMembershipId}
+          booking={booking}
           currentSchedule={booking.schedule}
           currentServiceName={primaryLine.name}
           notes={booking.notes}
           isPending={isReschedulePending}
           onClose={() => setIsRescheduling(false)}
-          onConfirm={(startAtIso) => {
-            onReschedule?.(startAtIso);
+          onConfirm={async (startAtIso) => {
+            await onReschedule?.(startAtIso);
             setIsRescheduling(false);
           }}
         />
@@ -759,24 +763,20 @@ const LocationValue = ({
 );
 
 interface RescheduleModalProps {
-  businessId: string;
-  serviceId: string;
-  staffMembershipId: string;
+  booking: BookingDetail;
   currentSchedule: { startAt: string; endAt: string; timezone: string };
   currentServiceName: string;
   notes?: string;
   isPending: boolean;
   onClose: () => void;
-  onConfirm: (startAtIso: string) => void;
+  onConfirm: (startAtIso: string) => Promise<unknown> | void;
 }
 
 /** Real availability-driven reschedule (Batch 6) — replaces the previous static/hardcoded
- * calendar. Queries GET /businesses/:id/services/:id/availability for the visible month and
+ * calendar. Queries the owned Booking's reschedule availability for the visible month and
  * renders only genuinely open days/slots; never fabricates a slot. */
 function RescheduleModal({
-  businessId,
-  serviceId,
-  staffMembershipId,
+  booking,
   currentSchedule,
   currentServiceName,
   notes,
@@ -788,20 +788,39 @@ function RescheduleModal({
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null);
+  const [saveError, setSaveError] = useState<string | undefined>(undefined);
 
   const monthStart = new Date(viewYear, viewMonth, 1);
   const monthEnd = new Date(viewYear, viewMonth + 1, 0);
-  const fromDate = monthStart.toISOString().slice(0, 10);
-  const toDate = monthEnd.toISOString().slice(0, 10);
+  const monthPrefix = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}`;
+  const fromDate = `${monthPrefix}-01`;
+  const toDate = `${monthPrefix}-${String(monthEnd.getDate()).padStart(2, "0")}`;
 
-  const availabilityQuery = useAvailabilityQuery(businessId, serviceId, {
-    fromDate,
-    toDate,
-    staffMembershipId,
-  });
+  const availabilityQuery = useBookingRescheduleAvailabilityQuery("business", booking, { fromDate, toDate });
+  const availability = matchesRescheduleContext(booking, availabilityQuery.data) ? availabilityQuery.data : undefined;
+  const requestKey = JSON.stringify([rescheduleContextKey(booking), fromDate, toDate]);
+  const [previousRequestKey, setPreviousRequestKey] = useState(requestKey);
+  if (previousRequestKey !== requestKey) {
+    setPreviousRequestKey(requestKey);
+    if (selectedSlot) setSelectedSlot(null);
+  }
+  const slotValid = isRescheduleSlotCurrent(booking, availability, selectedDate, selectedSlot);
+  const ready = !availabilityQuery.isLoading && !availabilityQuery.isFetching && !availabilityQuery.isError && slotValid;
+  if (selectedSlot && !availabilityQuery.isFetching && availabilityQuery.data && !slotValid) setSelectedSlot(null);
+  const handleSave = async () => {
+    if (!selectedSlot || !ready || isPending) return;
+    setSaveError(undefined);
+    try {
+      await onConfirm(selectedSlot.startAt);
+    } catch (error) {
+      setSaveError(toUserMessage(error));
+      setSelectedSlot(null);
+      void availabilityQuery.refetch();
+    }
+  };
 
-  const dayByDate = new Map((availabilityQuery.data?.days ?? []).map((d) => [d.date, d]));
+  const dayByDate = new Map((availability?.days ?? []).map((d) => [d.date, d]));
   const selectedDay = selectedDate ? dayByDate.get(selectedDate) : undefined;
 
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -829,7 +848,7 @@ function RescheduleModal({
             {selectedSlot && (
               <>
                 <span className="text-neutral-400">→</span>
-                <span className="text-[#1F8900] font-medium">{formatBookingDate(selectedSlot, currentSchedule.timezone)} · {formatBookingTimeRange({ startAt: selectedSlot, endAt: selectedSlot, timezone: currentSchedule.timezone }).split("–")[0]}</span>
+                <span className="text-[#1F8900] font-medium">{formatBookingDate(selectedSlot.startAt, currentSchedule.timezone)} · {formatBookingTimeRange({ startAt: selectedSlot.startAt, endAt: selectedSlot.endAt, timezone: currentSchedule.timezone }).split("–")[0]}</span>
               </>
             )}
           </div>
@@ -903,16 +922,16 @@ function RescheduleModal({
           <span className="text-xs font-semibold tracking-wider text-neutral-400 uppercase">
             {selectedDate ? `Available times — ${selectedDate}` : "Select a day with availability"}
           </span>
-          {availabilityQuery.isLoading ? (
+          {availabilityQuery.isLoading || availabilityQuery.isFetching ? (
             <span className="text-xs text-neutral-400">Loading availability…</span>
           ) : selectedDay && selectedDay.slots.length > 0 ? (
             <div className="grid grid-cols-4 gap-2">
               {selectedDay.slots.map((slot) => (
                 <button
                   key={slot.startAt}
-                  onClick={() => setSelectedSlot(slot.startAt)}
+                  onClick={() => setSelectedSlot(slot)}
                   className={`h-9 rounded-lg border text-xs font-semibold transition-all ${
-                    selectedSlot === slot.startAt ? "bg-[#111111] text-white border-[#111111]" : "bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+                    selectedSlot?.startAt === slot.startAt ? "bg-[#111111] text-white border-[#111111]" : "bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50"
                   }`}
                 >
                   {formatBookingTimeRange({ startAt: slot.startAt, endAt: slot.startAt, timezone: currentSchedule.timezone }).split("–")[0]}
@@ -935,6 +954,7 @@ function RescheduleModal({
           </div>
         )}
 
+        {(saveError || availabilityQuery.isError) && <p className="text-sm text-red-600">{saveError ?? toUserMessage(availabilityQuery.error)}</p>}
         <div className="flex justify-end gap-3 border-t border-neutral-100 pt-4 mt-2">
           <button
             onClick={onClose}
@@ -943,8 +963,8 @@ function RescheduleModal({
             Cancel
           </button>
           <button
-            disabled={!selectedSlot || isPending}
-            onClick={() => selectedSlot && onConfirm(selectedSlot)}
+            disabled={!ready || isPending}
+            onClick={() => void handleSave()}
             className="h-10 px-6 rounded-lg bg-[#59B1CC] hover:bg-[#4ea0b8] text-white text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isPending ? "Saving…" : "Save changes"}

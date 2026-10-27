@@ -261,12 +261,50 @@ export default function DashboardBookingForm({
   const toDateObj = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0);
   const toDate = `${toDateObj.getFullYear()}-${String(toDateObj.getMonth() + 1).padStart(2, "0")}-${String(toDateObj.getDate()).padStart(2, "0")}`;
 
+  const primaryService = selectedServices.find((service) => service.id === primaryServiceId);
+  const primaryPricingInput = primaryServiceId ? pricingInputByService[primaryServiceId] : undefined;
+  const availabilityParams = {
+    fromDate,
+    toDate,
+    staffMembershipId: selectedStaffId,
+    hours: primaryService?.pricingMode === "HOURLY"
+      ? primaryPricingInput?.hours ?? primaryService.hourlyPricing?.minHours : undefined,
+    partySize: primaryService?.pricingMode === "PER_PERSON"
+      ? primaryPricingInput?.personCount ?? primaryService.perPersonPricing?.minPersons : undefined,
+    customerCity: visitType === "TRAVEL_TO_CUSTOMER" && addressState.city ? addressState.city : undefined,
+  };
+
   const availabilityQuery = useAvailabilityQuery(
     businessId,
     primaryServiceId,
-    { fromDate, toDate, staffMembershipId: selectedStaffId },
+    availabilityParams,
     Boolean(primaryServiceId) && Boolean(selectedStaffId),
   );
+
+  // Keep an explicit staff choice while quantities change; fresh server slots determine whether
+  // that professional can serve the full interval/group. Never carry a slot across inputs,
+  // even if the new response offers the same start with a different end or eligible staff.
+  const slotRequestKey = JSON.stringify([businessId, selectedServiceIds, pricingInputByService, availabilityParams]);
+  const [previousSlotRequestKey, setPreviousSlotRequestKey] = useState(slotRequestKey);
+  if (previousSlotRequestKey !== slotRequestKey) {
+    setPreviousSlotRequestKey(slotRequestKey);
+    if (selectedSlot) setSelectedSlot(undefined);
+  }
+  const isStaffEligible = eligibleStaff.some((staff) => staff.membershipId === selectedStaffId);
+  if (selectedStaffId && !staffListQuery.isLoading && !servicesQuery.isLoading && !isStaffEligible) {
+    setSelectedStaffId(undefined);
+    if (selectedSlot) setSelectedSlot(undefined);
+  }
+  const isSelectedSlotValid = Boolean(
+    selectedSlot && selectedStaffId && isStaffEligible &&
+    availabilityQuery.data?.days.find((day) => day.date === selectedDateIso)?.slots.some((slot) =>
+      slot.startAt === selectedSlot.startAt && slot.endAt === selectedSlot.endAt &&
+      slot.eligibleStaffMembershipIds.includes(selectedStaffId),
+    ),
+  );
+  if (selectedSlot && availabilityQuery.data && !availabilityQuery.isFetching && !isSelectedSlotValid) {
+    setSelectedSlot(undefined);
+  }
 
   // --- Notes / tag -----------------------------------------------------------------------------
   const [notes, setNotes] = useState("");
@@ -304,10 +342,14 @@ export default function DashboardBookingForm({
     (Boolean(selectedClient) || isAddingNewClient) &&
     selectedServiceIds.length > 0 &&
     Boolean(selectedStaffId) &&
-    Boolean(selectedSlot) &&
+    isSelectedSlotValid &&
+    !availabilityQuery.isLoading &&
+    !availabilityQuery.isFetching &&
+    !availabilityQuery.isError &&
     !isSubmitting;
 
   const handleSubmit = async () => {
+    if (!canSubmit) return;
     setSubmitError(undefined);
     setClientFormErrors({});
 
