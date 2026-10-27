@@ -38,6 +38,7 @@ export interface GetAvailabilityParams {
   toDate: string;
   staffMembershipId?: string;
   partySize?: number;
+  hours?: number;
   customerCity?: string;
 }
 

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
+import { packagePrimaryCta } from "./package-cta";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   acceptConsentTerms,
@@ -18,8 +19,7 @@ import {
 
 const inputClass =
   "w-full rounded-xl border border-gray-300 bg-white p-3 text-[#020305] focus:outline-2 focus:outline-[#240183]";
-const buttonClass =
-  "rounded-full bg-[#240183] px-6 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50";
+const buttonClass = packagePrimaryCta;
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Terms review is unavailable. Please try again later.";
 

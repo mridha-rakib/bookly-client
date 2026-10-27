@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { DashboardSquare02Icon } from "@hugeicons/core-free-icons";
@@ -118,32 +118,12 @@ export default function CategoryServicesSection() {
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  // One-time read of a browser-only API (localStorage doesn't exist during SSR) — no external
-  // subscription applies here, so this is the legitimate exception, same as elsewhere in this
-  // codebase (see ClientsPage.tsx's own identical suppression).
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("isLoggedIn");
-      if (saved === "true") {
-        setIsLoggedIn(true);
-      }
-    }
-  }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const toggleFavorite = (id: string) => {
     setFavorites((prev) =>
       prev.includes(id) ? prev.filter((favId) => favId !== id) : [...prev, id]
     );
   };
-
-  // NOTE (out of scope for this change): the "Book Again" row below still uses placeholder data.
-  // It is logged-in-only and needs a real "this customer's recent bookings" endpoint; the three
-  // discovery rows (Recommended / Services near you / Popular) are what this change makes real.
-  const bookAgainServices: Recommendation[] = [];
 
   // Real discovery data. `selectedCity` (hero search bar) drives "Services near you"; the
   // logged-in Customer's session personalizes "Recommended" server-side.
@@ -238,15 +218,7 @@ export default function CategoryServicesSection() {
         </div>
       </section>
 
-      {/* Book Again Section (Logged In Only) — see note above; no placeholder businesses are
-          shipped, it simply has no data source yet. */}
-      {isLoggedIn && bookAgainServices.length > 0 && (
-        <BookAgainSection
-          services={bookAgainServices}
-          favorites={favorites}
-          toggleFavorite={toggleFavorite}
-        />
-      )}
+      <BookAgainSection />
 
       {/* 6. Recommended */}
       <DiscoveryRow

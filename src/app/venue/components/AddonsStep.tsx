@@ -36,9 +36,9 @@ export default function AddonsStep({
             return (
               <div
                 key={addon.id}
-                className={`w-full bg-white border rounded-lg p-6 flex justify-between items-center shadow-sm relative transition-all ${selected ? "border-[#2BB54F] shadow-md" : "border-neutral-200"}`}
+                className={`w-full bg-white border rounded-lg p-6 flex justify-between items-center gap-4 shadow-sm relative transition-all ${selected ? "border-[#2BB54F] shadow-md" : "border-neutral-200"}`}
               >
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2 min-w-0 flex-1">
                   <h4 className="font-semibold text-lg text-[#0D0D0D]">{addon.name}</h4>
                   {addon.description ? (
                     <p className="text-sm text-[#767676]">{addon.description}</p>
@@ -48,14 +48,29 @@ export default function AddonsStep({
                   </span>
                 </div>
                 <button
+                  type="button"
                   onClick={() => toggle(addon.id)}
-                  className={`text-sm font-semibold rounded-full border transition-all cursor-pointer shadow-sm ${
+                  aria-label={selected ? `Remove ${addon.name}` : `Add ${addon.name}`}
+                  className={`text-sm font-semibold rounded-full border transition-all cursor-pointer shadow-sm shrink-0 ${
                     selected
-                      ? "bg-[#2BB54F] border-[#2BB54F] text-white w-8 h-8 flex items-center justify-center p-0"
+                      ? "bg-[#2BB54F] border-[#2BB54F] text-white w-8 h-8 min-w-8 min-h-8 flex items-center justify-center p-0 aspect-square"
                       : "bg-white border-[#D3D3D3] text-[#0D0D0D] hover:bg-neutral-50 px-5 py-2"
                   }`}
                 >
-                  {selected ? "✓" : "Add"}
+                  {selected ? (
+                    <svg
+                      className="w-4 h-4 text-white shrink-0"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={3.5}
+                      aria-hidden="true"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    "Add"
+                  )}
                 </button>
               </div>
             );

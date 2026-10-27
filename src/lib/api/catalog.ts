@@ -175,6 +175,7 @@ export const catalogApi = {
       toDate: string;
       staffMembershipId?: string;
       partySize?: number;
+      hours?: number;
       customerCity?: BusinessCity;
       packageProgressId?: string;
     },

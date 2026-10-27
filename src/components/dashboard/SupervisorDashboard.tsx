@@ -177,7 +177,7 @@ export default function SupervisorDashboard() {
                   isReschedulePending={rescheduleByOwnerMutation.isPending}
                   onReschedule={(startAtIso) => {
                     if (!bookingsBusinessId || !viewingBookingId) return;
-                    rescheduleByOwnerMutation.mutate({
+                    return rescheduleByOwnerMutation.mutateAsync({
                       businessId: bookingsBusinessId,
                       bookingId: viewingBookingId,
                       startAt: startAtIso,

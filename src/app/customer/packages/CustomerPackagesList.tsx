@@ -3,8 +3,13 @@
 import type { PackageProgress } from "@/lib/api/packages";
 import { useMyPackagesQuery, useVoidPackageMutation } from "@/lib/packages/hooks";
 import PackageCard from "./PackageCard";
+import { OwnedFirstClassPackages } from "@/components/packages/FirstClassPackageIntegration";
 
 export default function CustomerPackagesList() {
+  return <div className="w-full"><OwnedFirstClassPackages /><LegacyPackagesList /></div>;
+}
+
+function LegacyPackagesList() {
   const packagesQuery = useMyPackagesQuery();
   const packages = packagesQuery.data?.packages ?? [];
   const voidPackageMutation = useVoidPackageMutation();
@@ -33,7 +38,7 @@ export default function CustomerPackagesList() {
   }
 
   if (packages.length === 0) {
-    return <PackageListMessage>You haven&apos;t purchased any packages yet.</PackageListMessage>;
+    return <PackageListMessage>You have no historical Package Deal purchases.</PackageListMessage>;
   }
 
   return (

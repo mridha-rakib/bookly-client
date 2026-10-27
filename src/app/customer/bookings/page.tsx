@@ -9,11 +9,13 @@ import SearchBar from "@/components/landing-page/SearchBar";
 import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
 import { useCustomerBookingsQuery, useCancelByCustomerMutation } from "@/lib/bookings/hooks";
-import { CUSTOMER_BOOKING_TAB_STATUSES, formatBookingMoney, type CustomerBookingTab } from "@/lib/bookings/format";
+import { CUSTOMER_BOOKING_TAB_STATUSES, type CustomerBookingTab } from "@/lib/bookings/format";
 import { toUserMessage } from "@/lib/auth/messages";
 import BookingCard from "./BookingCard";
 import RescheduleModal from "./RescheduleModal";
 import CustomerPackagesList from "../packages/CustomerPackagesList";
+import type { BookingDetail } from "@/lib/api/bookings";
+import CustomerCancellationFinancialResult from "@/components/bookings/CustomerCancellationFinancialResult";
 
 export default function BookingsPage() {
   return (
@@ -54,21 +56,21 @@ function BookingsPageContent() {
   const [cancelBookingId, setCancelBookingId] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | undefined>(undefined);
   const cancelMutation = useCancelByCustomerMutation();
-  const [cancelResult, setCancelResult] = useState<{ additionalChargeCents: number; refundOwedCents: number; settlementStatus: string } | undefined>(
+  const financialCustomerId = useAuthStore((state) => state.user?.id);
+  const financialEpoch = useAuthStore((state) => state.cacheEpoch);
+  const [cancelResult, setCancelResult] = useState<{ booking: BookingDetail; customerId: string | undefined; epoch: number } | undefined>(
     undefined,
   );
 
   const handleConfirmCancel = async () => {
     if (!cancelBookingId) return;
     setCancelError(undefined);
+    const session = useAuthStore.getState();
     try {
       const booking = await cancelMutation.mutateAsync({ bookingId: cancelBookingId });
+      if (useAuthStore.getState().user?.id !== session.user?.id || useAuthStore.getState().cacheEpoch !== session.cacheEpoch) return;
       setCancelBookingId(null);
-      setCancelResult({
-        additionalChargeCents: booking.cancellationOutcome?.additionalChargeCents ?? 0,
-        refundOwedCents: booking.cancellationOutcome?.refundOwedCents ?? 0,
-        settlementStatus: booking.cancellationOutcome?.settlementStatus ?? "NOT_APPLICABLE",
-      });
+      setCancelResult({ booking, customerId: session.user?.id, epoch: session.cacheEpoch });
     } catch (error) {
       setCancelError(toUserMessage(error));
     }
@@ -215,7 +217,7 @@ function BookingsPageContent() {
         </div>
       )}
 
-      {cancelResult && (
+      {cancelResult && cancelResult.customerId === financialCustomerId && cancelResult.epoch === financialEpoch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 font-manrope">
           <div className="bg-white rounded-[24px] shadow-2xl p-8 max-w-[440px] w-full flex flex-col items-center select-none text-center">
             <div className="w-16 h-16 bg-[#EEFDF4] rounded-full flex items-center justify-center mb-6">
@@ -230,20 +232,7 @@ function BookingsPageContent() {
               Your booking has been cancelled and the changes are updated in your bookings list.
             </p>
 
-            {cancelResult.additionalChargeCents > 0 && cancelResult.settlementStatus === "SUCCEEDED" ? (
-              <p className="text-sm font-semibold text-[#BA1A1A] mb-6">
-                A cancellation fee of {formatBookingMoney(cancelResult.additionalChargeCents)} was charged to your saved card.
-              </p>
-            ) : cancelResult.additionalChargeCents > 0 ? (
-              <p className="text-sm font-semibold text-[#BA1A1A] mb-6">Cancellation charge status: {cancelResult.settlementStatus.toLowerCase()}. No successful charge has been confirmed.</p>
-            ) : cancelResult.refundOwedCents > 0 ? (
-              <p className="text-sm font-semibold text-[#1F8900] mb-6">
-                {formatBookingMoney(cancelResult.refundOwedCents)} refund status: {cancelResult.settlementStatus.toLowerCase()}.
-              </p>
-            ) : (
-              <p className="text-sm font-semibold text-[#1F8900] mb-6">No charge applied.</p>
-            )}
-
+            <CustomerCancellationFinancialResult key={cancelResult.booking.id} booking={cancelResult.booking} />
             <button
               type="button"
               onClick={() => setCancelResult(undefined)}

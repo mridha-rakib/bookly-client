@@ -28,6 +28,10 @@ import { toUserMessage } from "@/lib/auth/messages";
 import BookingReviewCard from "../BookingReviewCard";
 import RescheduleModal from "../RescheduleModal";
 import BookingLocationMap from "../BookingLocationMap";
+import CustomerFinancialRows from "@/components/bookings/CustomerFinancialRows";
+import CustomerFinancialOutcome from "@/components/bookings/CustomerFinancialOutcome";
+import { presentCancellation, presentOnlineSnapshot, presentVenuePayment } from "@/lib/bookings/customer-financial";
+import { FirstClassBookingContext } from "@/components/packages/FirstClassPackageIntegration";
 
 function BookingViewContent() {
   const searchParams = useSearchParams();
@@ -39,6 +43,7 @@ function BookingViewContent() {
   const detailQuery = useCustomerBookingDetailQuery(bookingId);
   const booking = detailQuery.data;
   const packageLine = booking?.serviceLines.find((line) => line.packageProgressId);
+  const firstClassLine = booking?.serviceLines.find((line) => line.packageItemId);
 
   const catalogQuery = useBusinessCatalogQuery(booking?.businessId);
   const business = catalogQuery.data?.business;
@@ -49,7 +54,7 @@ function BookingViewContent() {
   const [cancelError, setCancelError] = useState<string | undefined>(undefined);
   const cancelMutation = useCancelByCustomerMutation();
 
-  const isUpcoming = booking?.status === "UPCOMING" || booking?.status === "PENDING";
+  const isUpcoming = !firstClassLine && (booking?.status === "UPCOMING" || booking?.status === "PENDING");
   const location = booking?.fulfilment.mode === "AT_BUSINESS_LOCATION" ? booking.fulfilment.businessLocation : booking?.fulfilment.travelAddress;
   const mapQuery = location ? `${location.streetName} ${location.streetNumber}, ${location.area}, ${location.city}` : "";
 
@@ -92,6 +97,7 @@ function BookingViewContent() {
           </p>
         ) : (
           <div className="w-full max-w-[1005px] flex flex-col gap-6 pb-20 font-poppins">
+            {firstClassLine?.packageProgressId && <FirstClassBookingContext progressId={firstClassLine.packageProgressId} />}
             {/* CLIENT card */}
             <div className="w-full bg-[#FFFFFF] border border-[#ACAAB4] rounded-xl p-6 flex flex-col gap-4">
               <span className="text-xs font-semibold tracking-wider text-[#888780] uppercase">Client</span>
@@ -208,7 +214,8 @@ function BookingViewContent() {
                 {packageLine?.packageProgressId && (
                   <div className="w-full bg-[#F5F4EE] rounded-lg p-4 flex flex-wrap justify-between items-center gap-3 text-sm font-medium">
                     <span className="text-[#1C1B1C]">
-                      {packageLine.sessionIndex && packageLine.sessionsInPackage
+                      {firstClassLine ? firstClassLine.packageRole === "PURCHASE" ? "Original initial Package appointment" : firstClassLine.packageRole === "REDEMPTION" ? "Later redeemed Package appointment" : "Package booking"
+                        : packageLine.sessionIndex && packageLine.sessionsInPackage
                         ? packageLine.sessionIndex === 1
                           ? `Package purchase — Session ${packageLine.sessionIndex} of ${packageLine.sessionsInPackage}`
                           : formatPackageSessionLabel({
@@ -218,7 +225,7 @@ function BookingViewContent() {
                         : "Package booking"}
                     </span>
                     <Link
-                      href={`/customer/packages/${packageLine.packageProgressId}`}
+                      href={`/customer/packages/${packageLine.packageProgressId}${firstClassLine ? "?kind=first-class" : ""}`}
                       className="text-[#2E9DA7] font-semibold hover:underline shrink-0"
                     >
                       View package →
@@ -257,24 +264,18 @@ function BookingViewContent() {
 
                 <div className="flex items-center justify-between gap-4">
                   <span className="font-semibold text-base text-[#1C1B1C]">
-                    {packageLine ? "Total purchase amount" : "Total appointment amount"}
+                    {firstClassLine?.packageRole === "REDEMPTION" ? "Independent session amount" : packageLine ? "Total purchase amount" : "Total appointment amount"}
                   </span>
                   <span className="shrink-0 font-bold text-lg text-[#1C1B1C]">
                     {formatBookingMoney(booking.financials.totalCents)}
                   </span>
                 </div>
 
-                <div className="w-full bg-[#F5F4EE] rounded-lg p-4 flex justify-between items-center text-sm font-medium">
-                  <span className="text-[#1C1B1C]">
-                    Deposit paid online
-                  </span>
-                  <span className="text-[#1C1B1C] font-semibold">{formatBookingMoney(booking.financials.depositCents)}</span>
-                </div>
-
-                <div className="w-full bg-[#F5F4EE] rounded-lg p-4 flex justify-between items-center text-sm font-medium">
-                  <span className="text-[#1C1B1C]">Remaining purchase balance due at venue</span>
-                  <span className="text-[#1C1B1C] font-bold text-lg">{formatBookingMoney(booking.financials.balanceDueCents)}</span>
-                </div>
+                <CustomerFinancialRows rows={[presentOnlineSnapshot(booking), ...presentVenuePayment(booking)]}
+                  rowClassName="w-full bg-[#F5F4EE] rounded-lg p-4 flex justify-between items-center gap-3 text-sm font-medium" />
+                <p className="text-xs text-[#4E5F78]">Historical booking amounts are not a current net provider balance.</p>
+                {detailQuery.isError && <p role="status">The latest financial details could not be refreshed. Showing the last recorded information.</p>}
+                <CustomerFinancialOutcome booking={booking} />
               </div>
             </div>
 
@@ -325,19 +326,7 @@ function BookingViewContent() {
             {booking.cancellationOutcome && (
               <div className="w-full bg-[#FFFFFF] border border-[#ACAAB4] rounded-xl p-6 flex flex-col gap-3">
                 <span className="text-xs font-semibold tracking-wider text-[#888780] uppercase">Cancellation outcome</span>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-[#4E5F78]">Fee charged</span>
-                  <span className="font-semibold text-[#1C1B1C]">{formatBookingMoney(booking.cancellationOutcome.additionalChargeCents)}</span>
-                </div>
-                {booking.cancellationOutcome.refundOwedCents > 0 && (
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-[#1F8900]">Refund</span>
-                    <span className="font-semibold text-[#1F8900]">{formatBookingMoney(booking.cancellationOutcome.refundOwedCents)}</span>
-                  </div>
-                )}
-                <span className="text-xs text-gray-500 italic">
-                  Settlement: {booking.cancellationOutcome.settlementStatus.toLowerCase()}
-                </span>
+                <CustomerFinancialRows rows={presentCancellation(booking.cancellationOutcome)} />
               </div>
             )}
 

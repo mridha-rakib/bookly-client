@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
@@ -21,9 +21,17 @@ import {
 } from "@/lib/packages/presentation";
 import PackageActionControls from "@/components/packages/PackageActionControls";
 import RedeemSessionModal from "../RedeemSessionModal";
+import { OwnedFirstClassDetail } from "@/components/packages/FirstClassPackageIntegration";
 
 
 export default function PackageDetailPage() {
+  return <Suspense fallback={<p role="status">Loading package details…</p>}><PackageDetailRoute /></Suspense>;
+}
+
+function PackageDetailRoute() {
+  const params = useParams<{ packageProgressId: string }>();
+  const search = useSearchParams();
+  if (search.get("kind") === "first-class") return <RequireCustomer><main className="min-h-screen bg-[#FDFBF9] px-4 py-8 sm:px-8"><div className="mx-auto max-w-[1005px] space-y-6"><Link href="/customer/bookings?view=packages" className="text-[#240183] underline">← Packages in My Bookings</Link><OwnedFirstClassDetail id={params.packageProgressId} /></div></main></RequireCustomer>;
   return (
     <RequireCustomer>
       <PackageDetailContent />

@@ -4,8 +4,9 @@ import Image from "next/image";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Location05Icon, Calendar01Icon, Tick01Icon } from "@hugeicons/core-free-icons";
 
-import { useCustomerBookingDetailQuery, useRescheduleByCustomerMutation } from "@/lib/bookings/hooks";
-import { useBusinessCatalogQuery, useServiceAvailabilityQuery } from "@/lib/catalog/hooks";
+import { useCustomerBookingDetailQuery, useRescheduleByCustomerMutation, useBookingRescheduleAvailabilityQuery } from "@/lib/bookings/hooks";
+import { useBusinessCatalogQuery } from "@/lib/catalog/hooks";
+import { isRescheduleSlotCurrent, matchesRescheduleContext, rescheduleContextKey } from "@/lib/bookings/reschedule-availability";
 import type { AvailabilitySlot } from "@/lib/api/catalog";
 import { formatBookingDate, formatBookingMoney, formatBookingTime, formatBookingTimeRange } from "@/lib/bookings/format";
 import { toUserMessage } from "@/lib/auth/messages";
@@ -49,11 +50,17 @@ export default function RescheduleModal({ bookingId, onClose, onSaved }: Resched
   const toDateObj = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0);
   const toDate = `${toDateObj.getFullYear()}-${String(toDateObj.getMonth() + 1).padStart(2, "0")}-${String(toDateObj.getDate()).padStart(2, "0")}`;
 
-  const availabilityQuery = useServiceAvailabilityQuery(
-    detail?.businessId,
-    primaryLine?.serviceId,
-    detail ? { fromDate, toDate, staffMembershipId: primaryLine?.staffMembershipId } : undefined,
-  );
+  const availabilityQuery = useBookingRescheduleAvailabilityQuery("customer", detail, { fromDate, toDate });
+  const availability = detail && matchesRescheduleContext(detail, availabilityQuery.data) ? availabilityQuery.data : undefined;
+  const requestKey = JSON.stringify([detail ? rescheduleContextKey(detail) : "", fromDate, toDate]);
+  const [previousRequestKey, setPreviousRequestKey] = useState(requestKey);
+  if (previousRequestKey !== requestKey) {
+    setPreviousRequestKey(requestKey);
+    if (selectedSlot) setSelectedSlot(undefined);
+  }
+  const slotValid = Boolean(detail && isRescheduleSlotCurrent(detail, availability, selectedDateIso, selectedSlot));
+  const ready = !availabilityQuery.isLoading && !availabilityQuery.isFetching && !availabilityQuery.isError && slotValid;
+  if (selectedSlot && !availabilityQuery.isFetching && availabilityQuery.data && !slotValid) setSelectedSlot(undefined);
 
   const rescheduleMutation = useRescheduleByCustomerMutation();
 
@@ -61,13 +68,15 @@ export default function RescheduleModal({ bookingId, onClose, onSaved }: Resched
   const limitReached = remaining !== undefined && remaining <= 0;
 
   const handleSave = async () => {
-    if (!selectedSlot) return;
+    if (!selectedSlot || !ready || limitReached || rescheduleMutation.isPending) return;
     setError(undefined);
     try {
       await rescheduleMutation.mutateAsync({ bookingId, startAt: selectedSlot.startAt });
       onSaved();
     } catch (err) {
       setError(toUserMessage(err));
+      setSelectedSlot(undefined);
+      void availabilityQuery.refetch();
     }
   };
 
@@ -182,8 +191,8 @@ export default function RescheduleModal({ bookingId, onClose, onSaved }: Resched
                     new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1),
                   );
                 }}
-                availability={availabilityQuery.data}
-                isLoading={availabilityQuery.isLoading}
+                availability={availability}
+                isLoading={availabilityQuery.isLoading || availabilityQuery.isFetching}
                 isError={availabilityQuery.isError}
                 onRetry={() => void availabilityQuery.refetch()}
                 selectedDateIso={selectedDateIso}
@@ -207,7 +216,7 @@ export default function RescheduleModal({ bookingId, onClose, onSaved }: Resched
               </button>
               <button
                 onClick={handleSave}
-                disabled={!selectedSlot || limitReached || rescheduleMutation.isPending}
+                disabled={!ready || limitReached || rescheduleMutation.isPending}
                 className="py-2 px-6 rounded-lg text-xs font-semibold bg-[#67B2C5] text-white hover:bg-[#57a1b4] transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {rescheduleMutation.isPending ? "Saving…" : "Save changes"}

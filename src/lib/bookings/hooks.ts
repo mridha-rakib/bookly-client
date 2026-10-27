@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bookingsApi,
   type BookingDetail,
+  type RescheduleAvailabilityResult,
   type CompleteVenuePaymentInput,
   type CreateBookingInput,
   type CreateManualBookingInput,
@@ -12,8 +13,32 @@ import {
   type ListBookingsParams,
 } from "@/lib/api/bookings";
 import { packageKeys } from "@/lib/packages/hooks";
+import { useAuthStore } from "@/lib/auth/store";
+import { customerPaymentSession } from "@/lib/bookings/payment-session";
+import { matchesRescheduleContext, rescheduleContextKey } from "@/lib/bookings/reschedule-availability";
+
+export const useBookingRescheduleAvailabilityQuery = (
+  scope: "customer" | "business", booking: BookingDetail | undefined,
+  params: { fromDate: string; toDate: string },
+) => {
+  const queryClient = useQueryClient();
+  return useQuery<RescheduleAvailabilityResult>({
+    queryKey: [...bookingKeys.rescheduleAvailability, scope, booking?.businessId, booking?.id,
+      booking ? rescheduleContextKey(booking) : "", params],
+    enabled: Boolean(booking),
+    queryFn: async () => {
+      const result = await bookingsApi.getRescheduleAvailability(scope, booking!.businessId, booking!.id, params);
+      if (!matchesRescheduleContext(booking!, result)) {
+        void queryClient.invalidateQueries({ queryKey: scope === "customer"
+          ? bookingKeys.customerDetail(booking!.id) : bookingKeys.detail(booking!.businessId, booking!.id) });
+      }
+      return result;
+    },
+  });
+};
 
 export const bookingKeys = {
+  rescheduleAvailability: ["bookingRescheduleAvailability"] as const,
   all: ["bookings"] as const,
   lists: (businessId: string) => [...bookingKeys.all, "list", businessId] as const,
   list: (businessId: string, params: ListBookingsParams) =>
@@ -130,6 +155,7 @@ const onBookingMutated = (
     void queryClient.invalidateQueries({ queryKey: packageKeys.businessDetail(businessId, packageId) });
   }
   invalidateBookingCaches(queryClient, businessId);
+  void queryClient.invalidateQueries({ queryKey: bookingKeys.rescheduleAvailability });
 };
 
 /** Batch 10 — Business Owner/Supervisor manual booking creation. Reuses the exact same
@@ -269,11 +295,19 @@ export const useCustomerBookingDetailQuery = (bookingId: string | undefined) =>
   });
 
 // Batch 16 — Book Again, same "cross-business, own-history" scope as the rest of this section.
-export const useBookAgainCandidatesQuery = (pagination: { page?: number; limit?: number } = {}) =>
-  useQuery({
-    queryKey: [...bookingKeys.customerAll, "bookAgain", pagination] as const,
+export const useBookAgainCandidatesQuery = (pagination: { page?: number; limit?: number } = {}) => {
+  const user = useAuthStore((state) => state.user);
+  const status = useAuthStore((state) => state.status);
+  const cacheEpoch = useAuthStore((state) => state.cacheEpoch);
+  const isInitializing = useAuthStore((state) => state.isInitializing);
+  const customerId = status === "authenticated" && !isInitializing && user?.role === "CUSTOMER" ? user.id : undefined;
+  return useQuery({
+    queryKey: [...bookingKeys.customerAll, "bookAgain", customerId ?? "", cacheEpoch, pagination] as const,
     queryFn: () => bookingsApi.listBookAgainCandidates(pagination),
+    enabled: Boolean(customerId),
+    staleTime: 60 * 1000,
   });
+};
 
 const invalidateCustomerBookingCaches = (queryClient: ReturnType<typeof useQueryClient>) => {
   void queryClient.invalidateQueries({ queryKey: bookingKeys.customerLists() });
@@ -307,11 +341,18 @@ export const usePreviewCustomerBookingMutation = () =>
  * BookingCreationService.finalizeCustomerBooking's own doc comment — never a second charge). */
 export const useFinalizeCustomerBookingMutation = () => {
   const queryClient = useQueryClient();
+  const customerSession = useAuthStore(customerPaymentSession);
 
   return useMutation({
-    mutationFn: ({ businessId, input }: { businessId: string; input: CreateBookingInput }) =>
-      bookingsApi.finalizeCustomerBooking(businessId, input),
-    onSuccess: (result: FinalizeBookingResult) => {
+    mutationFn: ({ businessId, input }: { businessId: string; input: CreateBookingInput }) => {
+      if (!customerSession || customerSession !== customerPaymentSession(useAuthStore.getState())) {
+        throw new Error("Your session changed. Reopen the booking before confirming.");
+      }
+      return bookingsApi.finalizeCustomerBooking(businessId, input);
+    },
+    onMutate: () => customerSession,
+    onSuccess: (result: FinalizeBookingResult, _variables, session) => {
+      if (!session || session !== customerPaymentSession(useAuthStore.getState())) return;
       // Discriminate the SAME way lib/api/bookings.ts's own doc comment specifies: only the
       // requires_action shape has `clientSecret` — a confirmed BookingDetail's own `status`
       // field is a BookingStatus value like "UPCOMING", never the literal "confirmed".
@@ -331,6 +372,7 @@ export const useCancelByCustomerMutation = () => {
       bookingsApi.cancelByCustomer(bookingId, reason),
     onSuccess: (booking) => {
       queryClient.setQueryData(bookingKeys.customerDetail(booking.id), booking);
+      void queryClient.invalidateQueries({ queryKey: bookingKeys.customerDetail(booking.id), exact: true });
       invalidateCustomerBookingCaches(queryClient);
       invalidateLinkedPackage(queryClient, booking);
     },
@@ -344,6 +386,7 @@ export const useRescheduleByCustomerMutation = () => {
     mutationFn: ({ bookingId, startAt }: { bookingId: string; startAt: string }) =>
       bookingsApi.rescheduleByCustomer(bookingId, startAt),
     onSuccess: (booking) => {
+      void queryClient.invalidateQueries({ queryKey: bookingKeys.rescheduleAvailability });
       queryClient.setQueryData(bookingKeys.customerDetail(booking.id), booking);
       invalidateCustomerBookingCaches(queryClient);
       invalidateLinkedPackage(queryClient, booking);
