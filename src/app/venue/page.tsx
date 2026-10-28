@@ -29,6 +29,8 @@ import { Suspense } from "react";
 
 import { useAuthStore } from "@/lib/auth/store";
 import { customerPaymentSession } from "@/lib/bookings/payment-session";
+import BookingPaymentRecovery, { bookingRecoveryMessage } from "@/components/bookings/BookingPaymentRecovery";
+import { dismissBookingContinuation, saveBookingContinuation } from "@/lib/bookings/payment-continuation";
 import { storePostLoginRedirect } from "@/lib/auth/post-login-redirect";
 import { BooklyApiError } from "@/lib/api/client";
 import { useBusinessCatalogQuery, useServiceAddonsQuery, useServiceAvailabilityQuery } from "@/lib/catalog/hooks";
@@ -41,7 +43,7 @@ import {
   usePreviewPackagePurchaseMutation,
   usePurchasePackageMutation,
 } from "@/lib/packages/hooks";
-import type { BookingCreationPreview, BookingDetail, CreateBookingInput } from "@/lib/api/bookings";
+import { bookingsApi, type BookingCreationPreview, type BookingDetail, type CreateBookingInput } from "@/lib/api/bookings";
 import { getStripe } from "@/lib/payments/stripe-client";
 import { formatBookingMoney } from "@/lib/bookings/format";
 import { toUserMessage } from "@/lib/auth/messages";
@@ -565,6 +567,27 @@ function VenueDetailsContent() {
         session === customerPaymentSession(useAuthStore.getState());
       try {
         setWalletError(undefined);
+        const ownerId = useAuthStore.getState().user?.id;
+        const saved = !isPackagePurchaseFlow && ownerId
+          ? saveBookingContinuation(ownerId, venueId, input) : undefined;
+        const readOriginal = async () => {
+          const observed = await bookingsApi.getCustomerPaymentStatus(venueId, input.idempotencyKey);
+          if (observed.businessId !== venueId || observed.idempotencyKey !== input.idempotencyKey)
+            throw Error("Booking status did not match the original request.");
+          return observed;
+        };
+        const confirmBooking = async (booking: BookingDetail) => {
+          if (saved) {
+            const observed = await readOriginal();
+            if (!isCurrentAction()) return;
+            if (observed.state !== "COMMITTED" || observed.bookingId !== booking.id)
+              throw Error("Booking finalization is pending. Check your saved original request below or in My Bookings.");
+            dismissBookingContinuation(saved);
+          }
+          if (!isCurrentAction()) return;
+          setConfirmedBooking(booking);
+          setBookingStep("confirmed");
+        };
 
         // Batch 9 completion pass — a real gap found and fixed here: neither this call nor the
         // 3DS-retry call below had a catch, so a genuine decline, a stale-slot conflict, or any
@@ -583,23 +606,39 @@ function VenueDetailsContent() {
 
         // P0 durable retry safety — an error with no HTTP response (or a 5xx) is ambiguous: the
         // provider may have moved money even though this browser never received the response.
-        // Keep the same logical key in that case so the server resumes/reconciles its durable
-        // PaymentAttempt. A definitive 4xx response may end this attempt;
-        // 3DS errors and unclassified failures keep its key for authoritative reconciliation.
+        // Ordinary requests always retain their saved key, including 4xx outcomes: FAILED
+        // can still be a re-confirmable provider intent. Terminal status, not a browser error,
+        // permits dismissal. The existing legacy Package branch retains its own policy below.
         // For BOOKING_SLOT_RESERVATION_CONFLICT specifically, the server rejected admission;
         // compensation status remains a separate persisted financial fact. The rejected slot
         // must not be silently resubmitted: clear it and send the customer back to Time so the
         // existing stale-slot Continue gate (isSelectedSlotValid) can never let them retry with it.
-        const failFinalize = (
+        const failFinalize = async (
           messageOrError: string | unknown,
           options: { preserveLogicalKey?: boolean } = {},
         ) => {
           if (!isCurrentAction()) return;
-          setWalletError(typeof messageOrError === "string" ? messageOrError : toUserMessage(messageOrError));
+          let message = typeof messageOrError === "string" ? messageOrError : toUserMessage(messageOrError);
+          if (saved) {
+            try {
+              const observed = await readOriginal();
+              if (!isCurrentAction()) return;
+              if (observed.state === "COMMITTED" && observed.bookingId) {
+                const committed = await bookingsApi.getDetailForCustomer(observed.bookingId);
+                if (!isCurrentAction()) return;
+                await confirmBooking(committed);
+                return;
+              }
+              if (!["NOT_OBSERVED", "UNRESOLVED"].includes(observed.state))
+                message = `${bookingRecoveryMessage(observed.state)} Check the original request in My Bookings.`;
+            } catch { /* Status outage never establishes failure or permits a fresh key. */ }
+          }
+          if (!isCurrentAction()) return;
+          setWalletError(message);
           const isAmbiguousServerOutcome =
             !(messageOrError instanceof BooklyApiError) ||
             messageOrError.status === undefined || messageOrError.status >= 500;
-          if (!isAmbiguousServerOutcome && !options.preserveLogicalKey) {
+          if (isPackagePurchaseFlow && !isAmbiguousServerOutcome && !options.preserveLogicalKey) {
             setIdempotencyKey(crypto.randomUUID());
           }
           if (messageOrError instanceof BooklyApiError && messageOrError.code === "BOOKING_SLOT_RESERVATION_CONFLICT") {
@@ -613,7 +652,7 @@ function VenueDetailsContent() {
           result = await submitFinalize();
           if (!isCurrentAction()) return;
         } catch (error) {
-          failFinalize(error);
+          await failFinalize(error);
           return;
         }
 
@@ -626,7 +665,7 @@ function VenueDetailsContent() {
             const stripe = await getStripe();
             if (!isCurrentAction()) return;
             if (!stripe) {
-              failFinalize("Payment could not be initialized. Please try again.", {
+              await failFinalize("Payment could not be initialized. Please try again.", {
                 preserveLogicalKey: true,
               });
               return;
@@ -634,7 +673,7 @@ function VenueDetailsContent() {
             const confirmResult = await stripe.confirmCardPayment(result.clientSecret);
             if (!isCurrentAction()) return;
             if (confirmResult.error) {
-              failFinalize(confirmResult.error.message ?? "Payment authentication failed.", {
+              await failFinalize(confirmResult.error.message ?? "Payment authentication failed.", {
                 preserveLogicalKey: true,
               });
               return;
@@ -642,22 +681,22 @@ function VenueDetailsContent() {
             const retry = await submitFinalize();
             if (!isCurrentAction()) return;
             if (!("clientSecret" in retry)) {
-              setConfirmedBooking(retry);
-              setBookingStep("confirmed");
+              await confirmBooking(retry);
             } else {
-              failFinalize("Payment could not be confirmed. Please try again.", {
+              await failFinalize("Payment could not be confirmed. Please try again.", {
                 preserveLogicalKey: true,
               });
             }
           } catch (error) {
-            failFinalize(error, { preserveLogicalKey: true });
+            await failFinalize(error, { preserveLogicalKey: true });
           } finally {
             if (isCurrentAction()) setConfirming3ds(false);
           }
           return;
         }
-        setConfirmedBooking(result);
-        setBookingStep("confirmed");
+        await confirmBooking(result);
+      } catch (error) {
+        if (isCurrentAction()) setWalletError(toUserMessage(error));
       } finally {
         if (isCurrentAction()) setConfirming3ds(false);
         if (paymentAction.current === action) paymentAction.current = null;
@@ -1106,6 +1145,7 @@ function VenueDetailsContent() {
 
           {/* Left Column (Tabs and Details) */}
           <div className="flex-grow w-full lg:max-w-[868px] flex flex-col gap-8 order-2 lg:order-1">
+            <BookingPaymentRecovery businessId={venueId} />
 
             {/* Tabs Navigation */}
             <div className={`flex border-b border-[#ACAAB4] w-full justify-between ${isMobile ? "sticky top-0 bg-[#FCFAF9] z-20" : ""}`}>

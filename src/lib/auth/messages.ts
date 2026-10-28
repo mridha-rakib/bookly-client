@@ -73,7 +73,7 @@ const codeMessages: Record<string, string> = {
   // fully promo-covered deposit never calls Stripe at all) — see
   // BookingCreationService.finalizeCustomerBooking's `paymentResult`-gated compensation call.
   BOOKING_SLOT_RESERVATION_CONFLICT:
-    "This time slot was just taken by someone else. Any payment you made for it has been automatically refunded — please choose another available time.",
+    "This time slot was just taken. Your Booking is not confirmed. Check the original payment or refund status before choosing another time.",
   BOOKING_SCHEDULE_INVALID:
     "The selected time is no longer available. Please choose another available time.",
   AVAILABILITY_CITY_REQUIRED: "Select a city for this travel appointment.",

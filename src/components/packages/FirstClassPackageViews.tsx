@@ -40,10 +40,13 @@ export function OfferCard({ offer, detail = false }: { offer: PackageOffer; deta
 function Counter({ label, value }: { label: string; value: number }) {
   return <div className="rounded-xl bg-[#F5F4EE] p-3"><dt className="text-xs text-[#5F5E5A]">{label}</dt><dd className="mt-1 text-xl font-bold">{value}</dd></div>;
 }
-export function OwnedPackageCard({ pkg, detail = false }: { pkg: OwnedPackageView; detail?: boolean }) {
+export function OwnedPackageCard({ pkg, detail = false, sessionReview = true }: { pkg: OwnedPackageView; detail?: boolean; sessionReview?: boolean }) {
+  // P2A: credits are usable only when the server verified the original purchase completed.
+  const purchaseVerified = pkg.purchaseCompletion === "VERIFIED";
   return <article className={`${card} flex flex-col gap-5`}>
     {detail ? <h1 className="font-manrope text-2xl font-bold">{pkg.name}</h1> : <h3 className="font-manrope text-xl font-bold">{pkg.name}</h3>}
     <p className="text-sm">First-class Package · {pkg.status}</p>
+    {!purchaseVerified && <p role="status" className="rounded-xl bg-[#F5F4EE] p-3 text-sm">Purchase not completed. These sessions cannot be booked or used, and no payment is confirmed.</p>}
     <p className="text-sm">{pkg.validity?.mode === "FOREVER" ? "FOREVER · No expiry" : pkg.validity?.expiresAt ? `Expires ${new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: pkg.validity.timezone ?? "UTC" }).format(new Date(pkg.validity.expiresAt))} (${pkg.validity.timezone})` : "Validity unavailable"}</p>
     {pkg.items.map((item) => <section key={item.id} aria-label={item.name}>
       <h4 className="mb-3 font-semibold">{item.name}</h4>
@@ -55,7 +58,7 @@ export function OwnedPackageCard({ pkg, detail = false }: { pkg: OwnedPackageVie
       <p className="text-sm leading-7">Bundle {formatBookingMoney(pkg.bundlePriceCents)} · Deposit paid {formatBookingMoney(pkg.purchaseFinancials.depositCents)} · Outstanding {formatBookingMoney(pkg.purchaseFinancials.outstandingBalanceCents)}</p>
       {!pkg.purchaseFinancials.balanceSettled && <p className="text-sm text-[#BA1A1A]">Remaining sessions are locked until the original balance is settled.</p>}</section>
       : <p>Original purchase financial status unavailable. No payment confirmation inferred.</p>}
-    {detail ? <><PackageUnavailable />
+    {detail ? <>{!pkg.actionsAvailable && <PackageUnavailable />}
       {pkg.penalty && <p className="text-sm">Independent penalties: appointment cap {formatBookingMoney(pkg.penalty.appointmentCapCents)}, lifetime cap {formatBookingMoney(pkg.penalty.lifetimeCapCents)}. Original upfront does not pay later penalties. Remaining penalty allowance requires a server assessment.</p>}
       <h2 className="text-lg font-bold">Session history</h2>
       <OperationHistory view={pkg} />
@@ -69,7 +72,7 @@ export function OwnedPackageCard({ pkg, detail = false }: { pkg: OwnedPackageVie
           <p>Session Travel {formatBookingMoney(session.booking.travelFeeCents)} · Add-ons {formatBookingMoney(session.booking.addonsSubtotalCents)} · Session outstanding {formatBookingMoney(session.booking.outstandingBalanceCents)}</p>
           <Link className="text-[#240183] underline" href={`/customer/bookings/view?id=${session.bookingId}`}>View booking</Link></> : <p>Booking details unavailable. No booking success is inferred.</p>}
       </section>)}
-      <SessionReview remainingItems={pkg.items.filter((i) => i.remaining > 0).map((i) => ({ id: i.id, name: i.name }))} />
+      {purchaseVerified && sessionReview && !pkg.actionsAvailable && <SessionReview remainingItems={pkg.items.filter((i) => i.remaining > 0).map((i) => ({ id: i.id, name: i.name }))} />}
     </> : <Link className="text-[#240183] underline" href={`/customer/packages/${pkg.id}?kind=first-class`}>View sessions and balances</Link>}
   </article>;
 }
@@ -128,8 +131,8 @@ export function SettlementCard({ view }: { view: PackageSettlementView }) {
     {view.session?.booking && <p className="text-sm">This session: Travel {formatBookingMoney(view.session.booking.travelFeeCents)} · Add-ons {formatBookingMoney(view.session.booking.addonsSubtotalCents)} · Outstanding {formatBookingMoney(view.session.booking.outstandingBalanceCents)} · Venue-attested {formatBookingMoney(view.session.booking.venueAttestedCents)}</p>}
     <p className="text-sm">Management attestation is not independent bank or cash proof. Completion does not confirm payment. The original purchase payment attempt is preserved.</p>
     <OperationHistory view={view} />
-    <div className="flex flex-wrap gap-2">{["Full", "Partial", "Not paid"].map((label) => <button type="button" key={label} disabled className={packageSecondaryCta}>{label} — unavailable</button>)}</div>
-    <PackageUnavailable /></section>;
+    {!view.actionsAvailable && <><div className="flex flex-wrap gap-2">{["Full", "Partial", "Not paid"].map((label) => <button type="button" key={label} disabled className={packageSecondaryCta}>{label} — unavailable</button>)}</div>
+    <PackageUnavailable /></>}</section>;
 }
 
 export function OperationHistory({ view }: { view: Pick<OwnedPackageView, "operations" | "payments"> }) {

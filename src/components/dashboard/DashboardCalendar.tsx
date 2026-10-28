@@ -2,7 +2,8 @@
 import Image from "next/image";
 import NotificationBell from "@/components/notifications/NotificationBell";
 import WaiveChargeModal from "./WaiveChargeModal";
-import { NoShowModal, CompleteModal, CancelBookingModal } from "./CalendarActionModals";
+import { NoShowModal, CancelBookingModal } from "./CalendarActionModals";
+import CalendarBookingCompletion from "./CalendarBookingCompletion";
 
 import React, { useEffect, useState, useRef } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -20,7 +21,6 @@ import { useStaffListQuery } from "@/lib/staff/hooks";
 import {
   useBusinessCalendarQuery,
   useCancelByBusinessMutation,
-  useCompleteBookingMutation,
   useMarkNoShowMutation,
   useWaiveFeeMutation,
 } from "@/lib/bookings/hooks";
@@ -151,7 +151,6 @@ export default function DashboardCalendar({
   const staffListQuery = useStaffListQuery(businessId);
   const bookings = calendarQuery.data?.bookings ?? [];
 
-  const completeBookingMutation = useCompleteBookingMutation();
   const cancelByBusinessMutation = useCancelByBusinessMutation();
   const markNoShowMutation = useMarkNoShowMutation();
   const waiveFeeMutation = useWaiveFeeMutation();
@@ -214,7 +213,11 @@ export default function DashboardCalendar({
   };
 
   const handleCompleteBooking = (cardId: string) => {
-    setCompleteBookingId(cardId);
+    if (findBooking(cardId)?.firstClassPackage) {
+      onViewBookingClick?.(cardId);
+    } else {
+      setCompleteBookingId(cardId);
+    }
     setOpenDropdownCardId(null);
   };
 
@@ -305,9 +308,9 @@ export default function DashboardCalendar({
         </button>
         {isUpcoming && (
           <>
-            <button className="px-4 py-2 hover:bg-neutral-50 text-left flex items-center gap-2 text-[#1C1B1C] font-medium cursor-pointer" onClick={() => handleCompleteBooking(cardId)}>
+            <button disabled={Boolean(booking?.firstClassPackage && !onViewBookingClick)} className="px-4 py-2 hover:bg-neutral-50 text-left flex items-center gap-2 text-[#1C1B1C] font-medium cursor-pointer disabled:opacity-50" onClick={() => handleCompleteBooking(cardId)}>
               <HugeiconsIcon icon={Tick01Icon} className="w-3.5 h-3.5 text-[#141B34] shrink-0" />
-              <span>Complete</span>
+              <span>{booking?.firstClassPackage ? "Manage package appointment" : "Complete"}</span>
             </button>
             <button className="px-4 py-2 hover:bg-neutral-50 text-left flex items-center gap-2 text-[#BA1A1A] font-medium cursor-pointer border-t border-neutral-100" onClick={() => handleCancelBooking(cardId)}>
               <HugeiconsIcon icon={Delete02Icon} className="w-3.5 h-3.5 text-[#BA1A1A] shrink-0" />
@@ -989,22 +992,13 @@ export default function DashboardCalendar({
       />
 
       {/* Complete Booking Confirm Modal Overlay */}
-      <CompleteModal
-        isOpen={!!completeBookingId}
+      {businessId && completeBookingId && <CalendarBookingCompletion
+        key={`${businessId}:${completeBookingId}`}
+        businessId={businessId}
+        bookingId={completeBookingId}
         onClose={() => setCompleteBookingId(null)}
-        onConfirm={(venuePayment) => {
-          if (businessId && completeBookingId) {
-            completeBookingMutation.mutate(
-              { businessId, bookingId: completeBookingId, venuePayment },
-              {
-                onSuccess: () => toast.success("Booking completed."),
-                onError: (error) => toast.error(toUserMessage(error)),
-              },
-            );
-          }
-          setCompleteBookingId(null);
-        }}
-      />
+        onViewBooking={onViewBookingClick}
+      />}
 
       {/* Cancel Booking Confirm Modal Overlay */}
       <CancelBookingModal

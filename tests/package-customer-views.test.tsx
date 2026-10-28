@@ -39,6 +39,16 @@ describe("S6 truthful package presentation", () => {
     const text = await render(<OwnedPackageCard pkg={owned} detail />);
     for (const label of ["Remaining", "Scheduled", "Completed", "Forfeited", "Expired", "locked until", "Original initial appointment", "Later redeemed appointment", "Result unconfirmed / recovery pending"]) expect(text).toContain(label);
   });
+  it("P2A: an unverified purchase shows no bookable credits and says the purchase is not completed", async () => {
+    for (const purchaseCompletion of ["NOT_ESTABLISHED", undefined] as const) {
+      const text = await render(<OwnedPackageCard pkg={{ ...owned, purchaseCompletion }} detail />);
+      expect(text).toContain("Purchase not completed");
+      expect(text).not.toContain("Book a remaining session");
+    }
+    const verified = await render(<OwnedPackageCard pkg={owned} detail />);
+    expect(verified).not.toContain("Purchase not completed");
+    expect(verified).toContain("Book a remaining session");
+  });
   it("C15: pending payment never reads paid", async () => { const text = await render(<PaymentStatus state="PROCESSING" />); expect(text).toContain("processing"); expect(text).not.toContain("succeeded"); });
   it("C18: cancellation displays exact credit and monetary effects, mutation disabled", async () => {
     const text = await render(<CancellationReview terms={{ classification: "LATE", creditEffect: "FORFEITED", penaltyCents: 200, paymentState: "PROCESSING" }} />);

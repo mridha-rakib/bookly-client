@@ -8,27 +8,17 @@ import StaffOverview from "./StaffOverview";
 import StaffSettings from "./StaffSettings";
 
 // Modular Dashboard sub-components
-import DashboardCalendar from "@/components/dashboard/DashboardCalendar";
-import DashboardBookingsList from "@/components/dashboard/DashboardBookingsList";
+import StaffMyAppointments from "@/components/dashboard/StaffMyAppointments";
 import NotAvailableForRole from "@/components/dashboard/NotAvailableForRole";
 import ContactSupport from "@/components/support/ContactSupport";
 import DashboardReviewsList from "@/components/dashboard/DashboardReviewsList";
 import StaffMySchedule from "@/components/dashboard/StaffMySchedule";
-import { useManagedBusinessContext } from "@/lib/business/hooks";
-import { useCurrentUserQuery } from "@/lib/auth/hooks";
 
 export default function StaffDashboard() {
   const [activeTab, setActiveTab] = useState("Dashboard");
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showFooterMenu, setShowFooterMenu] = useState(true);
   const footerMenuRef = useRef<HTMLDivElement>(null);
-  const loggedInStaffName = useCurrentUserQuery().data?.profile?.firstName;
-
-  // Batch 6: no product rule grants STAFF booking-management rights (confirmed rule W — see
-  // api/.../booking.service.ts requireBookingManagementAccess, which only ever authorizes
-  // BUSINESS_OWNER/SUPERVISOR). `businessId` is therefore always undefined here — real Booking
-  // data/actions are intentionally NOT wired for this dashboard; see the Batch 6 final report.
-  const { businessId: bookingsBusinessId } = useManagedBusinessContext();
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -50,14 +40,8 @@ export default function StaffDashboard() {
     }
 
     if (activeTab === "Calendar") {
-      return (
-        <DashboardCalendar
-          businessId={bookingsBusinessId}
-          onNewBookingClick={() => {}}
-          isStaffDashboard={true}
-          staffName={loggedInStaffName}
-        />
-      );
+      // D-S1/D-S2 reads only: never use the Owner/Supervisor management calendar API.
+      return <StaffMyAppointments key="Calendar" view="Calendar" />;
     }
 
     if (activeTab === "Clients") {
@@ -75,18 +59,10 @@ export default function StaffDashboard() {
     }
 
     if (activeTab === "Upcoming" || activeTab === "Canceled") {
-      // No product rule grants STAFF booking-management rights (confirmed rule W) — the real
-      // Booking list/detail/actions are Owner/Supervisor-only (see
-      // requireBookingManagementAccess). DashboardBookingsList itself renders the correct
-      // "not available for your account" state when businessId is undefined, exactly as it is
-      // here, rather than this dashboard faking a working detail view.
-      return (
-        <DashboardBookingsList
-          activeTab={activeTab}
-          businessId={bookingsBusinessId}
-          isStaffDashboard={true} // custom prop to hide headers filters and +New booking buttons
-        />
-      );
+      // P4C-1 (Owner decision D-S1) — the Staff member's OWN assigned appointments, read-only,
+      // from the Staff-scoped API. Booking management (list of all bookings, cancel, reschedule,
+      // complete, no-show, payments, Packages) stays Owner/Supervisor-only (rule W).
+      return <StaffMyAppointments key={activeTab} view={activeTab} />;
     }
 
     if (activeTab === "Staff") {

@@ -44,3 +44,29 @@ it("C20: Staff settlement never dispatches a financial read", async () => {
   await render(<ManagementPackageSettlement businessId="business" bookingId="booking" />);
   expect(host.textContent).toContain("restricted"); expect(fx.request).not.toHaveBeenCalled();
 });
+
+it("P4E older Package history sends the server cursor and can return to the cached newer page", async () => {
+  const cursor = "4".repeat(24);
+  fx.request.mockResolvedValueOnce({ packages: [{ ...owned, name: "Recent package" }], hasMore: true, nextCursor: cursor })
+    .mockResolvedValueOnce({ packages: [{ ...owned, id: "old", name: "Older package" }], hasMore: false, nextCursor: null });
+  await render(<OwnedFirstClassPackages />);
+  await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "Older packages")!.click());
+  await render(<OwnedFirstClassPackages />);
+  expect(fx.request.mock.calls[1]?.[0]).toMatchObject({ method: "GET", url: "/package-views/owned", params: { before: cursor } });
+  expect(host.textContent).toContain("Older package");
+  expect(host.textContent).not.toContain("Recent package");
+  await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "Newer packages")!.click());
+  await render(<OwnedFirstClassPackages />);
+  expect(host.textContent).toContain("Recent package");
+  expect(fx.request).toHaveBeenCalledTimes(2);
+});
+
+it("P4E an older-page error retains navigation to the newer page", async () => {
+  fx.request.mockResolvedValueOnce({ packages: [owned], hasMore: true, nextCursor: "4".repeat(24) })
+    .mockRejectedValueOnce(new BooklyApiError({ message: "private", status: 503 }));
+  await render(<OwnedFirstClassPackages />);
+  await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "Older packages")!.click());
+  await render(<OwnedFirstClassPackages />);
+  expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  expect([...host.querySelectorAll("button")].some((button) => button.textContent === "Newer packages")).toBe(true);
+});

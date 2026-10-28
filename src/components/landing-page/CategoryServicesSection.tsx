@@ -61,7 +61,7 @@ function DiscoveryRow({
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center">
+        <div className="flex flex-wrap items-stretch justify-start gap-6 w-full">
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
@@ -96,7 +96,7 @@ function DiscoveryRow({
           ))}
         </Carousel>
       ) : (
-        <div className="flex flex-wrap justify-center gap-6 mx-auto max-w-full sm:max-w-[744px] md:max-w-[836px] lg:max-w-[1266px]">
+        <div className="flex flex-wrap items-stretch justify-start gap-6 w-full">
           {cards.map((rec) => (
             <div key={rec.id} className="w-full sm:w-[360px] md:w-[406px]">
               <ServiceCard

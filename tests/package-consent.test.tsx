@@ -76,6 +76,7 @@ const submit = async () => {
 };
 
 beforeEach(() => {
+  sessionStorage.clear();
   (
     globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -204,6 +205,19 @@ describe("Customer terms interaction and bounded real API-client dispatches", ()
     await act(async () => delayAccept?.());
     await flush();
     expect(container.textContent).toContain("Terms accepted");
+  });
+  it("pending certification recovery is manual and replays the original affirmative event", async () => {
+    await render(); await check(); await submit();
+    expect(container.textContent).toContain("certification pending");
+    expect(calls.filter((c) => c.url.endsWith("/acceptance"))).toHaveLength(1);
+    const recovery = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent === "Check original consent certification")!;
+    expect(recovery).toBeTruthy();
+    await act(async () => recovery.click()); await flush();
+    const sent = calls.filter((c) => c.url.endsWith("/acceptance"));
+    expect(sent).toHaveLength(2); expect(sent[1].data).toEqual(sent[0].data);
+    expect(calls.some((c) => c.url.endsWith("/purchase"))).toBe(false);
+    expect(container.textContent).toContain("No Package purchase has been made");
   });
   it("network loss shows no fake success and manual retry reuses event identity", async () => {
     await render();

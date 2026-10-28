@@ -10,7 +10,7 @@ describe("S6 existing detail destination", () => {
     expect(page.type).toBe(RequireCustomer);
     const children = page.props.children.props.children.props.children;
     expect(children[0].props.children).toContain("Back to venue");
-    expect(children[1].props).toEqual({ businessId: "b", packageId: "p" });
+    expect(children[1].props).toEqual({ businessId: "b", packageId: "p", operationId: "old" });
     vi.unstubAllEnvs();
   });
 });

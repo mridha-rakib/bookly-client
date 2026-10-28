@@ -4,7 +4,7 @@ export interface PackageOffer {
   id: string; businessId: string; name: string; description?: string;
   currency: "EUR"; bundlePriceCents: number;
   validity: { mode: "FINITE" | "FOREVER"; months?: number };
-  fulfilmentMode: string; checkoutAvailable: false;
+  fulfilmentMode: string; checkoutAvailable: boolean;
   items: Array<{ itemId: string; serviceId: string; name: string; quantity: number;
     pricingMode: string; group?: { credits: number; partySize: number } }>;
 }
@@ -12,7 +12,10 @@ export interface OwnedPackageView {
   operations?: Array<{ action: string; state: string; resultStatus: string | null; disclosure: string | null; amountCents: number | null; notificationStates: string[]; sessionAcceptanceRecordedAt?: string | null }>;
   payments?: Array<{ kind: string; amountCents: number | null; providerState: string; persistenceState: string; compensationState: string }>;
   id: string; schemaVersion: 2; businessId: string; name: string; currency: "EUR";
-  bundlePriceCents: number; status: string; originBookingId: string; actionsAvailable: false;
+  bundlePriceCents: number; status: string; originBookingId: string; actionsAvailable: boolean;
+  /** Server-verified commercial completion of the original purchase. Anything other than
+   * VERIFIED (including absent) means no usable credits are shown. */
+  purchaseCompletion?: "VERIFIED" | "NOT_ESTABLISHED";
   validity: { mode: "FINITE" | "FOREVER"; expiresAt: string | null; timezone: string | null } | null;
   penalty: { appointmentCapCents: number; lifetimeCapCents: number; purchaseDepositOffset: false } | null;
   purchaseFinancials: { totalCents: number; depositCents: number; balanceSettled: boolean;
@@ -31,13 +34,16 @@ export interface OwnedPackageView {
 export interface PackageSettlementView {
   operations?: OwnedPackageView["operations"]; payments?: OwnedPackageView["payments"];
   originBookingId: string; purchaseFinancials: OwnedPackageView["purchaseFinancials"];
-  session: OwnedPackageView["sessions"][number] | null; actionsAvailable: false;
+  purchaseCompletion?: OwnedPackageView["purchaseCompletion"];
+  packageProgressId?: string;
+  session: OwnedPackageView["sessions"][number] | null; actionsAvailable: boolean;
 }
 export const packageViewsApi = {
   catalogue: (businessId: string, packageId?: string) => apiRequest<{ packages: PackageOffer[] }>({
     method: "GET", url: `/package-views/catalog/${encodeURIComponent(businessId)}${packageId ? `/${encodeURIComponent(packageId)}` : ""}` }),
-  owned: (id?: string) => apiRequest<{ packages: OwnedPackageView[]; hasMore: boolean }>({
-    method: "GET", url: `/package-views/owned${id ? `/${encodeURIComponent(id)}` : ""}` }),
+  owned: (id?: string, before?: string) => apiRequest<{ packages: OwnedPackageView[]; hasMore: boolean; nextCursor?: string | null }>({
+    method: "GET", url: `/package-views/owned${id ? `/${encodeURIComponent(id)}` : ""}`,
+    ...(!id && before ? { params: { before } } : {}) }),
   settlement: (businessId: string, bookingId: string) => apiRequest<PackageSettlementView>({
     method: "GET", url: `/package-views/settlement/${encodeURIComponent(businessId)}/${encodeURIComponent(bookingId)}` }),
 };

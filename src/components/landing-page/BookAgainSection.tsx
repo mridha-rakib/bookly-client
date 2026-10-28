@@ -50,7 +50,7 @@ export default function BookAgainSection() {
       ) : candidates.length > 5 ? (
         <Carousel>{cards}</Carousel>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center">{cards}</div>
+        <div className="flex flex-wrap items-stretch justify-start gap-6 w-full">{cards}</div>
       )}
     </section>
   );

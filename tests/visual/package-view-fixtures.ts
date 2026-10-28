@@ -12,6 +12,7 @@ export const offer: PackageOffer = {
 export const owned: OwnedPackageView = {
   id: "333333333333333333333333", businessId: offer.businessId, schemaVersion: 2, name: offer.name,
   currency: "EUR", bundlePriceCents: 24000, status: "RECORDED", originBookingId: "444444444444444444444444", actionsAvailable: false,
+  purchaseCompletion: "VERIFIED",
   validity: { mode: "FINITE", expiresAt: "2027-04-25T10:00:00Z", timezone: "Asia/Nicosia" },
   penalty: { appointmentCapCents: 2500, lifetimeCapCents: 24000, purchaseDepositOffset: false },
   purchaseFinancials: { totalCents: 24000, depositCents: 3500, balanceSettled: false, outstandingBalanceCents: 15500, venueAttestedCents: 5000 },

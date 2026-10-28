@@ -11,9 +11,16 @@ import {
   useDefinitionsQuery,
   type DefinitionAction,
 } from "@/lib/package-definitions/hooks";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { FilterHorizontalIcon } from "@hugeicons/core-free-icons";
 import PackageDefinitionForm from "./PackageDefinitionForm";
 import PackageDefinitionCard from "./PackageDefinitionCard";
-import { buttonClass, primaryClass, DefinitionError } from "./PackagePresentation";
+import {
+  buttonClass,
+  primaryClass,
+  DefinitionError,
+  selectArrowStyle,
+} from "./PackagePresentation";
 
 type View = { mode: "list" | "create" } | { mode: "view" | "edit"; id: string };
 export default function PackagesListPage() {
@@ -98,16 +105,27 @@ function PackageManager({ businessId }: { businessId: string }) {
     );
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-wrap items-end gap-4">
-          <p className="flex min-h-[41px] items-center gap-2 rounded-full border border-[#F5F5F4] bg-white px-4 py-2 text-sm font-medium text-[#57534D] shadow-sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#8EBAC5]" />
-            {list.data?.packages.length ?? 0} Packages in this view
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="flex min-h-[42px] items-center gap-2.5 rounded-full border border-[#E7E5E4] bg-white px-4 py-2 text-sm font-medium text-[#57534D] shadow-xs">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#2E9DA7] opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#2E9DA7]" />
+            </span>
+            <span>
+              <strong className="font-semibold text-[#111111]">{list.data?.packages.length ?? 0}</strong>{" "}
+              Packages in this view
+            </span>
           </p>
-          <label className="flex flex-col gap-1 text-sm font-medium">
-            Show Packages
+          <label className="group flex min-h-[42px] items-center gap-2.5 rounded-full border border-[#E7E5E4] bg-white pl-4 pr-3 py-1.5 shadow-xs transition-colors hover:border-[#D3D1C7] cursor-pointer">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-[#757575] shrink-0">
+              <HugeiconsIcon icon={FilterHorizontalIcon} className="h-3.5 w-3.5 text-[#2E9DA7]" />
+              <span>Show Packages</span>
+            </span>
+            <span className="h-4 w-[1px] bg-[#E7E5E4]" />
             <select
-              className={`${buttonClass} min-w-40`}
+              className="appearance-none bg-transparent pr-7 pl-1 py-1 font-poppins text-xs font-semibold text-[#111111] focus:outline-none cursor-pointer"
+              style={selectArrowStyle}
               value={filter}
               disabled={mutation.isPending}
               onChange={(e) => {

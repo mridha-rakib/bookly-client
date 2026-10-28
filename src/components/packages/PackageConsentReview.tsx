@@ -3,12 +3,16 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { packagePrimaryCta } from "./package-cta";
+import { PackagePurchaseContinuation } from "./PackagePurchaseContinuation";
+import { PackagePurchaseAppointmentPicker } from "./PackagePurchaseAppointmentPicker";
+import { useAuthStore } from "@/lib/auth/store";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   acceptConsentTerms,
   consentAction,
   getConsentOffer,
   getConsentPresentation,
+  getRetainedConsentQuote,
   matchesConsentAcceptance,
   retainConsentQuote,
   type ConsentAction,
@@ -17,13 +21,11 @@ import {
   type ConsentPresentation,
 } from "@/lib/api/package-consent";
 
-const inputClass =
-  "w-full rounded-xl border border-gray-300 bg-white p-3 text-[#020305] focus:outline-2 focus:outline-[#240183]";
 const buttonClass = packagePrimaryCta;
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Terms review is unavailable. Please try again later.";
 
-/** Consent-only UI: no card setup, payment controls or purchase continuation. */
+/** Original consent flow plus separately gated purchase continuation. */
 export default function PackageConsentReview({
   businessId,
   packageId,
@@ -34,6 +36,7 @@ export default function PackageConsentReview({
   initialOperationId?: string;
 }) {
   const queryClient = useQueryClient();
+  const userId = useAuthStore((s) => s.user?.id);
   const [operationId, setOperationId] = useState(initialOperationId);
   const [selections, setSelections] = useState<ConsentIntent["selections"]>([]);
   const [presentation, setPresentation] = useState<ConsentPresentation>();
@@ -65,6 +68,12 @@ export default function PackageConsentReview({
     staleTime: Infinity,
   });
   const displayed = presentation ?? retained.data;
+  const original = useQuery({
+    queryKey: ["packageConsentOriginalQuote", userId, businessId, initialOperationId],
+    queryFn: () => getRetainedConsentQuote(businessId, initialOperationId!),
+    enabled: Boolean(initialOperationId) && retained.isError,
+    retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
+  });
   const candidate = accepted ?? displayed?.accepted;
   const confirmation =
     candidate &&
@@ -111,11 +120,30 @@ export default function PackageConsentReview({
   const submit = () =>
     run(async () => {
       if (!displayed || !checked || !operationId || confirmation) return;
+      const actionKey = `bookly:package-consent-action:${userId}:${businessId}:${operationId}`;
+      if (!action.current) {
+        try {
+          const saved = sessionStorage.getItem(actionKey);
+          if (saved) {
+            const retained = JSON.parse(saved) as ConsentAction;
+            if (retained.presentationId !== displayed.presentationId || retained.quoteHash !== displayed.quoteHash || retained.disclosureHash !== displayed.disclosureHash)
+              throw Error("Original acceptance identity differs; check its status");
+            action.current = retained;
+          }
+        } catch (failure) {
+          if (failure instanceof SyntaxError) throw failure;
+          // Storage access may be unavailable; no server authority is inferred from it.
+          if (failure instanceof Error && failure.message.startsWith("Original acceptance")) throw failure;
+        }
+      }
       action.current ??= consentAction(displayed);
+      try { sessionStorage.setItem(actionKey, JSON.stringify(action.current)); } catch { /* Mounted retries retain the same event. */ }
       const result = await acceptConsentTerms(businessId, operationId, action.current);
       if (!matchesConsentAcceptance(displayed, action.current, result))
         throw new Error("Acceptance confirmation does not match the displayed terms.");
       setAccepted(result);
+      setPresentation({ ...displayed, certification: result.certification, purchaseAvailable: result.purchaseAvailable,
+        ...(displayed.quote ? { quote: { ...displayed.quote, certification: result.certification ?? "UNRESOLVED", purchaseAvailable: result.purchaseAvailable === true } } : {}), accepted: result });
       queryClient.setQueryData(["packageConsentPresentation", businessId, operationId], {
         ...displayed,
         accepted: result,
@@ -144,11 +172,12 @@ export default function PackageConsentReview({
         {failure && (
           <div role="alert" className="rounded-xl bg-red-50 p-4 text-red-800">
             <p>{failure}</p>
-            <a href={`/customer/package-consent/${businessId}/${packageId}`} className="underline">
-              Start a fresh terms review
-            </a>
+            <p>Keep the original operation identity while acceptance, payment or purchase remains unconfirmed.</p>
           </div>
         )}
+        {!displayed && original.data && initialOperationId && <PackagePurchaseContinuation businessId={businessId}
+          operationId={initialOperationId} quote={original.data.quote} accepted={original.data.acceptanceRecorded}
+          available={original.data.quote.purchaseAvailable === true} />}
         {!displayed && offer.data && (
           <form
             onSubmit={(e) => {
@@ -159,9 +188,7 @@ export default function PackageConsentReview({
           >
             <h2 className="text-xl font-semibold">{offer.data.name}</h2>
             <p>
-              Select at least one initial appointment. Times use your device&apos;s local timezone;
-              the terms will show the Business timezone ({offer.data.timezone}). Availability is
-              checked when you request the terms.
+              Select at least one initial appointment from actual server times. Terms use the Business timezone ({offer.data.timezone}). A quote does not reserve capacity.
             </p>
             {selections.map((row, index) => {
               const item = offer.data.items.find(
@@ -176,50 +203,9 @@ export default function PackageConsentReview({
                   <legend className="px-2 font-semibold">
                     Appointment {index + 1}: {item?.name}
                   </legend>
-                  <label className="block">
-                    Professional
-                    <select
-                      aria-label={`Professional for appointment ${index + 1}`}
-                      required
-                      className={inputClass}
-                      value={row.staffMembershipId}
-                      onChange={(e) =>
-                        setSelections(
-                          selections.map((s) =>
-                            s.selectionId === row.selectionId
-                              ? { ...s, staffMembershipId: e.target.value }
-                              : s,
-                          ),
-                        )
-                      }
-                    >
-                      <option value="">Choose a professional</option>
-                      {item?.providers.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block">
-                    Date and time
-                    <input
-                      aria-label={`Date and time for appointment ${index + 1}`}
-                      type="datetime-local"
-                      required
-                      className={inputClass}
-                      onChange={(e) => {
-                        if (e.target.value)
-                          setSelections(
-                            selections.map((s) =>
-                              s.selectionId === row.selectionId
-                                ? { ...s, startAt: new Date(e.target.value).toISOString() }
-                                : s,
-                            ),
-                          );
-                      }}
-                    />
-                  </label>
+                  {item && <PackagePurchaseAppointmentPicker businessId={businessId} row={row} item={item}
+                    travel={offer.data.fulfilmentMode === "TRAVEL_TO_CUSTOMER"} disabled={busy}
+                    onChange={(next) => setSelections(selections.map((s) => s.selectionId === row.selectionId ? next : s))} />}
                   <button
                     type="button"
                     className="text-[#240183] underline"
@@ -278,12 +264,22 @@ export default function PackageConsentReview({
               {displayed.text}
             </div>
             <p className="text-sm text-gray-500">Disclosure version {displayed.templateVersion}</p>
+            {operationId && <PackagePurchaseContinuation businessId={businessId} operationId={operationId}
+              quote={displayed.quote} accepted={Boolean(confirmation)} available={displayed.purchaseAvailable === true} />}
             {confirmation ? (
               <div role="status" className="rounded-xl bg-green-50 p-4 text-green-900">
-                <h2 className="font-semibold">Terms accepted</h2>
+                <h2 className="font-semibold">Terms accepted ({displayed.certification === "CERTIFIED" ? "durable commit certified" : "recorded action; certification pending"})</h2>
                 <p>
                   Booking and payment activation is not complete. No Package purchase has been made.
                 </p>
+                {displayed.certification !== "CERTIFIED" && <button type="button" disabled={busy} onClick={() => void run(async () => {
+                  const exact = { ...consentAction(displayed), eventId: confirmation.eventId };
+                  const result = await acceptConsentTerms(businessId, operationId!, exact);
+                  if (!matchesConsentAcceptance(displayed, exact, result)) throw Error("Acceptance identity changed");
+                  setAccepted(result);
+                  setPresentation({ ...displayed, certification: result.certification, purchaseAvailable: result.purchaseAvailable,
+                    ...(displayed.quote ? { quote: { ...displayed.quote, certification: result.certification ?? "UNRESOLVED", purchaseAvailable: result.purchaseAvailable === true } } : {}), accepted: result });
+                })}>Check original consent certification</button>}
               </div>
             ) : (
               <form
