@@ -93,7 +93,10 @@ export async function runConsentNextE2E({ clientRoot, apiOrigin, businessId, pac
     await page.waitFor("document.querySelector('select')");
     await page.evaluate("(()=>{const el=document.querySelector('select');el.value=el.options[1].value;el.dispatchEvent(new Event('change',{bubbles:true}));})()");
     const localDate = await page.evaluate(`(()=>{const d=new Date(${JSON.stringify(startAt)});const p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());})()`);
-    await page.evaluate(fill("input[type=datetime-local]", localDate));
+    await page.evaluate(fill("input[type=date]", localDate.slice(0, 10)));
+    await page.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Find available times')).click()");
+    await page.waitFor("document.querySelector('[aria-label=\"Package appointment time\"]').options.length > 1");
+    await page.evaluate(`(()=>{const s=document.querySelector('[aria-label="Package appointment time"]');s.value=${JSON.stringify(startAt)};s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
     await page.evaluate("document.querySelector('form').requestSubmit()");
     await page.waitFor("document.querySelector('[aria-label=\"Exact Package terms\"]')", 180000);
     const text = await page.evaluate("document.querySelector('[aria-label=\"Exact Package terms\"]').textContent");

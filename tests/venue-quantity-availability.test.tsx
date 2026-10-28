@@ -20,21 +20,21 @@ import { BooklyApiError } from "@/lib/api/client";
 // ---------------------------------------------------------------------------------------------
 
 const VENUE_ID = "aaaaaaaaaaaaaaaaaaaaaaaa";
-const base = { category: "Wellbeing", isFeatured: true, servedCities: [], assignedStaffMembershipIds: ["staff-small", "staff-big"] };
+const base = { category: "Wellbeing", isFeatured: true, servedCities: [], assignedStaffMembershipIds: ["eeeeeeeeeeeeeeeeeeeeeeee", "ffffffffffffffffffffffff"] };
 const groupService: CatalogService = {
-  ...base, id: "svc-group", name: "Group class", isPackageDeal: false, pricingMode: "PER_PERSON",
+  ...base, id: "bbbbbbbbbbbbbbbbbbbbbbbb", name: "Group class", isPackageDeal: false, pricingMode: "PER_PERSON",
   perPersonPricing: { ratePerPersonCents: 1500, minPersons: 2, maxPersons: 6, durationMin: 60 },
 };
 const hourlyService: CatalogService = {
-  ...base, id: "svc-hourly", name: "Studio hire", isPackageDeal: false, pricingMode: "HOURLY",
+  ...base, id: "cccccccccccccccccccccccc", name: "Studio hire", isPackageDeal: false, pricingMode: "HOURLY",
   hourlyPricing: { ratePerHourCents: 1000, minHours: 2, maxHours: 4 },
 };
 const fixedService: CatalogService = {
-  ...base, id: "svc-fixed", name: "Massage", isPackageDeal: false, pricingMode: "FIXED",
+  ...base, id: "333333333333333333333333", name: "Massage", isPackageDeal: false, pricingMode: "FIXED",
   fixedPricing: { priceCents: 4500, durationMin: 60 },
 };
 const legacyPackage: CatalogService = {
-  ...base, id: "svc-package", name: "Legacy package", isPackageDeal: true,
+  ...base, id: "dddddddddddddddddddddddd", name: "Legacy package", isPackageDeal: true,
   packagePricing: { bundlePriceCents: 12000, sessionsInPackage: 3, durationMin: 45 },
 };
 const catalog: BusinessCatalog = {
@@ -46,13 +46,13 @@ const catalog: BusinessCatalog = {
   } as BusinessCatalog["business"],
   services: [groupService, hourlyService, fixedService, legacyPackage],
   staff: [
-    { id: "staff-small", firstName: "Small", role: "STAFF" },
-    { id: "staff-big", firstName: "Big", role: "STAFF" },
+    { id: "eeeeeeeeeeeeeeeeeeeeeeee", firstName: "Small", role: "STAFF" },
+    { id: "ffffffffffffffffffffffff", firstName: "Big", role: "STAFF" },
   ],
 };
 const firstClassOffers = [{ id: "fc-offer", businessId: VENUE_ID, name: "First-class offer" }];
 
-/** Server-shaped availability: the 10:00 slot holds up to 6 people, but only `staff-big` can
+/** Server-shaped availability: the 10:00 slot holds up to 6 people, but only `ffffffffffffffffffffffff` can
  * take a party larger than 2; the 11:00 slot has only 2 places left. Mirrors the API's own
  * filtering by `partySize` (availability.service.ts) — the client must not re-implement it. */
 function availabilityFor(serviceId: string, params: { fromDate: string; partySize?: number; hours?: number }): AvailabilityResult {
@@ -68,12 +68,12 @@ function availabilityFor(serviceId: string, params: { fromDate: string; partySiz
   });
   const slots = group
     ? [
-        ...(size <= 6 ? [slot("10:00", size > 2 ? ["staff-big"] : ["staff-small", "staff-big"], 6)] : []),
-        ...(size <= 2 ? [slot("11:00", ["staff-small"], 2)] : []),
+        ...(size <= 6 ? [slot("10:00", size > 2 ? ["ffffffffffffffffffffffff"] : ["eeeeeeeeeeeeeeeeeeeeeeee", "ffffffffffffffffffffffff"], 6)] : []),
+        ...(size <= 2 ? [slot("11:00", ["eeeeeeeeeeeeeeeeeeeeeeee"], 2)] : []),
       ]
     : hours !== undefined && hours > 2
-      ? [slot("10:00", ["staff-big"], 1), ...(hours <= 3 ? [slot("11:00", ["staff-big"], 1)] : [])]
-      : [slot("10:00", ["staff-small", "staff-big"], 1), slot("11:00", ["staff-small"], 1)];
+      ? [slot("10:00", ["ffffffffffffffffffffffff"], 1), ...(hours <= 3 ? [slot("11:00", ["ffffffffffffffffffffffff"], 1)] : [])]
+      : [slot("10:00", ["eeeeeeeeeeeeeeeeeeeeeeee", "ffffffffffffffffffffffff"], 1), slot("11:00", ["eeeeeeeeeeeeeeeeeeeeeeee"], 1)];
   return { businessId: VENUE_ID, serviceId, timezone: "UTC", capacityMax: group ? 6 : 1, days: [{ date, isOpen: true, slots }] };
 }
 
@@ -85,11 +85,12 @@ type Recorded = { method: string; url: string; params?: Record<string, unknown>;
 const fx = vi.hoisted(() => ({
   searchParams: "id=aaaaaaaaaaaaaaaaaaaaaaaa",
   requests: [] as Recorded[],
+  committedBookings: {} as Record<string, string>,
   /** Optional per-request override for availability (used to delay a response). */
   availabilityOverride: undefined as undefined | ((params: Record<string, unknown>) => Promise<unknown> | undefined),
   venueServicesProps: undefined as undefined | { packages: unknown },
   respond: undefined as undefined | ((req: Recorded) => unknown),
-  auth: { user: { id: "customer-1", role: "CUSTOMER", firstName: "Test" }, status: "authenticated", cacheEpoch: 1, isInitializing: false },
+  auth: { user: { id: "111111111111111111111111", role: "CUSTOMER", firstName: "Test" }, status: "authenticated", cacheEpoch: 1, isInitializing: false },
   authChanged: undefined as undefined | (() => void),
   stripeAvailable: false,
   stripeConfirm: vi.fn(async (_secret: string): Promise<{ error?: { message: string } }> => ({})),
@@ -106,7 +107,12 @@ vi.mock("@/lib/api/client", async (original) => ({
       const delayed = fx.availabilityOverride(req.params ?? {});
       if (delayed) return delayed;
     }
-    return fx.respond!(req);
+    const result = await fx.respond!(req);
+    // P4A status fixtures attest only the Booking returned by this exact finalize,
+    // never a requires_action response, redirect parameter or Stripe acknowledgement.
+    if (req.url.endsWith("/bookings/finalize") && result && typeof result === "object" && "id" in result && typeof result.id === "string")
+      fx.committedBookings[String(req.data?.idempotencyKey)] = result.id;
+    return result;
   },
 }));
 vi.mock("next/navigation", () => ({
@@ -239,6 +245,10 @@ let root: Root, host: HTMLDivElement;
 
 const defaultRespond = (req: Recorded): unknown => {
   const { url } = req;
+  if (url.endsWith("/bookings/operations/payment-status")) {
+    const key = String(req.params?.idempotencyKey), bookingId = fx.committedBookings[key];
+    return { businessId: VENUE_ID, idempotencyKey: key, state: bookingId ? "COMMITTED" : "UNRESOLVED", ...(bookingId ? { bookingId } : {}) };
+  }
   if (url.endsWith("/availability")) {
     const serviceId = url.split("/services/")[1]!.split("/")[0]!;
     return availabilityFor(serviceId, req.params as { fromDate: string; partySize?: number });
@@ -254,7 +264,10 @@ const defaultRespond = (req: Recorded): unknown => {
 };
 
 beforeEach(async () => {
-  fx.auth = { user: { id: "customer-1", role: "CUSTOMER", firstName: "Test" }, status: "authenticated", cacheEpoch: 1, isInitializing: false };
+  localStorage.clear();
+  sessionStorage.clear();
+  fx.committedBookings = {};
+  fx.auth = { user: { id: "111111111111111111111111", role: "CUSTOMER", firstName: "Test" }, status: "authenticated", cacheEpoch: 1, isInitializing: false };
   fx.stripeAvailable = false;
   fx.stripeConfirm.mockReset().mockResolvedValue({});
   fx.continueWizard = undefined;
@@ -391,7 +404,7 @@ describe("Venue page — PER_PERSON quantity and party size (V-1, V-2)", () => {
     expect(host.textContent).not.toContain("Slot 11:00");
     await selectSlot("10:00");
     await waitFor(() => expect(lastPost("/bookings/preview")?.serviceLines[0]).toMatchObject({
-      pricingInput: { personCount: 3 }, staffMembershipId: "staff-big",
+      pricingInput: { personCount: 3 }, staffMembershipId: "ffffffffffffffffffffffff",
     }));
   });
 
@@ -400,10 +413,10 @@ describe("Venue page — PER_PERSON quantity and party size (V-1, V-2)", () => {
     await advanceToTime();
     await selectSlot("10:00");
     await waitFor(() => expect(lastPost("/bookings/preview")?.serviceLines[0]).toMatchObject({
-      pricingInput: { personCount: 2 }, staffMembershipId: "staff-small",
+      pricingInput: { personCount: 2 }, staffMembershipId: "eeeeeeeeeeeeeeeeeeeeeeee",
     }));
     await closeWizard();
-    await press(groupService.id, "+"); // 3 people: staff-small can no longer take the 10:00 slot
+    await press(groupService.id, "+"); // 3 people: eeeeeeeeeeeeeeeeeeeeeeee can no longer take the 10:00 slot
     await click(byText("Continue →")); // re-enter WITHOUT re-selecting the Service
     await advanceToTime();
     await waitFor(() => byText("Slot 10:00"));
@@ -412,11 +425,11 @@ describe("Venue page — PER_PERSON quantity and party size (V-1, V-2)", () => {
     // No quote was ever requested for 3 people with the slot/staff selected for 2.
     for (const p of posts("/bookings/preview")) {
       const line = (p.data as NonNullable<ReturnType<typeof lastPost>>).serviceLines[0]!;
-      if (line.pricingInput.personCount === 3) expect(line.staffMembershipId).toBe("staff-big");
+      if (line.pricingInput.personCount === 3) expect(line.staffMembershipId).toBe("ffffffffffffffffffffffff");
     }
     await selectSlot("10:00");
     await waitFor(() => expect(lastPost("/bookings/preview")?.serviceLines[0]).toMatchObject({
-      pricingInput: { personCount: 3 }, staffMembershipId: "staff-big",
+      pricingInput: { personCount: 3 }, staffMembershipId: "ffffffffffffffffffffffff",
     }));
   });
 
@@ -435,7 +448,7 @@ describe("Venue page — PER_PERSON quantity and party size (V-1, V-2)", () => {
     await click(byText("Continue →"));
     await advanceToTime();
     await waitFor(() => byText("Slot 10:00"));
-    // Late, out-of-order answer for the OLD size (would offer 11:00 and staff-small).
+    // Late, out-of-order answer for the OLD size (would offer 11:00 and eeeeeeeeeeeeeeeeeeeeeeee).
     await act(async () => { held.release!(availabilityFor(groupService.id, { fromDate: availabilityRequests(groupService.id)[0]!.params!.fromDate as string, partySize: 2 })); });
     await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
     expect(host.textContent).not.toContain("Slot 11:00");
@@ -443,7 +456,7 @@ describe("Venue page — PER_PERSON quantity and party size (V-1, V-2)", () => {
     expect(sizes).toEqual([2, 4]); // never 3, 5 or 6: only the size in effect when Time opened
     await selectSlot("10:00");
     await waitFor(() => expect(lastPost("/bookings/preview")?.serviceLines[0]).toMatchObject({
-      pricingInput: { personCount: 4 }, staffMembershipId: "staff-big",
+      pricingInput: { personCount: 4 }, staffMembershipId: "ffffffffffffffffffffffff",
     }));
   });
 });
@@ -489,7 +502,7 @@ describe("Venue page — switching service types and unaffected flows", () => {
     const finalized = lastPost("/bookings/finalize")!;
     expect(finalized).toEqual(quoted);
     expect(finalized.serviceLines).toEqual([
-      { serviceId: fixedService.id, staffMembershipId: "staff-small", addonIds: [], pricingInput: {} },
+      { serviceId: fixedService.id, staffMembershipId: "eeeeeeeeeeeeeeeeeeeeeeee", addonIds: [], pricingInput: {} },
     ]);
     expect(typeof finalized.idempotencyKey).toBe("string");
     expect(finalized.promoCode).toBeUndefined();
@@ -544,7 +557,7 @@ describe("Venue page — duration-aware availability (F1B)", () => {
     await advanceToTime();
     await selectSlot("10:00");
     await waitFor(() => expect(lastPost("/bookings/preview")?.serviceLines[0]).toMatchObject({
-      pricingInput: { hours: 2 }, staffMembershipId: "staff-small",
+      pricingInput: { hours: 2 }, staffMembershipId: "eeeeeeeeeeeeeeeeeeeeeeee",
     }));
     await closeWizard();
     await press(hourlyService.id, "+", 2);
@@ -557,10 +570,10 @@ describe("Venue page — duration-aware availability (F1B)", () => {
     expect(byText("Wizard continue").disabled).toBe(true);
     await selectSlot("10:00");
     await waitFor(() => expect(lastPost("/bookings/preview")?.serviceLines[0]).toMatchObject({
-      pricingInput: { hours: 4 }, staffMembershipId: "staff-big",
+      pricingInput: { hours: 4 }, staffMembershipId: "ffffffffffffffffffffffff",
     }));
     await payAndConfirm();
-    expect(lastPost("/bookings/finalize")?.serviceLines[0]).toMatchObject({ pricingInput: { hours: 4 }, staffMembershipId: "staff-big" });
+    expect(lastPost("/bookings/finalize")?.serviceLines[0]).toMatchObject({ pricingInput: { hours: 4 }, staffMembershipId: "ffffffffffffffffffffffff" });
   });
   it("a late two-hour response cannot replace four-hour slots or staff eligibility", async () => {
     let resolveOld!: (value: unknown) => void;
@@ -581,7 +594,7 @@ describe("Venue page — duration-aware availability (F1B)", () => {
     await act(async () => { resolveOld(availabilityFor(hourlyService.id, oldParams as { fromDate: string; hours: number })); });
     expect(host.textContent).not.toContain("Slot 11:00");
     await selectSlot("10:00");
-    await waitFor(() => expect(lastPost("/bookings/preview")?.serviceLines[0]).toMatchObject({ pricingInput: { hours: 4 }, staffMembershipId: "staff-big" }));
+    await waitFor(() => expect(lastPost("/bookings/preview")?.serviceLines[0]).toMatchObject({ pricingInput: { hours: 4 }, staffMembershipId: "ffffffffffffffffffffffff" }));
   });
 });
 
@@ -733,6 +746,17 @@ describe("F3B payment continuation and authoritative confirmation", () => {
   }
   function expectNoConfirmation() { expect(host.textContent).not.toContain("Booking confirmed"); }
 
+  it("P4A keeps the real wizard pending when the original status has not verified finalization", async () => {
+    finalizeResponses(() => ({ id: "awaiting-finalization", status: "UPCOMING" }));
+    const respond = fx.respond!;
+    fx.respond = (req) => req.url.endsWith("/bookings/operations/payment-status")
+      ? { state: "FINALIZATION_PENDING", businessId: VENUE_ID, idempotencyKey: req.params?.idempotencyKey }
+      : respond(req);
+    await readyToPay(); await click(byText("Wizard continue"));
+    await waitFor(() => expect(host.textContent).toContain("Booking finalization is pending"));
+    expectNoConfirmation(); expect(posts("/bookings/finalize")).toHaveLength(1);
+  });
+
   it("confirms only after the same-input server retry returns a persisted Booking", async () => {
     fx.stripeAvailable = true;
     finalizeResponses((count) => count === 1 ? requiresAction : { id: "f3b-confirmed", status: "UPCOMING" });
@@ -832,7 +856,7 @@ describe("F3B payment continuation and authoritative confirmation", () => {
     await waitFor(() => expect(posts("/bookings/finalize")).toHaveLength(1));
     await act(async () => {
       fx.auth = { ...fx.auth,
-        user: { ...fx.auth.user, id: change === "account" ? "customer-2" : "customer-1" },
+        user: { ...fx.auth.user, id: change === "account" ? "222222222222222222222222" : "111111111111111111111111" },
         cacheEpoch: change === "epoch" ? 2 : 1,
         status: change === "logout" ? "unauthenticated" : "authenticated",
       };
@@ -853,7 +877,7 @@ describe("F3B payment continuation and authoritative confirmation", () => {
     await click(byText("Wizard continue"));
     await waitFor(() => expect(fx.stripeConfirm).toHaveBeenCalledOnce());
     await act(async () => {
-      fx.auth = { ...fx.auth, user: { ...fx.auth.user, id: "customer-2" }, cacheEpoch: 2 };
+      fx.auth = { ...fx.auth, user: { ...fx.auth.user, id: "222222222222222222222222" }, cacheEpoch: 2 };
       fx.authChanged!();
       challenge.resolve({});
     });
@@ -865,7 +889,7 @@ describe("F3B payment continuation and authoritative confirmation", () => {
     await readyToPay();
     await act(async () => {
       void fx.continueWizard!();
-      fx.auth = { ...fx.auth, user: { ...fx.auth.user, id: "customer-2" }, cacheEpoch: 2 };
+      fx.auth = { ...fx.auth, user: { ...fx.auth.user, id: "222222222222222222222222" }, cacheEpoch: 2 };
       fx.authChanged!();
     });
     expect(posts("/bookings/finalize")).toHaveLength(0);

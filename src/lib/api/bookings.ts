@@ -243,6 +243,8 @@ export interface BookingListItem {
 }
 
 export interface BookingCalendarEntry {
+  /** Server-derived First-Class member marker. Older summaries are rechecked via detail. */
+  firstClassPackage?: boolean;
   id: string;
   reference: string;
   status: BookingStatus;
@@ -372,6 +374,22 @@ export interface FinalizeRequiresAction {
   paymentIntentId: string;
 }
 export type FinalizeBookingResult = BookingDetail | FinalizeRequiresAction;
+export type BookingPaymentStatus = {
+  state: "NOT_OBSERVED" | "UNRESOLVED" | "AUTHENTICATION_REQUIRED" | "PAYMENT_PROCESSING" |
+    "FINALIZATION_PENDING" | "PAYMENT_FAILED" | "REFUND_PENDING" | "REFUNDED" | "RECONCILIATION_REQUIRED" | "COMMITTED";
+  businessId: string; idempotencyKey: string; bookingId?: string; reference?: string;
+  canDismiss?: boolean; canResume?: boolean; resumeBlockedReason?: "BUSINESS_UNAVAILABLE";
+  providerStatus?: string; persistenceStatus?: string; compensationStatus?: string;
+  /** Ephemeral authenticated response only; never serialize this DTO to browser storage. */
+  clientSecret?: string;
+};
+export type BookingRecoveryInboxItem = {
+  businessId: string; businessName?: string; idempotencyKey: string;
+  status: Omit<BookingPaymentStatus, "clientSecret">;
+  nextAction: "CHECK_STATUS"; replayAvailable: false;
+};
+export type BookingRecoveryInboxPage = { requests: BookingRecoveryInboxItem[]; resolved: BookingRecoveryInboxItem[];
+  hasMore: boolean; scanned: number; nextCursor?: string };
 
 /** Complete-booking venue settlement — explicit 3-state discriminator (Batch 21). */
 export type CompleteVenuePaymentInput =
@@ -390,6 +408,11 @@ export interface ListBookingsParams {
 }
 
 export const bookingsApi = {
+  getCustomerRecoveryInbox: (params: { limit?: number; cursor?: string } = {}) =>
+    apiRequest<BookingRecoveryInboxPage>({ method: "GET", url: "/me/bookings/recovery-inbox", params }),
+  getCustomerPaymentStatus: (businessId: string, idempotencyKey: string) =>
+    apiRequest<BookingPaymentStatus>({ method: "GET", url: `/businesses/${businessId}/bookings/operations/payment-status`,
+      params: { idempotencyKey } }),
   getRescheduleAvailability: (scope: "customer" | "business", businessId: string, bookingId: string, params: { fromDate: string; toDate: string }) =>
     apiRequest<RescheduleAvailabilityResult>({ method: "GET",
       url: scope === "customer" ? `/me/bookings/${bookingId}/reschedule-availability`
@@ -448,11 +471,19 @@ export const bookingsApi = {
     businessId: string,
     bookingId: string,
     venuePayment?: CompleteVenuePaymentInput,
+    /** Legacy original balance snapshot, independent of recorded venue payments. */
+    expectedBalanceDueCents?: number,
+    /** Exact server-derived outstanding amount shown when confirming payment. */
+    expectedOutstandingVenueBalanceCents?: number,
   ) =>
     apiRequest<BookingDetail>({
       method: "POST",
       url: `/businesses/${businessId}/bookings/${bookingId}/complete`,
-      data: venuePayment ? { venuePayment } : {},
+      data: {
+        ...(venuePayment ? { venuePayment } : {}),
+        ...(expectedBalanceDueCents !== undefined ? { expectedBalanceDueCents } : {}),
+        ...(expectedOutstandingVenueBalanceCents !== undefined ? { expectedOutstandingVenueBalanceCents } : {}),
+      },
     }),
 
   /** `reason` / `internalNote` (Batch 21) — optional, internal-only mark-no-show audit

@@ -6,12 +6,17 @@ export type ConsentOffer = {
   name: string;
   revision: number;
   timezone: string;
+  fulfilmentMode?: "AT_BUSINESS_LOCATION" | "TRAVEL_TO_CUSTOMER";
+  bundlePriceCents?: number;
+  checkoutAvailable?: boolean;
   items: {
     definitionItemId: string;
     serviceId: string;
     name: string;
     quantity: number;
     providers: { id: string; name: string }[];
+    addons?: Array<{ id: string; name: string; priceCents: number }>;
+    travelCities?: string[];
   }[];
 };
 export type ConsentIntent = {
@@ -24,6 +29,8 @@ export type ConsentIntent = {
     staffMembershipId: string;
     startAt: string;
     addonIds: string[];
+    travelAddress?: { city: string; area: string; streetName: string; streetNumber: string; propertyType: string;
+      floorUnit?: string; aptRoom?: string; additionalDirections?: string };
   }[];
 };
 export type ConsentPresentation = {
@@ -35,12 +42,23 @@ export type ConsentPresentation = {
   disclosureHash: string;
   text: string;
   accepted?: ConsentAccepted;
+  quote?: RetainedPurchaseQuote;
+  certification?: "UNRESOLVED" | "CERTIFIED";
+  purchaseAvailable?: boolean;
 };
-export type ConsentAction = Omit<ConsentPresentation, "text" | "accepted"> & {
+export type ConsentAction = Pick<ConsentPresentation, "version" | "presentationId" | "challenge" | "templateVersion" | "quoteHash" | "disclosureHash"> & {
   action: "ACCEPT_PACKAGE_CHECKOUT_TERMS";
   eventId: string;
 };
+export interface RetainedPurchaseQuote {
+  quoteId: string; termsHash: string; issuedAt: string; expiresAt: string; timezone: string; lifetimeMs: number;
+  certification: "UNRESOLVED" | "CERTIFIED"; purchaseAvailable: boolean; name: string;
+  financials: { currency: "EUR"; bundlePriceCents: number; addonsCents: number; travelCents: number;
+    normalTotalCents: number; requiredUpfrontCents: number; manualVenueDuesCents: number; classification: "FIRST" | "RETURNING" };
+}
 export type ConsentAccepted = {
+  certification?: "UNRESOLVED" | "CERTIFIED";
+  purchaseAvailable?: boolean;
   state: "ACCEPTED_IMMUTABLE";
   acceptanceId: string;
   acceptedAt: string;
@@ -101,3 +119,7 @@ export const matchesConsentAcceptance = (
   accepted.eventId === action.eventId &&
   accepted.quoteHash === p.quoteHash &&
   accepted.disclosureHash === p.disclosureHash;
+
+export const getRetainedConsentQuote = (businessId: string, operationId: string) => apiRequest<{ operationId: string; quote: RetainedPurchaseQuote; acceptanceRecorded: boolean }>({
+  method: "GET", url: `${base(businessId)}/operations/${encodeURIComponent(operationId)}/quote`,
+});

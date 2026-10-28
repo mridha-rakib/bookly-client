@@ -160,6 +160,7 @@ interface CompleteModalProps {
   currencySymbol?: string;
   isPackageSession?: boolean;
   isPackageOrigin?: boolean;
+  isPending?: boolean;
 }
 
 export function CompleteModal({
@@ -170,6 +171,7 @@ export function CompleteModal({
   currencySymbol = "€",
   isPackageSession = false,
   isPackageOrigin = false,
+  isPending = false,
 }: CompleteModalProps) {
   const formattedDefault =
     defaultBalanceDueCents !== undefined ? (defaultBalanceDueCents / 100).toFixed(2) : undefined;
@@ -191,15 +193,22 @@ export function CompleteModal({
   const isOtherAmount = payValue === "Yes - customer paid other amount";
 
   const handleConfirm = () => {
+    if (isPending) return;
     const note = internalNote.trim() || undefined;
     if (payValue === "No - customer has not paid remaining balance") {
       onConfirm({ settlement: "NOT_PAID", note });
       return;
     }
     if (isOtherAmount) {
-      const parsed = Math.round(Number.parseFloat(otherAmount) * 100);
-      if (!Number.isFinite(parsed) || parsed <= 0) {
-        setAmountError("Enter an amount greater than 0.");
+      // Parse decimal money exactly; never round fractional cents into a different payment.
+      if (!/^\d+(?:\.\d{1,2})?$/.test(otherAmount.trim())) {
+        setAmountError("Enter a positive amount with at most two decimal places.");
+        return;
+      }
+      const [whole, fraction = ""] = otherAmount.trim().split(".");
+      const parsed = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+      if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+        setAmountError("Enter an amount greater than 0 in whole cents.");
         return;
       }
       if (defaultBalanceDueCents !== undefined && parsed >= defaultBalanceDueCents) {
@@ -333,6 +342,7 @@ export function CompleteModal({
             type="button"
             onClick={onClose}
             className="box-border flex flex-row justify-center items-center px-6 py-3.5 gap-2 w-[101px] h-11 bg-[#F1F1F2] border border-[#D3D3D6] shadow-[0px_0px_2px_rgba(62,62,68,0.2)] rounded-xl font-poppins font-medium text-sm text-[#3E3E44] tracking-[0.03em] hover:bg-[#E4E4E6] cursor-pointer transition-all duration-200"
+            disabled={isPending}
           >
             Cancel
           </button>
@@ -340,6 +350,7 @@ export function CompleteModal({
           <button
             type="button"
             onClick={handleConfirm}
+            disabled={isPending}
             className="flex flex-row justify-center items-center px-6 py-3.5 gap-2 w-[74px] h-11 bg-[#1D9E75] hover:bg-[#157A5A] rounded-xl font-poppins font-medium text-sm text-white tracking-[0.03em] cursor-pointer transition-all duration-200"
           >
             Yes

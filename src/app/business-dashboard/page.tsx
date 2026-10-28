@@ -50,6 +50,7 @@ import DashboardReviewsList from "@/components/dashboard/DashboardReviewsList";
 import DashboardPayoutsList from "@/components/dashboard/DashboardPayoutsList";
 import DashboardAnalytics from "@/components/dashboard/DashboardAnalytics";
 import DashboardSettings from "@/components/dashboard/DashboardSettings";
+import BookingCalendarSyncPanel from "@/components/dashboard/BookingCalendarSyncPanel";
 import ContactSupport from "@/components/support/ContactSupport";
 import { CancelBookingModal, CompleteModal, NoShowModal } from "@/components/dashboard/CalendarActionModals";
 import WaiveChargeModal from "@/components/dashboard/WaiveChargeModal";
@@ -343,6 +344,13 @@ function BusinessDashboardContent() {
                 />
               )}
             </div>
+
+            {/* P4C — Owner-only Google Calendar sync status and exact recovery (P4B-2C API). */}
+            {bookingDetailQuery.data && bookingsBusinessId && (
+              <div className="w-full flex justify-start mt-6">
+                <BookingCalendarSyncPanel businessId={bookingsBusinessId} bookingId={bookingDetailQuery.data.id} />
+              </div>
+            )}
           </main>
         );
       }

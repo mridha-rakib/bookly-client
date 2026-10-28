@@ -183,15 +183,21 @@ export const useCompleteBookingMutation = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // A lost response must be reconciled by a read, never an automatic payment-bearing retry.
+    retry: false,
     mutationFn: ({
       businessId,
       bookingId,
       venuePayment,
+      expectedBalanceDueCents,
+      expectedOutstandingVenueBalanceCents,
     }: {
       businessId: string;
       bookingId: string;
       venuePayment?: CompleteVenuePaymentInput;
-    }) => bookingsApi.completeBooking(businessId, bookingId, venuePayment),
+      expectedBalanceDueCents?: number;
+      expectedOutstandingVenueBalanceCents?: number;
+    }) => bookingsApi.completeBooking(businessId, bookingId, venuePayment, expectedBalanceDueCents, expectedOutstandingVenueBalanceCents),
     onSuccess: (booking, variables) => onBookingMutated(queryClient, variables.businessId, booking),
   });
 };

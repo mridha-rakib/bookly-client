@@ -9,6 +9,14 @@ import { centsToEuro } from "@/lib/package-definitions/schema";
 
 export const inputClass =
   "min-h-[41px] w-full min-w-0 rounded-[12px] border border-[#111111]/20 bg-white px-3 py-2 font-poppins text-sm text-[#111111] placeholder:text-[#757575] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2E9DA7] disabled:bg-[#F5F5F4] disabled:text-[#757575]";
+export const selectClass =
+  "appearance-none min-h-[41px] w-full min-w-0 rounded-[12px] border border-[#111111]/20 bg-white px-3 py-2 pr-10 font-poppins text-sm text-[#111111] placeholder:text-[#757575] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2E9DA7] disabled:bg-[#F5F5F4] disabled:text-[#757575] cursor-pointer";
+export const selectArrowStyle = {
+  backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23111111' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`,
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 12px center",
+  backgroundSize: "16px",
+};
 export const buttonClass =
   "inline-flex min-h-9 items-center justify-center rounded-lg border border-[#D3D1C7] bg-white px-4 py-2 font-manrope text-sm font-semibold text-[#111111] hover:bg-[#F5F4EE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2E9DA7] disabled:cursor-not-allowed disabled:opacity-50";
 export const primaryClass =

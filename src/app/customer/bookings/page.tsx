@@ -16,6 +16,7 @@ import RescheduleModal from "./RescheduleModal";
 import CustomerPackagesList from "../packages/CustomerPackagesList";
 import type { BookingDetail } from "@/lib/api/bookings";
 import CustomerCancellationFinancialResult from "@/components/bookings/CustomerCancellationFinancialResult";
+import BookingPaymentRecovery from "@/components/bookings/BookingPaymentRecovery";
 
 export default function BookingsPage() {
   return (
@@ -93,6 +94,7 @@ function BookingsPageContent() {
         </div>
 
         <div className="max-w-[1005px] w-full flex flex-col items-start gap-8 pb-20">
+          <BookingPaymentRecovery serverInbox />
           <div className="w-full flex flex-col items-start gap-6">
             <h1 className="font-manrope font-bold text-[30px] leading-[36px] tracking-[-0.75px] text-[#020305] flex items-center">
               My Bookings

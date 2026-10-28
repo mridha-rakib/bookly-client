@@ -84,7 +84,8 @@ function VenuePackageCard({ offer }: { offer: PackageOffer }) {
       <span className="text-sm text-[#767676]">{offer.items.reduce((total, item) => total + item.quantity, 0)} total sessions · {offer.validity.mode === "FOREVER" ? "FOREVER — No expiry" : `FINITE${offer.validity.months} — ${offer.validity.months} calendar months from purchase`}</span>
       <span className="text-[10px] font-semibold text-[#767676] uppercase tracking-wide mt-1">Package bundle total</span>
       <span className="font-semibold text-lg text-[#0D0D0D]">{formatBookingMoney(offer.bundlePriceCents)}</span>
-      <p className="text-xs text-gray-500 mt-1">Checkout unavailable.</p>
+      {/* Server-reported only: the detail page still requires real appointments, an authoritative quote and consent. */}
+      <p className="text-xs text-gray-500 mt-1">{offer.checkoutAvailable === true ? "Checkout available — choose initial appointments on the details page." : "Checkout unavailable."}</p>
     </div>
     <Link href={`/customer/package-consent/${offer.businessId}/${offer.id}`} aria-label={`View details of ${offer.name}`}
       className="text-sm font-semibold rounded-full border border-[#B3B3B3] bg-[#FCFAF9] text-[#0D0D0D] px-5 py-2 shadow-sm shrink-0 hover:bg-[#0D0D0D] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2E9DA7] focus-visible:ring-offset-2">View details</Link>
