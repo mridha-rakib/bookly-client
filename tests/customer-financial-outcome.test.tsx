@@ -2,7 +2,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BookingDetail, BookingListItem } from "@/lib/api/bookings";
+import type { BookingDetail, BookingListItem, BookingRecoveryInboxPage } from "@/lib/api/bookings";
 import { useAuthStore } from "@/lib/auth/store";
 import { queryClient, rotateQueryClient } from "@/lib/query-client";
 import Providers from "@/app/providers";
@@ -162,6 +162,9 @@ describe("F2D financial presentation", () => {
       totalCents: 4000, depositCents: 800, currency: "EUR", platformFeeCents: 800, firstClassPackage: false };
     fx.respond = (req) => {
       if (req.url === "/me/bookings") return { bookings: [item], pagination: { page: 1, limit: 50, total: 1 } };
+      if (req.url === "/me/bookings/recovery-inbox") {
+        return { requests: [], resolved: [], hasMore: false, scanned: 0 } satisfies BookingRecoveryInboxPage;
+      }
       if (req.url === `/me/bookings/${ID}/cancel`) { detail = { ...detail, status: "CANCELLED_BY_CUSTOMER" }; return detail; }
       if (req.url === `/me/bookings/${ID}`) return detail;
       return { business: { name: "Actual venue" }, services: [], staff: [] };
@@ -185,7 +188,9 @@ describe("F2D financial presentation", () => {
   });
   it("history details remain lazy across many cards, with no financial request fan-out", async () => {
     const item = { ...detail, primaryServiceName: "Recorded service", serviceCount: 1, staffNames: [],
-      totalCents: 4000, depositCents: 800, currency: "EUR", platformFeeCents: 800, firstClassPackage: false } as BookingListItem;
+      customerName: [detail.customer.firstName, detail.customer.lastName].filter(Boolean).join(" "),
+      businessClientId: detail.customer.businessClientId,
+      totalCents: 4000, depositCents: 800, currency: "EUR", platformFeeCents: 800, firstClassPackage: false } satisfies BookingListItem;
     await render(<>{[1, 2, 3].map((i) => <BookingCard key={i} booking={{ ...item, id: `${ID.slice(0, -1)}${i}` }} onCancel={vi.fn()} onReschedule={vi.fn()} />)}</>);
     expect(fx.requests.some((req) => req.url.startsWith("/me/bookings/"))).toBe(false);
     await render(<BookingCard booking={item} onCancel={vi.fn()} onReschedule={vi.fn()} />);

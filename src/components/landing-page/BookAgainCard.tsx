@@ -6,7 +6,6 @@ import {
   Refresh01Icon,
   SparklesIcon,
   Calendar03Icon,
-  Location01Icon,
   ReceiptTextIcon,
   FavouriteIcon,
 } from "@hugeicons/core-free-icons";
@@ -142,16 +141,6 @@ export default function BookAgainCard({
               <span>{formatLastVisited(item.originalStartAt)}</span>
             </div>
 
-            {/* Distance (if present) */}
-            {item.distance && (
-              <>
-                <span className="text-neutral-300 select-none">•</span>
-                <div className="flex items-center gap-1 shrink-0">
-                  <HugeiconsIcon icon={Location01Icon} size={12} className="text-[#2E9DA7] shrink-0" />
-                  <span>{item.distance}</span>
-                </div>
-              </>
-            )}
           </div>
         </div>
 
