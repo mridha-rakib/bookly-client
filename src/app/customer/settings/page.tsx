@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
@@ -141,11 +141,13 @@ function SettingsPageContent() {
   // Notification preferences — the ONLY notification controls with a real backend. Authoritative
   // state is profile.notifications from ["auth","me"]; a toggle performs a real PATCH /auth/me
   // and the mutation writes the full server payload back into that same cache. These govern only
-  // OPTIONAL mail (the 24h appointment reminder and the marketing-email opt-in) — they can never
+  // OPTIONAL notifications (the 24h appointment reminders and marketing-email opt-in) — they never
   // suppress booking confirmations, cancellations, invoices, no-show notices, or security mail.
   const meQuery = useCurrentUserQuery();
   const updateProfileMutation = useUpdateMyProfileMutation();
   const [pendingChannel, setPendingChannel] = useState<NotificationChannel | null>(null);
+  const [notificationError, setNotificationError] = useState("");
+  const notificationSavePending = useRef(false);
   const reminderPrefs = meQuery.data?.profile?.notifications;
 
   const googleAccount: LinkedAccountSummary | undefined = meQuery.data?.linkedAccounts?.find(
@@ -159,9 +161,11 @@ function SettingsPageContent() {
   );
 
   const handleNotificationToggle = (channel: NotificationChannel, next: boolean) => {
-    if (updateProfileMutation.isPending) {
+    if (!meQuery.isSuccess || updateProfileMutation.isPending || notificationSavePending.current) {
       return;
     }
+    notificationSavePending.current = true;
+    setNotificationError("");
     setPendingChannel(channel);
     updateProfileMutation.mutate(
       { notifications: { [channel]: next } },
@@ -172,8 +176,14 @@ function SettingsPageContent() {
               ? "Your marketing email preference has been updated."
               : "Your reminder preferences have been updated.",
           ),
-        onError: (error) => showSuccessToast(toUserMessage(error)),
-        onSettled: () => setPendingChannel(null),
+        onError: (error) => {
+          setShowToast(false);
+          setNotificationError(toUserMessage(error));
+        },
+        onSettled: () => {
+          notificationSavePending.current = false;
+          setPendingChannel(null);
+        },
       },
     );
   };
@@ -433,10 +443,8 @@ function SettingsPageContent() {
             </div>
           </section>
 
-          {/* Notification Preferences Section — the Appointment reminder Email row and the
-              Marketing Email row are real, server-backed toggles (PATCH /auth/me →
-              profile.notifications, written back into the ["auth","me"] cache). Only the SMS
-              reminder row stays disabled / "Coming soon" (no SMS reminder sender yet). */}
+          {/* Notification preferences use PATCH /auth/me and the authoritative
+              profile.notifications response in the ["auth","me"] cache. */}
           <section className="bg-white border border-[#C6C6CB] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-xl flex flex-col items-start overflow-hidden">
             <div className="w-full box-border border-b border-[#C6C6CB] px-6 py-4 flex flex-row items-center gap-2">
               <div className="w-5 h-5 flex items-center justify-center">
@@ -449,7 +457,7 @@ function SettingsPageContent() {
 
             <div className="w-full p-6 flex flex-col gap-6">
               <p className="font-manrope font-normal text-sm text-[#4E5F78]">
-                Choose which optional emails you&apos;d like to receive. Booking confirmations, cancellations and important account messages are always sent.
+                Choose which optional notifications you&apos;d like to receive. Booking confirmations, cancellations and important account messages are always sent.
               </p>
 
               <div className="w-full flex flex-col gap-4">
@@ -462,6 +470,12 @@ function SettingsPageContent() {
                 {meQuery.isError && (
                   <p className="font-manrope font-normal text-sm text-[#BA1A1A]">
                     We couldn&apos;t load your reminder preferences. Refresh to try again.
+                  </p>
+                )}
+
+                {notificationError && (
+                  <p role="alert" className="font-manrope font-normal text-sm text-[#BA1A1A]">
+                    We couldn&apos;t save your notification preference. {notificationError}
                   </p>
                 )}
 
@@ -485,15 +499,15 @@ function SettingsPageContent() {
                   <div className="flex flex-col">
                     <span className="font-manrope font-bold text-base text-[#020305]">Text message</span>
                     <span className="font-manrope font-normal text-sm text-[#4E5F78]">
-                      A reminder text 24 hours before your appointment. Coming soon.
+                      Optional reminders around 24 hours before your appointment require a verified phone number and configured SMS services. Delivery isn&apos;t guaranteed. Turning this off may not cancel texts already queued.
                     </span>
                   </div>
                   <ReminderToggle
                     label="Appointment reminder text message"
                     checked={reminderPrefs?.appointmentReminderSms ?? false}
-                    disabled
-                    busy={false}
-                    onChange={() => undefined}
+                    disabled={!meQuery.isSuccess || updateProfileMutation.isPending}
+                    busy={pendingChannel === "appointmentReminderSms"}
+                    onChange={(next) => handleNotificationToggle("appointmentReminderSms", next)}
                   />
                 </div>
               </div>

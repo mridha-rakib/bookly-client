@@ -14,12 +14,31 @@ const businessId = "business", bookingId = "booking";
 let host: HTMLDivElement, root: Root, cache: QueryClient;
 const close = vi.fn(), view = vi.fn();
 const row = (balance = 8000, firstClass = false, legacy = false): BookingDetail => ({
-  id: bookingId, businessId, status: "UPCOMING",
-  serviceLines: [{ ...(firstClass ? { packageItemId: "item" } : {}),
+  id: bookingId, businessId, reference: "BK-COMPLETION", source: "BOOKLY_MANAGED", status: "UPCOMING",
+  customer: {
+    businessClientId: "client", firstName: "Customer", email: "customer@example.com",
+    phone: { countryCode: "+357", nationalNumber: "99112233", e164: "+35799112233" },
+  },
+  createdBy: { actorRole: "CUSTOMER" },
+  fulfilment: { mode: "AT_BUSINESS_LOCATION" },
+  serviceLines: [{ serviceId: "service", name: "Recorded service", pricingMode: "FIXED", durationMin: 60,
+    staffMembershipId: "staff", addons: [], amountCents: balance,
+    ...(firstClass ? { packageItemId: "item" } : {}),
     ...(firstClass || legacy ? { packageProgressId: "progress" } : {}) }],
-  packageSessions: [], financials: { balanceDueCents: balance, currency: "EUR" },
-  paymentSummary: { outstandingVenueBalanceCents: balance },
-} as BookingDetail);
+  packageSessions: [],
+  financials: {
+    currency: "EUR", servicesSubtotalCents: balance, addonsSubtotalCents: 0, serviceDiscountCents: 0,
+    travelFeeCents: 0, eligiblePlatformFeeBasisCents: balance, platformFeeCents: 0,
+    depositCents: 0, balanceDueCents: balance, totalCents: balance,
+  },
+  paymentSummary: {
+    actualOnlinePaidCents: 0, originalVenueBalanceCents: balance, venuePaidCents: 0,
+    outstandingVenueBalanceCents: balance, venueSettlementStatus: balance === 0 ? "NOT_REQUIRED" : "NOT_RECORDED",
+  },
+  schedule: { timezone: "UTC", startAt: "2030-01-01T09:00:00Z", endAt: "2030-01-01T10:00:00Z" },
+  customerRescheduleCount: 0,
+  createdAt: "2029-12-01T00:00:00Z", updatedAt: "2029-12-01T00:00:00Z",
+} satisfies BookingDetail);
 const flush = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 15)); }); };
 const button = (text: string) => Array.from(host.querySelectorAll("button")).find((b) => b.textContent?.trim() === text)!;
 const click = async (text: string) => { await act(async () => button(text).click()); await flush(); };
