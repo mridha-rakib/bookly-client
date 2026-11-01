@@ -4,6 +4,7 @@ import { usePackageView } from "@/lib/packages/view-hooks";
 import type { PackageOffer } from "@/lib/api/package-views";
 
 import React, { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -31,6 +32,8 @@ import { useAuthStore } from "@/lib/auth/store";
 import { customerPaymentSession } from "@/lib/bookings/payment-session";
 import BookingPaymentRecovery, { bookingRecoveryMessage } from "@/components/bookings/BookingPaymentRecovery";
 import { dismissBookingContinuation, saveBookingContinuation } from "@/lib/bookings/payment-continuation";
+import LegacyPackageRecovery from "@/components/packages/LegacyPackageRecovery";
+import { continueLegacyRecovery, resolveLegacyRecovery, saveLegacyRecovery } from "@/lib/packages/legacy-recovery";
 import { storePostLoginRedirect } from "@/lib/auth/post-login-redirect";
 import { BooklyApiError } from "@/lib/api/client";
 import { useBusinessCatalogQuery, useServiceAddonsQuery, useServiceAvailabilityQuery } from "@/lib/catalog/hooks";
@@ -57,6 +60,7 @@ import {
 } from "@/lib/favorite/hooks";
 
 function VenueDetailsContent() {
+  const queryClient = useQueryClient();
   const router = useRouter();
   const searchParams = useSearchParams();
   const venueId = searchParams.get("id") || "1";
@@ -568,6 +572,25 @@ function VenueDetailsContent() {
       try {
         setWalletError(undefined);
         const ownerId = useAuthStore.getState().user?.id;
+        if (isPackagePurchaseFlow && ownerId) {
+          const record = saveLegacyRecovery(ownerId, venueId, "PACKAGE_PURCHASE", input.serviceLines[0].serviceId, input);
+          const result = await continueLegacyRecovery(record, isCurrentAction);
+          if (!isCurrentAction()) return;
+          if (result.state !== "COMMITTED" || !result.bookingId) {
+            if (result.canDismiss) setIdempotencyKey(crypto.randomUUID());
+            throw Error("The original package request ended without a confirmed booking. Review its status below.");
+          }
+          const booking = await bookingsApi.getDetailForCustomer(result.bookingId);
+          if (!isCurrentAction()) return;
+          if (booking.id !== result.bookingId) throw Error("The confirmed booking identity changed.");
+          resolveLegacyRecovery(record, result);
+          setIdempotencyKey(crypto.randomUUID());
+          void queryClient.invalidateQueries({ queryKey: ["packages"] });
+          void queryClient.invalidateQueries({ queryKey: ["customerBookings", "list"] });
+          setConfirmedBooking(booking);
+          setBookingStep("confirmed");
+          return;
+        }
         const saved = !isPackagePurchaseFlow && ownerId
           ? saveBookingContinuation(ownerId, venueId, input) : undefined;
         const readOriginal = async () => {
@@ -1146,6 +1169,10 @@ function VenueDetailsContent() {
           {/* Left Column (Tabs and Details) */}
           <div className="flex-grow w-full lg:max-w-[868px] flex flex-col gap-8 order-2 lg:order-1">
             <BookingPaymentRecovery businessId={venueId} />
+            <LegacyPackageRecovery businessId={venueId} onResolved={(pointer) => {
+              if (pointer.kind === "PACKAGE_PURCHASE")
+                setIdempotencyKey((current) => current === pointer.idempotencyKey ? crypto.randomUUID() : current);
+            }} />
 
             {/* Tabs Navigation */}
             <div className={`flex border-b border-[#ACAAB4] w-full justify-between ${isMobile ? "sticky top-0 bg-[#FCFAF9] z-20" : ""}`}>

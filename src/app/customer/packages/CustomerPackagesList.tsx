@@ -4,9 +4,10 @@ import type { PackageProgress } from "@/lib/api/packages";
 import { useMyPackagesQuery, useVoidPackageMutation } from "@/lib/packages/hooks";
 import PackageCard from "./PackageCard";
 import { OwnedFirstClassPackages } from "@/components/packages/FirstClassPackageIntegration";
+import LegacyPackageRecovery from "@/components/packages/LegacyPackageRecovery";
 
 export default function CustomerPackagesList() {
-  return <div className="w-full"><OwnedFirstClassPackages /><LegacyPackagesList /></div>;
+  return <div className="w-full"><LegacyPackageRecovery /><OwnedFirstClassPackages /><LegacyPackagesList /></div>;
 }
 
 function LegacyPackagesList() {
