@@ -20,6 +20,7 @@ import {
   PACKAGE_STATUS_PRESENTATION,
 } from "@/lib/packages/presentation";
 import PackageActionControls from "@/components/packages/PackageActionControls";
+import LegacyPackageRecovery from "@/components/packages/LegacyPackageRecovery";
 import RedeemSessionModal from "../RedeemSessionModal";
 import { OwnedFirstClassDetail } from "@/components/packages/FirstClassPackageIntegration";
 
@@ -102,6 +103,8 @@ function PackageDetailContent() {
               ← Back to Packages in My Bookings
             </Link>
           </nav>
+
+          {pkg ? <LegacyPackageRecovery businessId={pkg.businessId} packageId={packageProgressId} /> : null}
 
           {detailQuery.isLoading ? (
             <PackageDetailSkeleton />

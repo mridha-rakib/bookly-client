@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
+import type { LegacyStatus, LegacyPointer } from "@/lib/packages/legacy-recovery";
 import type {
   BookingCreationPreview,
   CreateBookingInput,
@@ -121,6 +122,9 @@ export interface PackageActionResult {
 }
 
 export const packagesApi = {
+  operationStatus: (businessId: string, kind: LegacyPointer["kind"], packageId: string, idempotencyKey: string) =>
+    apiRequest<LegacyStatus>({ method: "GET", url: `/businesses/${businessId}/bookings/packages/operations/status`,
+      params: { kind, packageId, idempotencyKey } }),
   getForBusiness: (businessId: string, packageId: string) => apiRequest<PackageProgress>({ method: "GET", url: `/businesses/${businessId}/bookings/packages/${packageId}` }),
   cancelFuture: (businessId: string, packageId: string) => apiRequest<PackageActionResult>({ method: "POST", url: `/businesses/${businessId}/bookings/packages/${packageId}/cancel-future`, data: {} }),
   terminate: (businessId: string, packageId: string) => apiRequest<PackageActionResult>({ method: "POST", url: `/businesses/${businessId}/bookings/packages/${packageId}/terminate`, data: {} }),

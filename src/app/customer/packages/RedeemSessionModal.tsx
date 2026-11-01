@@ -31,9 +31,11 @@ import {
 import type { BusinessCity } from "@/lib/constants/cities";
 import {
   usePreviewPackageRedemptionMutation,
-  useRedeemPackageSessionMutation,
 } from "@/lib/packages/hooks";
-import { getStripe } from "@/lib/payments/stripe-client";
+import LegacyPackageRecovery from "@/components/packages/LegacyPackageRecovery";
+import { useAuthStore } from "@/lib/auth/store";
+import { customerPaymentSession } from "@/lib/bookings/payment-session";
+import { continueLegacyRecovery, resolveLegacyRecovery, saveLegacyRecovery } from "@/lib/packages/legacy-recovery";
 
 type Entitlement = NonNullable<PackageProgress["fulfilmentEntitlement"]>;
 type Step = "addons" | "travel" | "professional" | "time" | "review";
@@ -134,7 +136,7 @@ export default function RedeemSessionModal({
   );
   const addonsQuery = useServiceAddonsQuery(businessId, serviceId);
   const previewMutation = usePreviewPackageRedemptionMutation();
-  const redeemMutation = useRedeemPackageSessionMutation();
+  const submission = useRef(false);
 
   const buildPreviewInput = (): PackageRedemptionPreviewInput | undefined => {
     if (isTravel && !isCompleteTravelAddress(customerCity, travelAddress)) return undefined;
@@ -261,69 +263,40 @@ export default function RedeemSessionModal({
     !selectedSlotIsCurrentlyAvailable || availabilityQuery.isLoading || availabilityQuery.isError;
 
   const handleConfirm = async () => {
-    if (
-      !selectedSlot ||
-      !selectedStaffMembershipId ||
-      !previewInput ||
-      !currentPreviewIsValid
-    ) return;
+    if (submission.current || !selectedSlot || !selectedStaffMembershipId || !previewInput || !currentPreviewIsValid) return;
+    const session = customerPaymentSession(useAuthStore.getState());
+    const customerId = useAuthStore.getState().user?.id;
+    if (!session || !customerId) return;
+    submission.current = true;
+    setConfirming3ds(true);
     setSubmitError(undefined);
-    const idempotencyKey = crypto.randomUUID();
-    const submit = () =>
-      redeemMutation.mutateAsync({
-        businessId,
-        packageProgressId,
-        input: {
-          ...previewInput,
-          staffMembershipId: selectedStaffMembershipId,
-          startAt: selectedSlot.startAt,
-          idempotencyKey,
-        },
-      });
-
+    const live = () => mounted.current && session === customerPaymentSession(useAuthStore.getState());
     try {
-      const result = await submit();
-      if (result.status === "requires_action") {
-        setConfirming3ds(true);
-        try {
-          const stripe = await getStripe();
-          if (!stripe) {
-            setSubmitError("Payment could not be initialized. Please try again.");
-            return;
-          }
-          const confirmation = await stripe.confirmCardPayment(result.clientSecret);
-          if (confirmation.error) {
-            setSubmitError(confirmation.error.message ?? "Payment authentication failed.");
-            return;
-          }
-          const retry = await submit();
-          if (retry.status === "requires_action") {
-            setSubmitError("Payment could not be confirmed. Please try again.");
-            return;
-          }
-        } finally {
-          setConfirming3ds(false);
-        }
-      }
-      onBooked();
+      const record = saveLegacyRecovery(customerId, businessId, "PACKAGE_REDEMPTION", packageProgressId, {
+        ...previewInput, staffMembershipId: selectedStaffMembershipId, startAt: selectedSlot.startAt,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      const status = await continueLegacyRecovery(record, live);
+      if (!live()) return;
+      if (status.state !== "COMMITTED" || !status.bookingId || status.packageProgressId !== packageProgressId)
+        throw Error("The original package session has not committed.");
+      resolveLegacyRecovery(record, status);
+      await queryClient.invalidateQueries({ queryKey: ["packages"] });
+      void queryClient.invalidateQueries({ queryKey: ["customerBookings", "list"] });
+      if (live()) onBooked();
     } catch (error) {
-      if (
-        error instanceof BooklyApiError &&
-        (error.code === "BOOKING_SLOT_RESERVATION_CONFLICT" ||
-          error.code === "AVAILABILITY_SLOT_NOT_BOOKABLE")
-      ) {
+      if (!live()) return;
+      if (error instanceof BooklyApiError && (error.code === "BOOKING_SLOT_RESERVATION_CONFLICT" || error.code === "AVAILABILITY_SLOT_NOT_BOOKABLE")) {
         setSelectedSlot(undefined);
         setSubStep("time");
-        setSubmitError("That time is no longer available. Choose another available time.");
-        void queryClient.invalidateQueries({
-          queryKey: catalogKeys.availability(businessId, serviceId, availabilityParams),
-        });
-        return;
+        void queryClient.invalidateQueries({ queryKey: catalogKeys.availability(businessId, serviceId, availabilityParams) });
       }
       setSubmitError(toUserMessage(error));
+    } finally {
+      submission.current = false;
+      if (live()) setConfirming3ds(false);
     }
   };
-
   const goBack = () => {
     if (subStep === "travel") setSubStep("addons");
     if (subStep === "professional") setSubStep(isTravel ? "travel" : "addons");
@@ -368,6 +341,7 @@ export default function RedeemSessionModal({
         </header>
 
         <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-6 md:px-8">
+          <LegacyPackageRecovery businessId={businessId} />
           {catalogQuery.isLoading ? (
             <p className="text-sm text-neutral-500">Loading…</p>
           ) : !service ? (
@@ -554,12 +528,8 @@ export default function RedeemSessionModal({
                 Review
               </button>
             ) : (
-              <button type="button" disabled={!selectedSlot || !currentPreviewIsValid || isPreviewPending || Boolean(previewError) || paymentMethodMissing || redeemMutation.isPending || confirming3ds} onClick={() => void handleConfirm()} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
-                {confirming3ds
-                  ? "Confirming payment…"
-                  : redeemMutation.isPending
-                    ? "Booking…"
-                    : "Confirm session"}
+              <button type="button" disabled={!selectedSlot || !currentPreviewIsValid || isPreviewPending || Boolean(previewError) || paymentMethodMissing || confirming3ds} onClick={() => void handleConfirm()} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                {confirming3ds ? "Confirming original session…" : "Confirm session"}
               </button>
             )}
           </footer>
