@@ -92,6 +92,16 @@ async function select(scope: "customer" | "business") {
 }
 const reads = () => fx.requests.filter((req) => req.url.endsWith("/reschedule-availability"));
 const posts = () => fx.requests.filter((req) => req.url.endsWith("/reschedule") && req.method === "POST");
+const cachedAvailability = () => client.getQueriesData<RescheduleAvailabilityResult>({
+  queryKey: bookingKeys.rescheduleAvailability,
+}).map(([, data]) => data).filter((data) => data !== undefined);
+function expectBookingTermsUnchanged(original: BookingDetail) {
+  expect(fx.detail).toMatchObject({
+    id: original.id, businessId: original.businessId, customer: original.customer,
+    serviceLines: original.serviceLines, fulfilment: original.fulfilment,
+    financials: original.financials, paymentSummary: original.paymentSummary,
+  });
+}
 beforeEach(() => {
   fx.detail = booking(); fx.requests.length = 0; fx.respond = respond; fx.saved.mockClear(); fx.closed.mockClear();
   client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false }, mutations: { retry: false } } });
@@ -102,6 +112,7 @@ afterEach(async () => { await act(async () => root.unmount()); client.clear(); h
 describe.each(["customer", "business"] as const)("F1C-A %s reschedule", (scope) => {
   it.each(["HOURLY", "PER_PERSON", "FIXED"] as const)("uses the owned %s booking, retains history and sends only startAt", async (mode) => {
     fx.detail = booking(mode);
+    const originalBooking = structuredClone(fx.detail);
     const original = structuredClone(fx.detail.serviceLines);
     await render(scope); await select(scope);
     await waitFor(() => expect(button("Save changes").disabled).toBe(false));
@@ -117,20 +128,31 @@ describe.each(["customer", "business"] as const)("F1C-A %s reschedule", (scope) 
     await waitFor(() => expect(posts()).toHaveLength(1));
     expect(posts()[0]!.data).toEqual({ startAt: `${read.params!.fromDate.slice(0, 7)}-20T09:00:00.000Z` });
     expect(fx.detail.serviceLines).toEqual(original);
+    expectBookingTermsUnchanged(originalBooking);
   });
   it.each(["end", "staff", "removed"] as const)("clears selection when fresh slot %s changes", async (change) => {
     await render(scope); await select(scope);
     expect(button("Save changes").disabled).toBe(false);
+    const originalBooking = structuredClone(fx.detail);
+    const readCount = reads().length;
+    let fresh!: RescheduleAvailabilityResult;
     fx.respond = (req) => {
       if (!req.url.endsWith("/reschedule-availability")) return respond(req);
       const result = availability(req.params!, change === "staff" ? "other-staff" : "staff");
       if (change === "end") result.days[0]!.slots[0]!.endAt = result.days[0]!.slots[0]!.endAt.replace("13:15", "14:15");
       if (change === "removed") result.days[0]!.slots = [];
+      fresh = result;
       return result;
     };
     await act(async () => { await client.invalidateQueries({ queryKey: bookingKeys.rescheduleAvailability }); });
-    expect(button("Save changes").disabled).toBe(true);
+    expect(reads()).toHaveLength(readCount + 1);
+    expect(cachedAvailability()).toEqual([fresh]);
+    // Fetch completion updates the cache before Query's scheduled observer notification.
+    // Wait for the actual UI gate, without forcing renders or changing its scheduler.
+    await waitFor(() => expect(button("Save changes").disabled).toBe(true));
+    await click("Save changes");
     expect(posts()).toHaveLength(0);
+    expectBookingTermsUnchanged(originalBooking);
   });
   it("a refreshed Booking version clears selection even when the next response offers the same slot", async () => {
     await render(scope); await select(scope);
@@ -172,6 +194,51 @@ describe.each(["customer", "business"] as const)("F1C-A %s reschedule", (scope) 
     expect(button("Save changes").disabled).toBe(true);
     await select(scope);
     await waitFor(() => expect(button("Save changes").disabled).toBe(false));
+  });
+  it("a superseded same-month valid response cannot resurrect a removed group slot", async () => {
+    fx.detail = booking("PER_PERSON");
+    const originalBooking = structuredClone(fx.detail);
+    await render(scope); await select(scope);
+    expect(button("Save changes").disabled).toBe(false);
+    const params = reads().at(-1)!.params!;
+    const staleValid = availability(params);
+    let resolveOld!: (value: RescheduleAvailabilityResult) => void;
+    const pending = new Promise<RescheduleAvailabilityResult>((resolve) => { resolveOld = resolve; });
+    fx.respond = (req) => req.url.endsWith("/reschedule-availability") ? pending : respond(req);
+    const readCount = reads().length;
+    let olderInvalidation!: Promise<void>;
+    await act(async () => { olderInvalidation = client.invalidateQueries({ queryKey: bookingKeys.rescheduleAvailability }); });
+    await waitFor(() => expect(reads()).toHaveLength(readCount + 1));
+    await waitFor(() => expect(button("Save changes").disabled).toBe(true));
+
+    const removed = { ...availability(params), days: [{ ...availability(params).days[0]!, slots: [] }] };
+    fx.respond = (req) => req.url.endsWith("/reschedule-availability") ? removed : respond(req);
+    // The second refetch supersedes the first for the exact same query key.
+    await act(async () => { await client.invalidateQueries({ queryKey: bookingKeys.rescheduleAvailability }); });
+    expect(reads()).toHaveLength(readCount + 2);
+    expect(cachedAvailability()).toEqual([removed]);
+    const slotLabel = scope === "customer" ? "Slot 09:00" : "9:00 AM";
+    await waitFor(() => expect([...host.querySelectorAll("button")]
+      .filter((control) => control.textContent?.trim() === slotLabel)).toHaveLength(0));
+
+    await act(async () => { resolveOld(staleValid); await olderInvalidation; });
+    expect(cachedAvailability()).toEqual([removed]);
+    expect(button("Save changes").disabled).toBe(true);
+    await click("Save changes");
+    expect(posts()).toHaveLength(0);
+    expectBookingTermsUnchanged(originalBooking);
+
+    // A later valid response still requires an explicit new choice before saving.
+    fx.respond = respond;
+    await act(async () => { await client.invalidateQueries({ queryKey: bookingKeys.rescheduleAvailability }); });
+    await waitFor(() => expect(cachedAvailability()).toEqual([staleValid]));
+    expect(button("Save changes").disabled).toBe(true);
+    await select(scope);
+    await waitFor(() => expect(button("Save changes").disabled).toBe(false));
+    await click("Save changes");
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    expect(posts()[0]!.data).toEqual({ startAt: staleValid.days[0]!.slots[0]!.startAt });
+    expectBookingTermsUnchanged(originalBooking);
   });
   it("historical optional DTO quantities are not replaced by client minimums or echoed to the read", async () => {
     delete fx.detail.serviceLines[0]!.hours;
