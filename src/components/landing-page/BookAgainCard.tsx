@@ -7,7 +7,6 @@ import {
   SparklesIcon,
   Calendar03Icon,
   ReceiptTextIcon,
-  FavouriteIcon,
 } from "@hugeicons/core-free-icons";
 import type { BookAgainCandidate } from "@/lib/api/bookings";
 
@@ -76,22 +75,18 @@ export default function BookAgainCard({
 
         {/* Favorite Heart Icon Overlay */}
         <button
-          type="button"
-          aria-label={isFav ? "Remove from favorites" : "Add to favorites"}
-          title={isFav ? "Remove from favorites" : "Add to favorites"}
-          className="group/fav absolute top-[8px] sm:top-[12px] right-[8px] sm:right-[12px] w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-white/90 hover:bg-white backdrop-blur-md shadow-[0_2px_8px_rgba(0,0,0,0.12)] border border-neutral-100/80 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-90 cursor-pointer z-10"
+          className="absolute top-[10px] sm:top-[14px] right-[10px] sm:right-[14px] rounded-full backdrop-blur-sm flex items-center justify-center text-[#E49D12] hover:bg-white active:scale-90 transition-all cursor-pointer z-10"
           onClick={(e) => {
             e.stopPropagation();
             onToggleFavorite(item.businessId);
           }}
         >
-          <HugeiconsIcon
-            icon={FavouriteIcon}
-            className={`w-4 h-4 sm:w-5 sm:h-5 transition-transform duration-200 group-hover/fav:scale-105 ${
-              isFav
-                ? "text-[#DE350B] fill-[#DE350B]"
-                : "text-neutral-700 group-hover/fav:text-[#DE350B]"
-            }`}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={isFav ? "/Icons/whiteHeart.svg" : "/Icons/whiteHeartwithoutfill.svg"}
+            alt="Heart"
+            className="w-4 h-4 sm:w-[24px] sm:h-[24px]"
+            draggable="false"
           />
         </button>
       </div>

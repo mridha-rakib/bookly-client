@@ -341,11 +341,15 @@ export interface BookingCreationPreview {
     amountCents: number;
   }>;
   financials: BookingFinancialsDto;
-  /** Server-authoritative C2 disclosure values. The client formats these integer cents only;
-   * it must never derive VAT or due-now from another field. */
+  /** Explicit server disclosure phase; does not authorize VAT collection. */
+  taxMode: "PRE_ACTIVATION";
+  /** Current server-owned pre-tax upfront obligation. */
   preTaxChargeCents: number;
+  /** Compute-only calculated VAT, not charged in the pre-activation checkout. */
   taxCents: number;
+  /** Actual current online obligation; format directly, never add calculated VAT. */
   dueNowCents: number;
+  /** Established remaining booking balance, excluding compute-only VAT. */
   balanceDueCents: number;
   requiresSavedCard: boolean;
   hasSavedCard: boolean;
