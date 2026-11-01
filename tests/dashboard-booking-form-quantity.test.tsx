@@ -76,13 +76,25 @@ async function waitFor(check: () => void) {
   }
 }
 async function click(text: string) { await act(async () => button(text).click()); }
+async function selectProfessional() {
+  // Native button role; its text-derived name includes a separate avatar initial.
+  // Match the professional's name within that accessible name, not all textContent.
+  const controls = [...host.querySelectorAll("button")].filter((control) => {
+    const name = control.getAttribute("aria-label") ?? [...control.childNodes]
+      .map((node) => node.textContent ?? "").join(" ").replace(/\s+/g, " ").trim();
+    return /(?:^|\s)Professional$/.test(name);
+  });
+  expect(controls).toHaveLength(1);
+  expect(controls[0]!.disabled).toBe(false);
+  await act(async () => controls[0]!.click());
+}
 async function chooseService(id: string) {
   const select = [...host.querySelectorAll("select")].find((el) => [...el.options].some((o) => o.value === id))!;
   await act(async () => { select.value = id; select.dispatchEvent(new Event("change", { bubbles: true })); });
 }
 async function setup(service: CatalogService) {
   await chooseService(service.id);
-  await click("Professional");
+  await selectProfessional();
   await waitFor(() => button("Slot 09:00"));
 }
 beforeEach(async () => {
@@ -118,6 +130,9 @@ describe("Manual Booking quantity (F1B)", () => {
     expect(fx.requests.at(-1)?.staffMembershipId).toBe("staff");
     await click("Slot 09:00"); await click("Create booking");
     const input = fx.create.mock.calls.at(-1)![0].input;
+    expect(fx.create.mock.calls.at(-1)![0].businessId).toBe("business");
+    expect(input.businessClientId).toBe("client");
+    expect(input.serviceLines[0].serviceId).toBe(service.id);
     expect(input.serviceLines[0].pricingInput).toEqual(service === hourly ? { hours: 3 } : { personCount: 3 });
     expect(input.serviceLines[0].staffMembershipId).toBe("staff");
   });
@@ -129,7 +144,7 @@ describe("Manual Booking quantity (F1B)", () => {
       if ((service === hourly ? params.hours : params.partySize) === 2) { old = params; return pending; }
       return undefined;
     };
-    await chooseService(service.id); await click("Professional");
+    await chooseService(service.id); await selectProfessional();
     await waitFor(() => expect(old).toBeDefined());
     await click("+"); await click("+");
     await waitFor(() => expect(service === hourly ? fx.requests.at(-1)?.hours : fx.requests.at(-1)?.partySize).toBe(4));
@@ -144,7 +159,8 @@ describe("Manual Booking quantity (F1B)", () => {
     await setup(hourly); await click("Slot 09:00");
     fx.delay = async (params) => ({ ...response(params), days: [{ ...response(params).days[0]!, slots: [] }] });
     await act(async () => { await queryClient.invalidateQueries({ queryKey: ["availability"] }); });
-    expect(button("Create booking").disabled).toBe(true);
+    await waitFor(() => expect(button("Create booking").disabled).toBe(true));
+    await click("Create booking");
     expect(fx.create).not.toHaveBeenCalled();
   });
   it("fixed booking omits both quantities and preserves its final payload", async () => {
