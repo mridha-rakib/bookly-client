@@ -180,9 +180,12 @@ vi.mock("@/app/venue/components/PaymentStep", () => ({
 }));
 vi.mock("@/app/venue/components/ConfirmedStep", () => ({ default: () => <p>Booking confirmed</p> }));
 vi.mock("@/app/venue/components/CheckoutSummaryAside", () => ({
-  default: ({ onContinue, canContinue, preview }: { onContinue: () => void | Promise<void>; canContinue: boolean; preview?: { fixtureHours?: number } }) => {
+  default: ({ onContinue, canContinue, preview, submitError }: { onContinue: () => void | Promise<void>; canContinue: boolean; preview?: { fixtureHours?: number }; submitError?: string }) => {
     fx.continueWizard = onContinue;
-    return <button data-preview-hours={preview?.fixtureHours} disabled={!canContinue} onClick={() => void onContinue()}>Wizard continue</button>;
+    return <>
+      {submitError ? <p role="alert">{submitError}</p> : null}
+      <button data-preview-hours={preview?.fixtureHours} disabled={!canContinue} onClick={() => void onContinue()}>Wizard continue</button>
+    </>;
   },
 }));
 

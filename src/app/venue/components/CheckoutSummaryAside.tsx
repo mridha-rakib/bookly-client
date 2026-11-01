@@ -183,21 +183,23 @@ export default function CheckoutSummaryAside({
             <span>-{formatBookingMoney(appliedPromo.discountCents)}</span>
           </div>
           <div className="border-t border-[#E5E5E5] w-full" />
-          <div className="flex justify-between items-center py-2.5">
-            <span>Booking total</span>
-            <span>{formatBookingMoney(financials.totalCents)}</span>
-          </div>
-          <div className="border-t border-[#E5E5E5] w-full" />
         </>
       ) : null}
 
+      <div className="flex justify-between items-center py-2.5">
+        <span>Booking total</span>
+        <span>{financials ? formatBookingMoney(financials.totalCents) : "—"}</span>
+      </div>
+
+      <div className="border-t border-[#E5E5E5] w-full" />
+
       <div className="flex justify-between items-center py-2.5 relative">
         <div className="flex items-center gap-1.5">
-          <span>Deposit before VAT</span>
+          <span>Upfront payment</span>
           <div className="relative group">
             <button
               type="button"
-              aria-label="About the deposit"
+              aria-label="About the upfront payment"
               className="text-neutral-400 hover:text-neutral-600 cursor-pointer flex items-center"
             >
               <HugeiconsIcon icon={InformationCircleIcon} size={16} />
@@ -207,11 +209,11 @@ export default function CheckoutSummaryAside({
               <span>
                 {nothingDueNow
                   ? isPackagePurchase
-                    ? "Nothing is charged online for this package. The full amount is paid at the venue, and settling it in full is what unlocks booking your remaining sessions."
-                    : "Nothing is charged online for this booking. The full amount is paid at the venue."
+                    ? "Nothing is due online for this package. The full amount remains due at the appointment, and the Business recording full settlement unlocks booking your remaining sessions."
+                    : "Nothing is due online for this booking. The full amount remains due at the appointment."
                   : isPackagePurchase
-                    ? "Charged now to secure your first session — 20% of the package price, minimum €5, maximum €35. The remaining balance is paid at the venue, and settling it in full is what unlocks booking your remaining sessions."
-                    : "Charged now to secure your slot — 20% of the service price (after any promo discount), minimum €5, maximum €35. Deducted from your total at the venue."}
+                    ? "The quoted upfront payment secures your first session and is credited against the package total. The Business recording full settlement unlocks booking your remaining sessions."
+                    : "The quoted upfront payment secures your slot and is credited against your booking total."}
               </span>
             </div>
           </div>
@@ -223,13 +225,6 @@ export default function CheckoutSummaryAside({
 
       <div className="border-t border-[#E5E5E5] w-full" />
 
-      <div className="flex justify-between items-center py-2.5">
-        <span>VAT</span>
-        <span>{preview ? formatBookingMoney(preview.taxCents) : "—"}</span>
-      </div>
-
-      <div className="border-t border-[#E5E5E5] w-full" />
-
       <div className="flex justify-between items-center text-base font-semibold py-2.5">
         <span>Due now</span>
         <span>{preview ? formatBookingMoney(preview.dueNowCents) : "—"}</span>
@@ -238,9 +233,21 @@ export default function CheckoutSummaryAside({
       <div className="border-t border-[#E5E5E5] w-full" />
 
       <div className="flex justify-between items-center py-2.5">
-        <span>Balance due at venue</span>
+        <span>Remaining at appointment</span>
         <span>{preview ? formatBookingMoney(preview.balanceDueCents) : "—"}</span>
       </div>
+
+      <section aria-label="Calculated VAT information" className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-[#4E5F78]">
+        <div className="flex justify-between items-start gap-3">
+          <span>Calculated VAT — informational only</span>
+          <span className="shrink-0">{preview?.taxMode === "PRE_ACTIVATION" ? formatBookingMoney(preview.taxCents) : "—"}</span>
+        </div>
+        <p className="mt-2">
+          {preview?.taxMode === "PRE_ACTIVATION"
+            ? "Informational only — not charged in this checkout."
+            : "Calculated VAT information is unavailable until a supported quote is obtained."}
+        </p>
+      </section>
     </div>
   );
 
@@ -261,18 +268,18 @@ export default function CheckoutSummaryAside({
               {nothingDueNow ? (
                 <p>
                   Nothing is charged online now. You will pay the full{" "}
-                  {preview ? formatBookingMoney(preview.balanceDueCents) : ""} at the venue by cash or card. Your
+                  {preview ? formatBookingMoney(preview.balanceDueCents) : "—"} at the appointment. Your
                   remaining sessions cannot be booked until the Business records this balance as fully paid.
                 </p>
               ) : (
                 <>
                   <p>
-                    A {preview ? formatBookingMoney(preview.preTaxChargeCents) : "—"} deposit before VAT is charged
-                    now to secure your first session and will be deducted from the package&apos;s total cost.
+                    The quoted upfront payment of {preview ? formatBookingMoney(preview.preTaxChargeCents) : "—"} is due
+                    now to secure your first session and is credited against the package&apos;s total cost.
                   </p>
                   <p>
-                    You will pay the remaining {preview ? formatBookingMoney(preview.balanceDueCents) : ""} at the
-                    venue by cash or card. Your remaining sessions cannot be booked until the Business records this
+                    The remaining {preview ? formatBookingMoney(preview.balanceDueCents) : "—"} is due at the
+                    appointment. Your remaining sessions cannot be booked until the Business records this
                     balance as fully paid.
                   </p>
                 </>
@@ -293,17 +300,17 @@ export default function CheckoutSummaryAside({
               {nothingDueNow ? (
                 <p>
                   Nothing is charged online now. You will pay the full{" "}
-                  {preview ? formatBookingMoney(preview.balanceDueCents) : ""} at the venue by cash or card.
+                  {preview ? formatBookingMoney(preview.balanceDueCents) : "—"} at the appointment.
                 </p>
               ) : (
                 <>
                   <p>
-                    A {preview ? formatBookingMoney(preview.preTaxChargeCents) : "—"} deposit before VAT is charged
-                    now to secure your appointment and will be deducted from your total service cost.
+                    The quoted upfront payment of {preview ? formatBookingMoney(preview.preTaxChargeCents) : "—"} is due
+                    now to secure your appointment and is credited against your booking total.
                   </p>
                   <p>
-                    You will pay the remaining {preview ? formatBookingMoney(preview.balanceDueCents) : ""} at the
-                    venue by cash or card.
+                    The remaining {preview ? formatBookingMoney(preview.balanceDueCents) : "—"} is due at the
+                    appointment.
                   </p>
                 </>
               )}
