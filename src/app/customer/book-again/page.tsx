@@ -14,11 +14,7 @@ import { bookAgainHref } from "@/lib/bookings/book-again";
 import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
 import { useBookAgainCandidatesQuery } from "@/lib/bookings/hooks";
-import {
-  useAddFavoriteMutation,
-  useFavoriteIdsQuery,
-  useRemoveFavoriteMutation,
-} from "@/lib/favorite/hooks";
+import { useBusinessFavorites } from "@/lib/favorite/use-business-favorites";
 
 const PAGE_SIZE = 12;
 
@@ -39,14 +35,12 @@ function BookAgainPageContent() {
   const [currentPage, setCurrentPage] = useState(1);
 
   const candidatesQuery = useBookAgainCandidatesQuery({ page: currentPage, limit: PAGE_SIZE });
-  const favoriteIdsQuery = useFavoriteIdsQuery(isLoggedIn);
-  const addFavoriteMutation = useAddFavoriteMutation();
-  const removeFavoriteMutation = useRemoveFavoriteMutation();
+  const favorites = useBusinessFavorites();
 
   const candidates = candidatesQuery.data?.candidates ?? [];
   const total = candidatesQuery.data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const favoriteIds = favoriteIdsQuery.data?.businessIds ?? [];
+  const favoriteIds = favorites.businessIds;
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= totalPages) {
@@ -55,17 +49,7 @@ function BookAgainPageContent() {
     }
   };
 
-  const handleToggleFavorite = (businessId: string) => {
-    if (!isLoggedIn) {
-      router.push("/customer");
-      return;
-    }
-    if (favoriteIds.includes(businessId)) {
-      removeFavoriteMutation.mutate(businessId);
-    } else {
-      addFavoriteMutation.mutate(businessId);
-    }
-  };
+  const handleToggleFavorite = favorites.toggle;
 
   // Real re-navigation into the existing, real venue/booking wizard — never a second booking
   // engine. `serviceId` is an optional pre-selection hint only; the venue page re-validates it

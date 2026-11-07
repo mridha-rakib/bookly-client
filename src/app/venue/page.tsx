@@ -10,7 +10,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Image from "next/image";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon, ArrowRight01Icon, Clock04Icon, Location05Icon, SquareLock01Icon, InformationCircleIcon, Cancel01Icon, FavouriteIcon } from "@hugeicons/core-free-icons";
+import { ArrowLeft01Icon, ArrowRight01Icon, Clock04Icon, Location05Icon, SquareLock01Icon, InformationCircleIcon, FavouriteIcon } from "@hugeicons/core-free-icons";
 import AddonsStep from "./components/AddonsStep";
 import TravelAddressStep, { emptyTravelAddress, type TravelAddressFields } from "./components/TravelAddressStep";
 import ProfessionalsStep from "./components/ProfessionalsStep";
@@ -18,6 +18,9 @@ import TimeStep from "./components/TimeStep";
 import PaymentStep from "./components/PaymentStep";
 import ConfirmedStep from "./components/ConfirmedStep";
 import CheckoutSummaryAside from "./components/CheckoutSummaryAside";
+import { BookingOnboardingHeader, bookingContentClass, bookingMainClass } from "./components/BookingOnboarding";
+import BookingServiceCard, { QuantityStepper } from "./components/BookingServiceCard";
+import type { BookingSelection } from "./components/BookingSelectionSummary";
 import VenueLocationMap from "./components/VenueLocationMap";
 import {
   availabilityPartySize,
@@ -53,11 +56,7 @@ import { toUserMessage } from "@/lib/auth/messages";
 import { useBusinessRatingSummaryQuery, useBusinessReviewsQuery } from "@/lib/review/hooks";
 import { formatTime12Hour } from "@/lib/staff/format";
 import type { BusinessCity } from "@/lib/constants/cities";
-import {
-  useAddFavoriteMutation,
-  useFavoriteIdsQuery,
-  useRemoveFavoriteMutation,
-} from "@/lib/favorite/hooks";
+import { useBusinessFavorites } from "@/lib/favorite/use-business-favorites";
 
 function VenueDetailsContent() {
   const queryClient = useQueryClient();
@@ -92,14 +91,11 @@ function VenueDetailsContent() {
   const ratingSummaryQuery = useBusinessRatingSummaryQuery(venueId);
   const reviewsQuery = useBusinessReviewsQuery(venueId, { page: 1, limit: reviewsLimit });
 
-  // Real Favorites — same wiring as /explore (useFavoriteIdsQuery/useAddFavoriteMutation/
-  // useRemoveFavoriteMutation). Personalized state, so it only loads for a logged-in CUSTOMER;
+  // Shared Customer-scoped persisted Favorites, with the same click guard as Home/Explore.
   // a logged-out visitor tapping the heart is sent to the customer auth flow (never a
   // local-only toggle).
-  const favoriteIdsQuery = useFavoriteIdsQuery(isLoggedIn);
-  const addFavoriteMutation = useAddFavoriteMutation();
-  const removeFavoriteMutation = useRemoveFavoriteMutation();
-  const isFavorite = (favoriteIdsQuery.data?.businessIds ?? []).includes(venueId);
+  const favorites = useBusinessFavorites({ onAnonymous: () => goToCustomerAuth(`/venue?id=${venueId}`) });
+  const isFavorite = favorites.businessIds.includes(venueId);
 
   // A logged-out visitor may browse the whole venue page, but any action that starts a booking
   // (or favouriting) requires a customer account. Stash where to come back to, then hand off to
@@ -194,6 +190,11 @@ function VenueDetailsContent() {
   // travel-city change (neither of which clears it directly) must never be trusted merely
   // because it's non-null — see the Time→Payment stale-slot audit.
   const selectedAvailabilityDay = availabilityQuery.data?.days.find((day) => day.date === selectedDateIso);
+  // P0.8: browsing to another calendar month keeps the chosen time. A slot can only be judged
+  // against an availability response that covers its own date; Continue returns to that month.
+  const selectedDateVisible = Boolean(
+    selectedDateIso && selectedDateIso >= availabilityFromDate && selectedDateIso <= availabilityToDate,
+  );
   const isSelectedSlotValid = Boolean(
     selectedSlot && selectedAvailabilityDay?.slots.some((slot) =>
       slot.startAt === selectedSlot.startAt && slot.endAt === selectedSlot.endAt &&
@@ -214,6 +215,7 @@ function VenueDetailsContent() {
   if (
     (bookingStep === "time" || bookingStep === "payment") &&
     selectedSlot &&
+    selectedDateVisible &&
     !availabilityQuery.isLoading &&
     !availabilityQuery.isFetching &&
     availabilityQuery.data &&
@@ -530,9 +532,9 @@ function VenueDetailsContent() {
     if (bookingStep === "time")
       return (
         Boolean(selectedSlot) &&
-        isSelectedSlotValid &&
-        !availabilityQuery.isLoading &&
-        !availabilityQuery.isFetching
+        // Off-month: the slot is re-validated after Continue brings its month back into view.
+        (!selectedDateVisible ||
+          (isSelectedSlotValid && !availabilityQuery.isLoading && !availabilityQuery.isFetching))
       );
     // Payment's own preview/pricing already require `selectedSlot` (buildBookingInput), but
     // `preview` is stale mutation data that doesn't clear itself — requiring `selectedSlot`
@@ -558,6 +560,10 @@ function VenueDetailsContent() {
     } else if (bookingStep === "professionals") {
       setBookingStep("time");
     } else if (bookingStep === "time") {
+      if (selectedDateIso && !selectedDateVisible) {
+        const [year, month] = selectedDateIso.split("-").map(Number);
+        setVisibleMonth(new Date(year!, month! - 1, 1));
+      }
       setBookingStep("payment");
     } else if (bookingStep === "payment") {
       if (paymentAction.current || !canContinueWizard) return;
@@ -843,17 +849,7 @@ function VenueDetailsContent() {
 
   const [showCopiedToast, setShowCopiedToast] = useState(false);
 
-  const handleToggleFavorite = () => {
-    if (!isLoggedIn) {
-      goToCustomerAuth(`/venue?id=${venueId}`);
-      return;
-    }
-    if (isFavorite) {
-      removeFavoriteMutation.mutate(venueId);
-    } else {
-      addFavoriteMutation.mutate(venueId);
-    }
-  };
+  const handleToggleFavorite = () => favorites.toggle(venueId);
   const [sortBy, setSortBy] = useState<"Latest" | "Highest Rated" | "Lowest Rated">("Latest");
   const [showSortDropdown, setShowSortDropdown] = useState(false);
 
@@ -949,6 +945,48 @@ function VenueDetailsContent() {
     if (service.packagePricing) return service.packagePricing.bundlePriceCents;
     return 0;
   };
+
+  const onboardingSelection: BookingSelection | undefined = selectedService ? (() => {
+    const durationLabel = selectedService.isPackageDeal && selectedService.packagePricing
+      ? `${selectedService.packagePricing.durationMin} min per session`
+      : selectedService.fixedPricing || selectedService.perPersonPricing
+        ? `${selectedService.fixedPricing?.durationMin ?? selectedService.perPersonPricing?.durationMin} min`
+        : selectedService.hourlyPricing
+          ? `${selectedPricingInput.hours ?? selectedService.hourlyPricing.minHours} hours`
+          : undefined;
+    const selectedStaff = selectedProfessional === ANY_STAFF ? undefined : eligibleStaff.find((member) => member.id === selectedProfessional);
+    const travelLocation = isTravelBooking;
+    const address = travelLocation
+      ? [travelAddress.streetName && `${travelAddress.streetName} ${travelAddress.streetNumber}`,
+        travelAddress.area, customerCity, travelAddress.floorUnit, travelAddress.aptRoom,
+        travelAddress.propertyType, travelAddress.additionalDirections].filter(Boolean).join(", ") || undefined
+      : business ? [business.address.streetName && `${business.address.streetName} ${business.address.streetNumber}`,
+        business.address.area, business.address.city, business.address.floorUnit, business.address.aptRoom].filter(Boolean).join(", ") : undefined;
+    const pricingInput = pricingInputByService[selectedService.id];
+    const quantityLabel = selectedService.isPackageDeal && selectedService.packagePricing
+      ? `${selectedService.packagePricing.sessionsInPackage} included sessions`
+      : selectedService.perPersonPricing
+        ? `${selectedPricingInput.personCount ?? selectedService.perPersonPricing.minPersons} people`
+        : selectedService.hourlyPricing
+          ? `${selectedPricingInput.hours ?? selectedService.hourlyPricing.minHours} hours selected`
+          : undefined;
+    return {
+      name: selectedService.name,
+      durationLabel,
+      quantityLabel,
+      ...(selectedService.fixedPricing || selectedService.hourlyPricing || selectedService.perPersonPricing || selectedService.packagePricing
+        ? { indicativePriceCents: estimateServicePriceCents(selectedService, pricingInput) } : {}),
+      appointments: [{
+        id: selectedService.id,
+        name: selectedService.name,
+        ...(selectedStaff ? { professional: [selectedStaff.firstName, selectedStaff.lastName].filter(Boolean).join(" "), ...(selectedStaff.avatarUrl ? { avatarUrl: selectedStaff.avatarUrl } : {}) } : selectedProfessional === ANY_STAFF ? { professional: "Any eligible professional" } : {}),
+        ...(selectedSlot && business ? { startAt: selectedSlot.startAt, timezone: business.timezone } : {}),
+        ...(travelLocation ? { locationLabel: "Professional visits your location" } : business ? { locationLabel: "Visit the business" } : {}),
+        ...(address ? { address } : {}),
+        addons: selectedAddonIds.map((id) => serviceAddonsQuery.data?.addons.find((addon) => addon.id === id)).filter((addon): addon is NonNullable<typeof addon> => Boolean(addon)).map((addon) => ({ id: addon.id, name: addon.name, ...(addon.priceCents !== undefined ? { priceCents: addon.priceCents } : {}) })),
+      }],
+    };
+  })() : undefined;
 
   const selectedList = selectedService
     ? [
@@ -1204,6 +1242,8 @@ function VenueDetailsContent() {
                     packages={packageOffers}
                     packageLoading={packageQuery.isPending}
                     packageError={packageQuery.error}
+                    onRetryPackages={() => void packageQuery.refetch()}
+                    packageRefreshing={packageQuery.isFetching}
                     isCustomer={isLoggedIn}
                     renderService={(service) => {
                         const isActive = selectedServiceId === service.id && bookingStep !== null;
@@ -1240,11 +1280,7 @@ function VenueDetailsContent() {
                           packageOriginalPriceCents !== undefined ? packageOriginalPriceCents - priceCents : undefined;
 
                         return (
-                          <div
-                            key={service.id}
-                            className={`w-full bg-white border rounded-xl p-5 flex justify-between items-center gap-4 shadow-sm transition-all ${isActive ? "border-[#2BB54F]" : "border-[#E5E5E5]"}`}
-                          >
-                            <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+                          <BookingServiceCard key={service.id} name={service.name} selected={isActive} onToggle={() => handleBookService(service.id)}>
                               <h4 className="font-inter font-medium text-lg text-[#0D0D0D]">{service.name}</h4>
 
                               {service.pricingMode === "HOURLY" && service.hourlyPricing && (
@@ -1269,68 +1305,14 @@ function VenueDetailsContent() {
                               )}
 
                               {service.pricingMode === "HOURLY" && service.hourlyPricing && (
-                                <div className="flex items-center gap-3 mt-2">
-                                  <span className="text-sm font-semibold text-[#0d0d0d] font-poppins">Hours</span>
-                                  <div className="flex items-center border border-neutral-300 rounded-lg overflow-hidden h-[36px] bg-[#FCFAF9]">
-                                    <button
-                                      onClick={() =>
-                                        setPricingInputByService((prev) => ({
-                                          ...prev,
-                                          [service.id]: stepPricingInput(service, prev[service.id], -1),
-                                        }))
-                                      }
-                                      className="px-3 hover:bg-neutral-100 font-bold border-r border-neutral-300 text-lg"
-                                    >
-                                      -
-                                    </button>
-                                    <span className="px-4 font-semibold font-poppins text-sm text-[#111111]">
-                                      {input.hours ?? service.hourlyPricing.minHours}
-                                    </span>
-                                    <button
-                                      onClick={() =>
-                                        setPricingInputByService((prev) => ({
-                                          ...prev,
-                                          [service.id]: stepPricingInput(service, prev[service.id], 1),
-                                        }))
-                                      }
-                                      className="px-3 hover:bg-neutral-100 font-bold border-l border-neutral-300 text-lg"
-                                    >
-                                      +
-                                    </button>
-                                  </div>
-                                </div>
+                                <QuantityStepper label="Hours" value={input.hours ?? service.hourlyPricing.minHours}
+                                  onDecrement={() => setPricingInputByService((prev) => ({ ...prev, [service.id]: stepPricingInput(service, prev[service.id], -1) }))}
+                                  onIncrement={() => setPricingInputByService((prev) => ({ ...prev, [service.id]: stepPricingInput(service, prev[service.id], 1) }))} />
                               )}
                               {service.pricingMode === "PER_PERSON" && service.perPersonPricing && (
-                                <div className="flex items-center gap-3 mt-2">
-                                  <span className="text-sm font-semibold text-[#0d0d0d] font-poppins">Person</span>
-                                  <div className="flex items-center border border-neutral-300 rounded-lg overflow-hidden h-[36px] bg-[#FCFAF9]">
-                                    <button
-                                      onClick={() =>
-                                        setPricingInputByService((prev) => ({
-                                          ...prev,
-                                          [service.id]: stepPricingInput(service, prev[service.id], -1),
-                                        }))
-                                      }
-                                      className="px-3 hover:bg-neutral-100 font-bold border-r border-neutral-300 text-lg"
-                                    >
-                                      -
-                                    </button>
-                                    <span className="px-4 font-semibold font-poppins text-sm text-[#111111]">
-                                      {input.personCount ?? service.perPersonPricing.minPersons}
-                                    </span>
-                                    <button
-                                      onClick={() =>
-                                        setPricingInputByService((prev) => ({
-                                          ...prev,
-                                          [service.id]: stepPricingInput(service, prev[service.id], 1),
-                                        }))
-                                      }
-                                      className="px-3 hover:bg-neutral-100 font-bold border-l border-neutral-300 text-lg"
-                                    >
-                                      +
-                                    </button>
-                                  </div>
-                                </div>
+                                <QuantityStepper label="Person" value={input.personCount ?? service.perPersonPricing.minPersons}
+                                  onDecrement={() => setPricingInputByService((prev) => ({ ...prev, [service.id]: stepPricingInput(service, prev[service.id], -1) }))}
+                                  onIncrement={() => setPricingInputByService((prev) => ({ ...prev, [service.id]: stepPricingInput(service, prev[service.id], 1) }))} />
                               )}
 
                               {service.isPackageDeal && (
@@ -1368,22 +1350,7 @@ function VenueDetailsContent() {
                                   This booking schedules your first session — book the rest later from My Packages.
                                 </p>
                               )}
-                            </div>
-                            <button
-                              onClick={() => handleBookService(service.id)}
-                              aria-label={isActive ? `Selected ${service.name}` : `Book ${service.name}`}
-                              className={`text-sm font-semibold rounded-full border transition-all duration-200 ease-out cursor-pointer shadow-sm shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2E9DA7] focus-visible:ring-offset-2 ${isActive
-                                ? "bg-[#2BB54F] border-[#2BB54F] text-white w-8 h-8 min-w-[32px] min-h-[32px] flex items-center justify-center p-0 rounded-full aspect-square"
-                                : "bg-[#FCFAF9] border-[#B3B3B3] text-[#0D0D0D] [@media(hover:hover)]:hover:bg-[#0D0D0D] [@media(hover:hover)]:hover:text-white [@media(hover:hover)]:hover:border-[#0D0D0D] [@media(hover:hover)]:hover:shadow-md [@media(hover:hover)]:motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-95 motion-safe:active:translate-y-0 px-5 py-2"
-                                }`}
-                            >
-                              {isActive ? (
-                                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5} aria-hidden="true">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                </svg>
-                              ) : "Book"}
-                            </button>
-                          </div>
+                          </BookingServiceCard>
                         );
                     }}
                   />
@@ -1475,13 +1442,13 @@ function VenueDetailsContent() {
                             <span className="shrink-0 text-neutral-500 mt-0.5">
                               <HugeiconsIcon icon={InformationCircleIcon} size={18} />
                             </span>
-                            <span>First visit? A small deposit (20% of your total, between €5–€35) secures your booking, charged now as a platform booking fee.</span>
+                            <span>First visit? For ordinary bookings, a 20% deposit applies to the promo-adjusted service and add-on amount (EUR 5 minimum, EUR 35 maximum, capped to that amount). Travel is excluded from this deposit and paid at the venue.</span>
                           </li>
                           <li className="flex items-start gap-2.5">
                             <span className="shrink-0 text-neutral-500 mt-0.5">
                               <HugeiconsIcon icon={InformationCircleIcon} size={18} />
                             </span>
-                            <span>Returning customer? The same deposit is charged now and counted toward your total — the rest is paid at the venue.</span>
+                            <span>Returning customer? No ordinary booking payment is collected online upfront. Pay at the venue; a saved card is still required for applicable cancellation and no-show obligations.</span>
                           </li>
                         </ul>
                       </div>
@@ -2020,78 +1987,31 @@ function VenueDetailsContent() {
 
       {bookingStep && (
         <div className="fixed inset-0 bg-[#FCFAF9] z-50 overflow-y-auto font-poppins flex flex-col">
-          {/* Header Bar */}
-          {bookingStep !== "confirmed" && (
-            <header className="w-full bg-[#FCFAF9] border-b border-neutral-200 py-6 px-4 md:px-16 flex justify-between items-center sticky top-0 z-30">
-              {/* Left Back Arrow and Breadcrumbs */}
-              <div className="flex items-center gap-5 w-full max-w-[1440px] mx-auto relative">
-                {/* Back Button */}
-                <button
-                  onClick={() => {
-                    paymentAction.current = null;
-                    setConfirming3ds(false);
-                    if (bookingStep === "addons") {
-                      closeBookingWizard();
-                    } else if (bookingStep === "travel") {
-                      setBookingStep("addons");
-                    } else if (bookingStep === "professionals") {
-                      setBookingStep(isTravelBooking ? "travel" : "addons");
-                    } else if (bookingStep === "time") {
-                      setBookingStep("professionals");
-                    } else if (bookingStep === "payment") {
-                      setBookingStep("time");
-                    }
-                  }}
-                  className="w-11 h-11 bg-[#E2E2E0] rounded-[4px] flex items-center justify-center cursor-pointer text-[#141B34] hover:bg-neutral-300 transition-colors shrink-0"
-                  aria-label="Go back"
-                >
-                  <HugeiconsIcon icon={ArrowLeft01Icon} size={24} />
-                </button>
-
-                {/* Breadcrumbs List */}
-                <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm font-medium font-poppins overflow-x-auto scrollbar-hide whitespace-nowrap max-w-[calc(100%-100px)] sm:max-w-none pr-4">
-                  <span className="text-[#ACAAB4] cursor-pointer" onClick={closeBookingWizard}>Services</span>
-                  <HugeiconsIcon icon={ArrowRight01Icon} size={14} className="text-[#ACAAB4]" />
-
-                  <span className={bookingStep === "addons" ? "text-black font-semibold" : "text-[#ACAAB4]"}>Add-ons</span>
-                  <HugeiconsIcon icon={ArrowRight01Icon} size={14} className={bookingStep === "addons" ? "text-black" : "text-[#ACAAB4]"} />
-
-                  {isTravelBooking && (
-                    <>
-                      <span className={bookingStep === "travel" ? "text-black font-semibold" : "text-[#ACAAB4]"}>Location</span>
-                      <HugeiconsIcon icon={ArrowRight01Icon} size={14} className={bookingStep === "travel" ? "text-black" : "text-[#ACAAB4]"} />
-                    </>
-                  )}
-
-                  <span className={bookingStep === "professionals" ? "text-black font-semibold" : "text-[#ACAAB4]"}>Professionals</span>
-                  <HugeiconsIcon icon={ArrowRight01Icon} size={14} className={bookingStep === "professionals" ? "text-black" : "text-[#ACAAB4]"} />
-
-                  <span className={bookingStep === "time" ? "text-black font-semibold" : "text-[#ACAAB4]"}>Time</span>
-                  <HugeiconsIcon icon={ArrowRight01Icon} size={14} className={bookingStep === "time" ? "text-black" : "text-[#ACAAB4]"} />
-
-                  <span className={bookingStep === "payment" ? "text-black font-semibold" : "text-[#ACAAB4]"}>Payment</span>
-                  <HugeiconsIcon icon={ArrowRight01Icon} size={14} className={bookingStep === "payment" ? "text-black" : "text-[#ACAAB4]"} />
-
-                  <span className="text-[#ACAAB4]">Confirm</span>
-                </div>
-
-                {/* Close button on the right */}
-                <button
-                  onClick={closeBookingWizard}
-                  className="absolute right-0 text-neutral-400 hover:text-black transition-colors cursor-pointer p-1"
-                  aria-label="Close modal"
-                >
-                  <HugeiconsIcon icon={Cancel01Icon} size={24} />
-                </button>
-              </div>
-            </header>
-          )}
+          {bookingStep !== "confirmed" && <BookingOnboardingHeader
+            current={bookingStep}
+            steps={[{ id: "services", label: "Services" }, { id: "addons", label: "Add-ons" }, ...(isTravelBooking ? [{ id: "travel", label: "Location" }] : []), { id: "professionals", label: "Professionals" }, { id: "time", label: "Time" }, { id: "payment", label: "Payment" }, { id: "confirmed", label: "Confirm" }]}
+            onBack={() => {
+              paymentAction.current = null;
+              setConfirming3ds(false);
+              if (bookingStep === "addons") closeBookingWizard();
+              else if (bookingStep === "travel") setBookingStep("addons");
+              else if (bookingStep === "professionals") setBookingStep(isTravelBooking ? "travel" : "addons");
+              else if (bookingStep === "time") setBookingStep("professionals");
+              else if (bookingStep === "payment") setBookingStep("time");
+            }}
+            onClose={closeBookingWizard}
+            onStep={(target) => {
+              if (target === "services") { closeBookingWizard(); return; }
+              const order = ["addons", ...(isTravelBooking ? ["travel"] : []), "professionals", "time", "payment", "confirmed"];
+              if (order.indexOf(target) >= 0 && order.indexOf(target) < order.indexOf(bookingStep)) setBookingStep(target as typeof bookingStep);
+            }}
+          />}
 
           {/* Modal Main Content Container */}
-          <div className={`flex-1 w-full max-w-[1440px] mx-auto px-4 md:px-16 py-10 flex flex-col ${bookingStep === "confirmed" ? "items-center justify-center" : "lg:flex-row gap-16 items-start"} relative`}>
+          <div className={bookingStep === "confirmed" ? "flex-1 w-full max-w-[1440px] mx-auto px-4 md:px-16 py-10 flex items-center justify-center relative" : bookingContentClass}>
 
             {/* Left Side: Step Content */}
-            <div className="flex-grow w-full lg:max-w-[700px] flex flex-col gap-10 order-last lg:order-first">
+            <div className={bookingStep === "confirmed" ? "w-full" : bookingMainClass}>
               {bookingStep === "addons" && (
                 <AddonsStep
                   addons={serviceAddonsQuery.data?.addons ?? []}
@@ -2124,16 +2044,9 @@ function VenueDetailsContent() {
                 <TimeStep
                   timezone={catalogQuery.data?.business.timezone ?? "UTC"}
                   visibleMonth={visibleMonth}
-                  onPrevMonth={() => {
-                    setSelectedDateIso(undefined);
-                    setSelectedSlot(undefined);
-                    setVisibleMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
-                  }}
-                  onNextMonth={() => {
-                    setSelectedDateIso(undefined);
-                    setSelectedSlot(undefined);
-                    setVisibleMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
-                  }}
+                  // Changing the visible month alone never erases a valid chosen date/time.
+                  onPrevMonth={() => setVisibleMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
+                  onNextMonth={() => setVisibleMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
                   availability={availabilityQuery.data}
                   isLoading={availabilityQuery.isLoading}
                   isError={availabilityQuery.isError}
@@ -2172,6 +2085,7 @@ function VenueDetailsContent() {
               {bookingStep === "confirmed" && confirmedBooking && (
                 <ConfirmedStep
                   booking={confirmedBooking}
+                  businessName={business?.name}
                   setBookingStep={(step) => {
                     paymentAction.current = null;
                     setConfirming3ds(false);
@@ -2187,6 +2101,7 @@ function VenueDetailsContent() {
             {bookingStep !== "confirmed" && (
               <CheckoutSummaryAside
                 bookingStep={bookingStep}
+                selection={onboardingSelection}
                 isPackagePurchase={isPackagePurchaseFlow}
                 packageSessionsTotal={selectedService?.packagePricing?.sessionsInPackage}
                 business={catalogQuery.data?.business}

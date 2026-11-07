@@ -37,7 +37,7 @@ export interface BusinessClientDto {
   phone: ClientPhone;
   dateOfBirth?: string;
   gender?: "male" | "female" | "other";
-  address: ClientAddress;
+  address?: ClientAddress;
   notes?: string;
   tag?: ClientTag;
   linkState: ClientLinkState;

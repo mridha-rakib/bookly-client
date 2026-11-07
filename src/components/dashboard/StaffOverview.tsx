@@ -9,23 +9,26 @@ import { useBusinessRatingSummaryQuery } from "@/lib/review/hooks";
 import { useCurrentUserQuery } from "@/lib/auth/hooks";
 import { buildDashboardSubtitle } from "@/utils/dashboardGreeting";
 import { useDashboardOverviewQuery } from "@/lib/dashboardOverview/hooks";
+import type { OverviewRange } from "@/lib/api/dashboardOverview";
+import OverviewRangeToolbar from "@/components/dashboard/OverviewRangeToolbar";
+import OverviewRequestState, { resolveOverviewViewState } from "@/components/dashboard/OverviewRequestState";
 import { formatEuro } from "@/lib/services/format";
 import { formatTime12Hour } from "@/lib/staff/format";
 import { formatPackageSessionLabel } from "@/lib/bookings/format";
 
 export default function StaffOverview() {
-  const [timeFilter, setTimeFilter] = useState("Today");
+  // P1.9 — the applied range is sent to the API (Business-timezone presets / inclusive Custom).
+  const [range, setRange] = useState<OverviewRange>({ range: "Today" });
   const [scheduleFilter, setScheduleFilter] = useState("All");
-  const [customStartDate, setCustomStartDate] = useState("");
-  const [customEndDate, setCustomEndDate] = useState("");
-  const [showCustomPicker, setShowCustomPicker] = useState(false);
 
   const currentUserQuery = useCurrentUserQuery();
   const businessId = currentUserQuery.data?.business?.id;
   const ratingSummaryQuery = useBusinessRatingSummaryQuery(businessId);
   const ratingSummary = ratingSummaryQuery.data;
-  const overviewQuery = useDashboardOverviewQuery(businessId);
-  const overview = overviewQuery.data;
+  const overviewQuery = useDashboardOverviewQuery(businessId, range);
+  const viewState = resolveOverviewViewState(currentUserQuery, overviewQuery);
+  // Failed, loading or unauthorized reads never render as zero counts or zero money.
+  const overview = viewState === "ready" ? overviewQuery.data : undefined;
 
   const scheduleData = useMemo(() => {
     if (!overview) return [];
@@ -43,92 +46,19 @@ export default function StaffOverview() {
       <DashboardHeader title="Dashboard" subtitle={buildDashboardSubtitle(currentUserQuery.data?.profile?.firstName)} />
       <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col gap-6">
 
-        {/* Time Toggle Buttons Row */}
-        <div className="flex justify-end mb-6 mt-4 relative">
-          <div className="bg-white border border-[#E2E8F0] p-1 rounded-xl shadow-sm flex items-center gap-1">
-            {["Today", "7D", "30D", "Custom"].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => {
-                  setTimeFilter(tab);
-                  if (tab === "Custom") {
-                    setShowCustomPicker(prev => !prev);
-                  } else {
-                    setShowCustomPicker(false);
-                  }
-                }}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                  timeFilter === tab
-                    ? "bg-[#F1F5F9] text-[#0F172A] shadow-sm"
-                    : "text-neutral-500 hover:text-neutral-900"
-                }`}
-              >
-                {tab === "Custom" && customStartDate && customEndDate
-                  ? `Custom (${new Date(customStartDate).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})} - ${new Date(customEndDate).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})})`
-                  : tab}
-              </button>
-            ))}
-          </div>
-
-          {/* Custom Date Range Picker Dropdown */}
-          {showCustomPicker && (
-            <div className="absolute right-0 top-11 bg-white border border-[#E2E8F0] rounded-xl shadow-[0px_4px_20px_rgba(0,0,0,0.08)] p-4 z-40 w-72 flex flex-col gap-3 font-poppins text-left">
-              <span className="text-[11px] font-bold text-[#888780] uppercase tracking-wider">Select Date Range</span>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-[#5F5E5A] font-medium">Start Date</label>
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="border border-[#ECEBEF] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2E9DA7] text-[#0D0D0D] bg-white cursor-pointer"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-[#5F5E5A] font-medium">End Date</label>
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="border border-[#ECEBEF] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2E9DA7] text-[#0D0D0D] bg-white cursor-pointer"
-                />
-              </div>
-              {customStartDate && customEndDate && (
-                <div className="text-[11px] font-medium text-[#2E9DA7] bg-[#2E9DA7]/10 rounded px-2.5 py-1.5 text-center mt-1">
-                  Selected: {new Date(customStartDate).toLocaleDateString()} – {new Date(customEndDate).toLocaleDateString()}
-                </div>
-              )}
-              <div className="flex gap-2 mt-2">
-                <button
-                  onClick={() => {
-                    setShowCustomPicker(false);
-                    setCustomStartDate("");
-                    setCustomEndDate("");
-                    setTimeFilter("Today");
-                  }}
-                  className="flex-1 px-3 py-2 border border-neutral-300 rounded-lg text-xs font-semibold hover:bg-neutral-50 cursor-pointer text-[#1C1B1C] text-center"
-                >
-                  Clear
-                </button>
-                <button
-                  onClick={() => {
-                    if (customStartDate && customEndDate) {
-                      setShowCustomPicker(false);
-                    }
-                  }}
-                  className="flex-1 px-3 py-2 bg-[#2E9DA7] text-white rounded-lg text-xs font-semibold hover:opacity-90 cursor-pointer text-center"
-                >
-                  Apply
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <OverviewRangeToolbar value={range} onChange={setRange} />
+        <OverviewRequestState
+          state={viewState}
+          range={range}
+          overview={overview}
+          failedQuery={currentUserQuery.isError ? currentUserQuery : overviewQuery.isError ? overviewQuery : null}
+        />
 
         {/* Metric Strip Row: Removed 'To collect today', 'Monthly revenue', and 'No-shows this month' */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-8">
           {/* Card 1 */}
           <div className="bg-white border border-[#D3D3D3] rounded-xl p-4.5 shadow-sm flex flex-col justify-between h-[96px]">
-            <span className="text-[11px] font-normal text-[#888780] font-poppins">Today&apos;s bookings</span>
+            <span className="text-[11px] font-normal text-[#888780] font-poppins">Bookings in range</span>
             <div className="flex flex-col mt-0.5">
               <span className="text-3xl font-semibold text-[#1A1A1A] leading-none">
                 {overview ? overview.todayBookingsCount : "—"}
@@ -141,7 +71,7 @@ export default function StaffOverview() {
 
           {/* Card 2 */}
           <div className="bg-white border border-[#D3D3D3] rounded-xl p-4.5 shadow-sm flex flex-col justify-between h-[96px]">
-            <span className="text-[11px] font-normal text-[#888780] font-poppins">Avg Rating</span>
+            <span className="text-[11px] font-normal text-[#888780] font-poppins">Avg Rating (all time)</span>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="text-3xl font-semibold text-[#1A1A1A] leading-none">
                 {ratingSummary?.averageRating !== null && ratingSummary?.averageRating !== undefined
@@ -172,7 +102,7 @@ export default function StaffOverview() {
               <div className="flex justify-between items-center mb-4">
                 <div className="flex items-center gap-2">
                   <HugeiconsIcon icon={Clock01Icon} className="w-5 h-5 text-[#888780]" />
-                  <h2 className="text-sm font-medium text-[#5F5E5A] font-poppins">Today&apos;s schedule</h2>
+                  <h2 className="text-sm font-medium text-[#5F5E5A] font-poppins">Schedule in range</h2>
                 </div>
 
                 <div className="bg-[#F7F5F1] p-0.5 rounded-lg flex items-center gap-0.5">
@@ -244,7 +174,7 @@ export default function StaffOverview() {
                     {overview && scheduleData.length === 0 && (
                       <tr>
                         <td colSpan={7} className="py-6 px-4 text-xs text-[#888780] font-poppins text-center">
-                          No bookings scheduled today.
+                          No bookings scheduled in this range.
                         </td>
                       </tr>
                     )}
@@ -265,7 +195,7 @@ export default function StaffOverview() {
 
           <div className="space-y-6">
             <div className="bg-white border border-[#E8E8E6] rounded-xl p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-[#0F1E35] font-poppins mb-4">Today&apos;s Schedule</h3>
+              <h3 className="text-sm font-semibold text-[#0F1E35] font-poppins mb-4">Timeline in range</h3>
               <div className="space-y-4">
                 {timelineEvents.map((evt) => (
                   <div key={evt.bookingId} className="flex gap-4 items-start">
@@ -285,7 +215,7 @@ export default function StaffOverview() {
                   </div>
                 ))}
                 {overview && timelineEvents.length === 0 && (
-                  <span className="text-xs text-[#888780] font-poppins">No bookings scheduled today.</span>
+                  <span className="text-xs text-[#888780] font-poppins">No bookings scheduled in this range.</span>
                 )}
               </div>
             </div>

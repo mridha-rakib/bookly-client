@@ -11,9 +11,29 @@ beforeEach(() => { host = document.createElement("div"); document.body.append(ho
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 async function render(element: React.ReactNode) { await act(async () => root.render(element)); return host.textContent ?? ""; }
 describe("S6 truthful package presentation", () => {
+  it("catalogue readiness denial explains why purchase stays unavailable", async () => {
+    const text = await render(<OfferCard offer={{ ...offer, checkoutAvailable: false, checkoutUnavailableReason: "CONSENT_HTTP_DISABLED" }} detail />);
+    expect(text).toContain("Package purchases are not enabled in this application");
+    expect(host.querySelector<HTMLButtonElement>("button")?.disabled).toBe(true);
+  });
   it("C01–04: exact mixed service quantities, Group seat rule and finite validity", async () => {
     const text = await render(<OfferCard offer={offer} detail />);
-    for (const value of ["Restorative massage", "6 sessions", "4 sessions", "10 total sessions", "One credit = one participant / seat", "FINITE6", "€240.00"]) expect(text).toContain(value);
+    for (const value of ["Restorative massage", "6 sessions", "4 sessions", "10 total sessions", "One credit = one participant / seat", "6 calendar months from purchase", "€240.00"]) expect(text).toContain(value);
+  });
+  it("a server-available detail offers the real appointment entry instead of a disabled checkout", async () => {
+    const text = await render(<OfferCard offer={{ ...offer, checkoutAvailable: true }} detail />);
+    expect(text).not.toContain("Checkout unavailable");
+    expect(text).not.toContain("Consent and purchase unavailable");
+    expect(host.querySelector("a")?.getAttribute("href")).toBe(`/customer/package-consent/${offer.businessId}/${offer.id}`);
+    expect(host.querySelector("a")?.textContent).toBe("Choose initial appointments");
+  });
+  it("a failed package read offers an explicit retry without replacing it with an empty catalogue", async () => {
+    const retry = vi.fn();
+    await render(<PackageReadError error={new Error("offline")} onRetry={retry} />);
+    await act(async () => host.querySelector("button")!.click());
+    expect(retry).toHaveBeenCalledTimes(1);
+    await render(<PackageReadError error={new Error("offline")} onRetry={retry} retrying />);
+    expect(host.querySelector("button")?.disabled).toBe(true);
   });
   it("C02: FOREVER does not invent an expiry", async () => { expect(await render(<OfferCard offer={{ ...offer, validity: { mode: "FOREVER" } }} detail />)).toContain("No expiry"); });
   it("C05/C06: initial appointment required and checkout disabled", async () => {

@@ -5,6 +5,8 @@ import React from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import NotificationBell from "@/components/notifications/NotificationBell";
+import type { ClientTag } from "@/lib/api/clients";
+import ClientPagination from "./ClientPagination";
 
 interface Client {
   /** Real Client id — absent only for legacy mock rows that predate the backend integration. */
@@ -38,6 +40,15 @@ export interface ClientsListMetrics {
 }
 
 interface ClientsListProps {
+  search?: string;
+  onSearchChange?: (value: string) => void;
+  tagFilter?: ClientTag;
+  onTagChange?: (value: ClientTag | undefined) => void;
+  pagination?: { page: number; limit: number; total: number };
+  onPageChange?: (page: number) => void;
+  isLoading?: boolean;
+  loadError?: string;
+  onRetry?: () => void;
   clientsData: Client[];
   setClientsData: React.Dispatch<React.SetStateAction<Client[]>>;
   setIsAddingClient: (val: boolean) => void;
@@ -65,9 +76,13 @@ interface ClientsListProps {
   onEditClient?: (client: Client) => void;
   onDeleteClient?: (client: Client) => void;
   onArchivedClientsClick?: () => void;
+  onExport?: () => void;
+  isExporting?: boolean;
 }
 
 export default function ClientsList({
+  onExport, isExporting,
+  search, onSearchChange, tagFilter, onTagChange, pagination, onPageChange, isLoading, loadError, onRetry,
   clientsData,
   setClientsData,
   setIsAddingClient,
@@ -92,8 +107,12 @@ export default function ClientsList({
   onArchivedClientsClick
 }: ClientsListProps) {
   const [dropdownCoords, setDropdownCoords] = React.useState<{ top: number; left: number } | null>(null);
-  const [searchQuery, setSearchQuery] = React.useState("");
-  const [selectedTag, setSelectedTag] = React.useState("All Tags");
+  const [localSearch, setLocalSearch] = React.useState("");
+  const [localTag, setLocalTag] = React.useState("All Tags");
+  const searchQuery = search ?? localSearch;
+  const setSearchQuery = onSearchChange ?? setLocalSearch;
+  const selectedTag = onTagChange ? (tagFilter ?? "All Tags") : localTag;
+  const setSelectedTag = (value: string) => onTagChange ? onTagChange(value === "All Tags" ? undefined : value as ClientTag) : setLocalTag(value);
   const [selectedStaff, setSelectedStaff] = React.useState("All Staff");
   const [isTagDropdownOpen, setIsTagDropdownOpen] = React.useState(false);
   const [isStaffDropdownOpen, setIsStaffDropdownOpen] = React.useState(false);
@@ -109,7 +128,7 @@ export default function ClientsList({
     return staffListNames[charCodeSum % staffListNames.length];
   };
 
-  const filteredClients = clientsData.filter((client) => {
+  const filteredClients = pagination ? clientsData : clientsData.filter((client) => {
     const query = searchQuery.toLowerCase();
     const nameMatch = client.name.toLowerCase().includes(query);
     const phoneMatch = client.phone.toLowerCase().includes(query);
@@ -125,28 +144,6 @@ export default function ClientsList({
     return matchesSearch && matchesTag && matchesStaff;
   });
 
-  const handleExportCSV = () => {
-    const headers = ["Name", "Phone", "Joined", "Last Visit / Next", "Visits", "Spent", "Tags"];
-    const rows = filteredClients.map(c => [
-      c.name,
-      c.phone,
-      c.joined,
-      c.visitText ?? "",
-      (c.visits ?? "").toString(),
-      c.spent ?? "",
-      c.tag || ""
-    ]);
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + [headers.join(","), ...rows.map(e => e.map(val => `"${val.replace(/"/g, '""')}"`).join(","))].join("\n");
-      
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `clients_export_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] relative">
@@ -203,7 +200,9 @@ export default function ClientsList({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search name or phone..."
+                aria-label="Search clients"
+                maxLength={200}
+                placeholder="Search name, email or phone..."
                 className="w-full h-full pl-9 pr-4 bg-white border border-[#D3D1C7] rounded-lg text-xs font-poppins placeholder-neutral-400 focus:outline-none focus:border-neutral-800"
               />
             </div>
@@ -244,6 +243,7 @@ export default function ClientsList({
             {/* Dropdown 2: All staff */}
             <div className="relative">
               <button 
+                disabled={disableStaffFilter}
                 onClick={() => {
                   setIsStaffDropdownOpen(!isStaffDropdownOpen);
                   setIsTagDropdownOpen(false);
@@ -277,7 +277,8 @@ export default function ClientsList({
             {/* Dropdown 3: Export */}
             {!isStaffDashboard && (
               <button 
-                onClick={handleExportCSV}
+            onClick={onExport}
+            disabled={!onExport || isExporting || isLoading || Boolean(loadError)}
                 className="h-9 px-3 border border-[#111111] rounded-lg flex items-center justify-between bg-white text-xs font-semibold text-[#111111] gap-2 cursor-pointer hover:bg-neutral-50"
               >
                 <span>Export</span>
@@ -323,7 +324,10 @@ export default function ClientsList({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E8E8E6] font-poppins text-xs">
-                {filteredClients.map((client, idx) => (
+                {loadError ? <tr><td colSpan={7} className="p-8 text-center text-rose-700" role="alert">{loadError} <button type="button" onClick={onRetry} className="underline">Retry</button></td></tr>
+                  : isLoading ? <tr><td colSpan={7} className="p-8 text-center" role="status">Loading clients…</td></tr>
+                  : !filteredClients.length ? <tr><td colSpan={7} className="p-8 text-center">No clients match these filters.</td></tr>
+                  : filteredClients.map((client, idx) => (
                   <tr key={idx} className="hover:bg-neutral-50/50 transition-colors">
                     {/* Client details */}
                     <td className="px-5 py-3.5 flex items-center gap-3">
@@ -524,6 +528,7 @@ export default function ClientsList({
             </table>
           </div>
         </div>
+        {pagination && onPageChange && <ClientPagination label="Clients pagination" pagination={pagination} onChange={onPageChange} busy={isLoading} />}
       </div>
     </main>
   );

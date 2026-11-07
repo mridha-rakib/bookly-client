@@ -5,6 +5,7 @@ import SuperAdminFinanceBanner from "./SuperAdminFinanceBanner";
 import SuperAdminFinanceStats from "./SuperAdminFinanceStats";
 import SuperAdminFinancePending from "./SuperAdminFinancePending";
 import SuperAdminFinanceLog from "./SuperAdminFinanceLog";
+import SuperAdminWithdrawals from "./SuperAdminWithdrawals";
 import { useSuperAdminPlatformSummaryQuery } from "@/lib/superAdminFinance/hooks";
 import { usePromoDiscountedMoneyQuery } from "@/lib/promo/hooks";
 
@@ -19,6 +20,7 @@ export default function SuperAdminFinance({
   setSharedViewingBusinessId,
   setSharedViewingBusinessTab
 }: SuperAdminFinanceProps) {
+  const [view, setView] = useState<"Overview" | "Withdrawals">("Overview");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [appliedFromDate, setAppliedFromDate] = useState("");
@@ -77,8 +79,42 @@ export default function SuperAdminFinance({
   const summaryQuery = useSuperAdminPlatformSummaryQuery(period);
   const discountedMoneyQuery = usePromoDiscountedMoneyQuery(period);
 
+  const viewSwitch = (
+    <div role="tablist" aria-label="Finance sections" className="flex gap-2">
+      {(["Overview", "Withdrawals"] as const).map((name) => (
+        <button
+          key={name}
+          type="button"
+          role="tab"
+          aria-selected={view === name}
+          onClick={() => setView(name)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+            view === name
+              ? "bg-[#111111] text-white"
+              : "border border-[#111111] text-[#111111] bg-white hover:bg-gray-50"
+          }`}
+        >
+          {name}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (view === "Withdrawals") {
+    return (
+      <div className="flex flex-col gap-6 w-full pb-12 font-sans">
+        <div className="flex flex-col gap-3 border-b border-gray-100 pb-4">
+          <h2 className="font-semibold text-2xl text-[#111827] leading-[32px]">Finance</h2>
+          {viewSwitch}
+        </div>
+        <SuperAdminWithdrawals />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6 w-full pb-12 font-sans">
+      {viewSwitch}
       {/* Title & Top Filter Row */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 w-full border-b border-gray-100 pb-4">
         <div className="flex flex-col gap-1">

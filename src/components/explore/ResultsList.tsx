@@ -134,6 +134,7 @@ export default function ResultsList({
           {/* Sort selector row */}
           <div className="flex justify-start">
             <select
+              aria-label="Sort businesses"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
               className="border border-[#111111]/15 rounded-xl px-3.5 h-[38px] bg-white text-xs font-semibold outline-none cursor-pointer hover:border-black transition-colors"
@@ -194,6 +195,7 @@ export default function ResultsList({
           <div className="flex items-center justify-center gap-2 mt-8 py-4">
             <button
               onClick={() => onPageChange(Math.max(1, page - 1))}
+              aria-label="Previous page"
               disabled={page <= 1}
               className="w-8 h-8 rounded-full border border-neutral-200 flex items-center justify-center text-gray-400 hover:text-black hover:border-black transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-400 disabled:hover:border-neutral-200"
             >
@@ -204,6 +206,7 @@ export default function ResultsList({
             </span>
             <button
               onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+              aria-label="Next page"
               disabled={page >= totalPages}
               className="w-8 h-8 rounded-full border border-neutral-200 flex items-center justify-center text-gray-400 hover:text-black hover:border-black transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-400 disabled:hover:border-neutral-200"
             >

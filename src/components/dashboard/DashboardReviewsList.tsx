@@ -28,6 +28,7 @@ export default function DashboardReviewsList() {
   const reviews = reviewsQuery.data?.reviews ?? [];
   const total = reviewsQuery.data?.pagination.total ?? 0;
   const isLoading = businessIsLoading || summaryQuery.isLoading || reviewsQuery.isLoading;
+  const failed = summaryQuery.isError || reviewsQuery.isError;
 
   if (!businessIsLoading && !businessId) {
     return (
@@ -90,12 +91,13 @@ export default function DashboardReviewsList() {
             {isLoading && (
               <div className="w-full text-center text-sm text-[#5F5E5A] py-10">Loading reviews...</div>
             )}
-            {!isLoading && reviews.length === 0 && (
+            {failed && <p role="alert" className="p-6 text-sm text-red-700">Could not load reviews. <button className="underline" onClick={() => { void summaryQuery.refetch(); void reviewsQuery.refetch(); }}>Retry</button></p>}
+            {!isLoading && !failed && reviews.length === 0 && (
               <div className="w-full text-center text-sm text-[#5F5E5A] py-10">
                 No reviews yet — reviews from completed bookings will appear here.
               </div>
             )}
-            {!isLoading &&
+            {!isLoading && !failed &&
               reviews.map((review, index) => (
                 <div key={review.id} className="w-full flex flex-col gap-3">
                   {/* Client Profile details */}

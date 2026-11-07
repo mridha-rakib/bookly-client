@@ -19,6 +19,12 @@ import {
 import { toUserMessage } from "@/lib/auth/messages";
 import { getAuthenticatedHomePath } from "@/lib/auth/routes";
 
+// The address bar is scrubbed after the first capture, but the auth-boundary remount (Providers'
+// cacheEpoch key, bumped when the initial session restore settles) re-runs the lazy initializer
+// against the scrubbed URL. Keep the captured token for this page lifetime only (memory, not
+// storage) so a logged-out invitee is not shown "Missing invitation link".
+let capturedInvitationToken = "";
+
 const roleLabel = (role: "SUPERVISOR" | "STAFF") =>
   role === "SUPERVISOR" ? "Supervisor" : "Staff member";
 
@@ -28,7 +34,11 @@ function AcceptInvitationContent() {
 
   // Capture the token ONCE (lazy initial state), then scrub it from the address bar so it
   // doesn't linger in history / referrers. The query hook keeps working off the captured value.
-  const [token] = useState(() => searchParams.get("token") ?? "");
+  const [token] = useState(() => {
+    const fromUrl = searchParams.get("token");
+    if (fromUrl) capturedInvitationToken = fromUrl;
+    return fromUrl ?? capturedInvitationToken;
+  });
 
   useEffect(() => {
     if (token && typeof window !== "undefined" && window.location.search.includes("token=")) {

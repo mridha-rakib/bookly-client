@@ -14,7 +14,7 @@ import type {
   AvailabilityResult,
   AvailabilitySlot,
 } from "@/lib/api/catalog";
-import { formatBookingTime } from "@/lib/bookings/format";
+import { formatBookingDate, formatBookingTime } from "@/lib/bookings/format";
 
 interface TimeStepProps {
   timezone: string;
@@ -29,6 +29,7 @@ interface TimeStepProps {
   onSelectDate: (dateIso: string) => void;
   selectedSlot?: AvailabilitySlot;
   onSelectSlot: (slot: AvailabilitySlot) => void;
+  context?: React.ReactNode;
 }
 
 const toDateIso = (date: Date) =>
@@ -56,8 +57,13 @@ export default function TimeStep({
   onSelectDate,
   selectedSlot,
   onSelectSlot,
+  context,
 }: TimeStepProps) {
-  const todayIso = toDateIso(new Date());
+  const todayParts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const todayPart = (type: string) => todayParts.find((part) => part.type === type)?.value;
+  const todayIso = `${todayPart("year")}-${todayPart("month")}-${todayPart("day")}`;
 
   const weeks = useMemo(() => {
     const year = visibleMonth.getFullYear();
@@ -110,10 +116,10 @@ export default function TimeStep({
           key={slot.startAt}
           disabled
           aria-label={`${timeLabel}, Booked`}
-          className="flex cursor-not-allowed flex-col items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 py-2 text-neutral-400"
+          className="flex cursor-not-allowed flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-neutral-100 py-2 text-[#5F5E5A] line-through decoration-neutral-400"
         >
           <span className="text-sm font-semibold">{timeLabel}</span>
-          <span className="text-[10px] font-medium uppercase tracking-wide">Booked</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wide no-underline">Booked</span>
         </button>
       );
     }
@@ -138,6 +144,8 @@ export default function TimeStep({
   return (
     <div className="flex w-full max-w-[714px] min-w-0 flex-col">
       <h1 className="text-2xl font-semibold text-[#1C1B1C] sm:text-3xl md:text-4xl">Select Time</h1>
+      <p className="mt-2 text-sm text-[#45474B]">All dates and times are shown in the business timezone ({timezone}).</p>
+      {context && <div className="mt-4">{context}</div>}
 
       {/* Date Picker Section */}
       <div className="mt-6 w-full rounded-2xl border border-[#EBEAE6] bg-white p-3 shadow-sm sm:mt-10 sm:p-4 md:p-6 lg:mt-[60px]">
@@ -194,7 +202,7 @@ export default function TimeStep({
             ["S", "SAT"],
             ["S", "SUN"],
           ].map(([shortDay, fullDay], index) => (
-            <span key={`${fullDay}-${index}`} className="py-1 font-poppins text-[10px] font-semibold uppercase tracking-wide text-[#8C8A85] sm:text-xs sm:tracking-widest">
+            <span key={`${fullDay}-${index}`} className="py-1 font-poppins text-[11px] font-semibold uppercase tracking-wide text-[#5F5E5A] sm:text-xs sm:tracking-widest">
               <span className="sm:hidden">{shortDay}</span>
               <span className="hidden sm:inline">{fullDay}</span>
             </span>
@@ -223,7 +231,7 @@ export default function TimeStep({
                     : isToday
                       ? "bg-[#D1D1D1] border-neutral-300 text-black hover:bg-neutral-200"
                       : isPast || !isBookable
-                        ? "cursor-not-allowed border-transparent bg-transparent text-neutral-300"
+                        ? "cursor-not-allowed border-transparent bg-transparent text-neutral-400"
                         : "cursor-pointer border-transparent bg-transparent text-[#0A0D14] hover:bg-neutral-50"
                 }`}
               >
@@ -243,32 +251,32 @@ export default function TimeStep({
           <h3 className="font-poppins text-xl font-semibold text-[#111111] sm:text-[22px]">
             Select Time Slot
           </h3>
-          <p className="mt-2 text-sm text-[#5F5E5A]" aria-live="polite">
+          <p className={`mt-2 text-sm ${selectedSlot ? "inline-flex rounded-lg bg-[#E1F5EE] px-3 py-2 font-semibold text-[#245C4A]" : "text-[#45474B]"}`} aria-live="polite">
             {selectedSlot
-              ? `Selected: ${formatBookingTime(selectedSlot.startAt, timezone)}`
+              ? `Selected: ${formatBookingDate(selectedSlot.startAt, timezone)} at ${formatBookingTime(selectedSlot.startAt, timezone)}`
               : "Select a time slot to continue."}
           </p>
         </div>
 
         {isLoading ? (
-          <p className="text-sm text-neutral-500">Loading availability…</p>
+          <p className="text-sm text-[#45474B]">Loading availability…</p>
         ) : isError ? (
-          <p className="text-sm text-neutral-500">Availability must load before you can choose a time.</p>
+          <p className="text-sm text-[#45474B]">Availability must load before you can choose a time.</p>
         ) : availability && !hasBookableDates ? (
-          <p className="text-sm text-neutral-500">Choose another month to see available times.</p>
+          <p className="text-sm text-[#45474B]">Choose another month to see available times.</p>
         ) : !selectedDateIso ? (
-          <p className="text-sm text-neutral-500">Pick a date above to see available times.</p>
+          <p className="text-sm text-[#45474B]">Pick a date above to see available times.</p>
         ) :
           (selectedDay?.slots.length ?? 0) === 0 &&
           (selectedDay?.blockedSlots?.length ?? 0) > 0 ? (
-          <p className="text-sm text-neutral-500">This date is fully booked. Try another day.</p>
+          <p className="text-sm text-[#45474B]">This date is fully booked. Try another day.</p>
         ) : (selectedDay?.slots.length ?? 0) === 0 ? (
-          <p className="text-sm text-neutral-500">No times are available on this date. Try another day.</p>
+          <p className="text-sm text-[#45474B]">No times are available on this date. Try another day.</p>
         ) : (
           <div className="flex flex-col gap-7 w-full">
             {morningSlots.length > 0 && (
               <div className="flex flex-col gap-4 w-full">
-                <div className="flex items-center gap-2 text-sm font-bold text-neutral-400 font-poppins uppercase tracking-widest">
+                <div className="flex items-center gap-2 text-sm font-bold text-[#5F5E5A] font-poppins uppercase tracking-widest">
                   <HugeiconsIcon icon={Clock04Icon} size={18} />
                   <span>Morning</span>
                 </div>
@@ -280,7 +288,7 @@ export default function TimeStep({
 
             {afternoonSlots.length > 0 && (
               <div className="flex flex-col gap-4 w-full">
-                <div className="flex items-center gap-2 text-sm font-bold text-neutral-400 font-poppins uppercase tracking-widest">
+                <div className="flex items-center gap-2 text-sm font-bold text-[#5F5E5A] font-poppins uppercase tracking-widest">
                   <HugeiconsIcon icon={Clock04Icon} size={18} />
                   <span>Afternoon</span>
                 </div>

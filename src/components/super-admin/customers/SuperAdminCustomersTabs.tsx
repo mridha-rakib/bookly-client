@@ -15,6 +15,7 @@ const TAB_LABELS: Record<StatusFilter, string> = {
   ACTIVE: "Active",
   DORMANT: "Dormant",
   SUSPENDED: "Suspended",
+  DELETED: "Deleted",
 };
 
 export default function SuperAdminCustomersTabs({

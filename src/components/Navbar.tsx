@@ -6,27 +6,21 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  Car04Icon,
-  User02Icon,
-  File01Icon,
-  FavouriteIcon,
-  CreditCardPosIcon,
-  Clock01Icon,
   Home01Icon,
   HeadsetIcon,
-  Ticket01Icon,
-  GiftCardIcon,
   ProfileIcon,
   Logout01Icon,
   ArrowDown01Icon,
-  ArrowRight02Icon,
-  Setting07Icon
+  ArrowRight02Icon
 } from "@hugeicons/core-free-icons";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
 import { useCurrentUserQuery } from "@/lib/auth/hooks";
+import AccountNavigation from "@/components/auth/AccountNavigation";
+import { getAuthenticatedUserHomePath } from "@/lib/auth/routes";
 import { useAuthStore } from "@/lib/auth/store";
 
 interface NavbarProps {
+  /** Legacy caller props retained for compatibility. Session state owns identity and logout. */
   isLoggedIn: boolean;
   setIsLoggedIn: (val: boolean) => void;
   selectedLanguage: string;
@@ -35,8 +29,6 @@ interface NavbarProps {
 }
 
 export default function Navbar({
-  isLoggedIn,
-  setIsLoggedIn,
   selectedLanguage,
   setSelectedLanguage,
   isBusinessPage = false
@@ -70,8 +62,16 @@ export default function Navbar({
   // always show one server-persisted image with no per-surface state. Gated on the auth store
   // status so GET /auth/me is never fired for an anonymous visitor on a public page.
   const authStatus = useAuthStore((state) => state.status);
-  const meQuery = useCurrentUserQuery({ enabled: authStatus === "authenticated" });
-  const avatar = meQuery.data?.profile?.avatarUrl || "/img/authImg.png";
+  const user = useAuthStore((state) => state.user);
+  const isInitializing = useAuthStore((state) => state.isInitializing);
+  const logout = useAuthStore((state) => state.logout);
+  const isLoggedIn = authStatus === "authenticated" && !isInitializing && !!user;
+  const accountHref = user ? getAuthenticatedUserHomePath(user) : "/select-role";
+  const businessCtaHref = isLoggedIn && user.role !== "CUSTOMER" ? accountHref : isBusinessPage ? "/" : "/list-your-business";
+  const businessCtaLabel = isLoggedIn && user.role !== "CUSTOMER" ? "Dashboard" : isBusinessPage ? "Marketplace" : "List your business";
+  const setIsLoggedIn = (value: boolean) => { if (!value) void logout(); };
+  const meQuery = useCurrentUserQuery({ enabled: isLoggedIn });
+  const avatar = (isLoggedIn && meQuery.data?.user.id === user?.id ? meQuery.data?.profile?.avatarUrl : undefined) || "/img/authImg.png";
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent | TouchEvent) {
@@ -138,10 +138,10 @@ export default function Navbar({
 
               {/* List your business button */}
               <button
-                onClick={() => router.push(isBusinessPage ? "/business-dashboard" : "/list-your-business")}
+                onClick={() => router.push(businessCtaHref)}
                 className="bg-[#1C1B1C] hover:bg-black text-[#F9FAFB] px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 cursor-pointer active:scale-95 whitespace-nowrap"
               >
-                {isBusinessPage ? "Marketplace" : "List your business"}
+                {businessCtaLabel}
               </button>
 
               {/* Language Selector */}
@@ -178,10 +178,10 @@ export default function Navbar({
             <>
               {/* List your business button */}
               <button
-                onClick={() => router.push(isBusinessPage ? "/business-dashboard" : "/list-your-business")}
+                onClick={() => router.push(businessCtaHref)}
                 className="bg-[#1C1B1C] hover:bg-black text-[#F9FAFB] px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 cursor-pointer active:scale-95 whitespace-nowrap"
               >
-                {isBusinessPage ? "Marketplace" : "List your business"}
+                {businessCtaLabel}
               </button>
 
               {/* Logged in user avatar and dropdown toggle */}
@@ -230,108 +230,7 @@ export default function Navbar({
 
                     <div className="border-t border-[#ACAAB4] w-full"></div>
 
-                    {/* 2. Profile */}
-                    <Link
-                      href="/customer/profile"
-                      className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        router.push("/customer/profile");
-                        setTimeout(() => {
-                          setShowUserDropdown(false);
-                        }, 100);
-                      }}
-                    >
-                      <HugeiconsIcon icon={User02Icon} className="w-5 h-5 text-[#141B34]" />
-                      <span className="font-medium text-base text-[#1C1B1C]">Profile</span>
-                    </Link>
-
-                    <div className="border-t border-[#ACAAB4] w-full"></div>
-
-                    {/* 3. My Bookings */}
-                    <button
-                      className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
-                      onClick={() => {
-                        setShowUserDropdown(false);
-                        router.push("/customer/bookings");
-                      }}
-                    >
-                      <HugeiconsIcon icon={File01Icon} className="w-[18px] h-[18px] text-[#0C0C0C]" />
-                      <span className="font-medium text-base text-[#1C1B1C]">My Bookings</span>
-                    </button>
-
-                    <div className="border-t border-[#ACAAB4] w-full"></div>
-
-                    {/* 3b. My Packages */}
-                    <button
-                      className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
-                      onClick={() => {
-                        setShowUserDropdown(false);
-                        router.push("/customer/bookings?view=packages");
-                      }}
-                    >
-                      <HugeiconsIcon icon={GiftCardIcon} className="w-[18px] h-[18px] text-[#0C0C0C]" />
-                      <span className="font-medium text-base text-[#1C1B1C]">My Packages</span>
-                    </button>
-
-                    <div className="border-t border-[#ACAAB4] w-full"></div>
-
-                    {/* 4. Favorites */}
-                    <button
-                      className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
-                      onClick={() => {
-                        setShowUserDropdown(false);
-                        router.push("/customer/favorites");
-                      }}
-                    >
-                      <HugeiconsIcon icon={FavouriteIcon} className="w-5 h-5 text-[#141B34]" />
-                      <span className="font-medium text-base text-[#1C1B1C]">Favorites</span>
-                    </button>
-
-                    <div className="border-t border-[#ACAAB4] w-full"></div>
-
-                    {/* 5. Payment card */}
-                    <button
-                      className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
-                      onClick={() => {
-                        setShowUserDropdown(false);
-                        router.push("/customer/payment-card");
-                      }}
-                    >
-                      <HugeiconsIcon icon={CreditCardPosIcon} className="w-[18px] h-[18px] text-[#111111]" />
-                      <span className="font-medium text-base text-[#1C1B1C]">Payment card</span>
-                    </button>
-
-                    <div className="border-t border-[#ACAAB4] w-full"></div>
-
-                    {/* 6. Book again */}
-                    <button
-                      className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
-                      onClick={() => {
-                        setShowUserDropdown(false);
-                        router.push("/customer/book-again");
-                      }}
-                    >
-                      <HugeiconsIcon icon={Clock01Icon} className="w-[18px] h-[18px] text-[#111111]" />
-                      <span className="font-medium text-base text-[#1C1B1C]">Book again</span>
-                    </button>
-
-                    <div className="border-t border-[#ACAAB4] w-full"></div>
-
-                    {/* 7. Setting */}
-                    <button
-                      className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
-                      onClick={() => {
-                        setShowUserDropdown(false);
-                        router.push("/customer/settings");
-                      }}
-                    >
-
-                      <HugeiconsIcon icon={Setting07Icon} className="w-[18px] h-[18px] text-[#111111]" />
-                      <span className="font-medium text-base text-[#1C1B1C]">Setting</span>
-                    </button>
-
-                    <div className="border-t border-[#ACAAB4] w-full"></div>
+                    {user && <AccountNavigation role={user.role} onNavigate={() => setShowUserDropdown(false)} />}
 
                     {/* 8. Add to Home Screen */}
                     <button 
@@ -343,20 +242,6 @@ export default function Navbar({
                     >
                       <HugeiconsIcon icon={Home01Icon} className="w-5 h-5 text-[#141B34]" />
                       <span className="font-medium text-base text-[#1C1B1C]">Add to Home Screen</span>
-                    </button>
-
-                    <div className="border-t border-[#ACAAB4] w-full"></div>
-
-                    {/* 9. My Tickets */}
-                    <button
-                      className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
-                      onClick={() => {
-                        setShowUserDropdown(false);
-                        router.push("/customer/tickets");
-                      }}
-                    >
-                      <HugeiconsIcon icon={Ticket01Icon} className="w-5 h-5 text-[#141B34]" />
-                      <span className="font-medium text-base text-[#1C1B1C]">My Tickets</span>
                     </button>
 
                     <div className="border-t border-[#ACAAB4] w-full"></div>
@@ -379,14 +264,14 @@ export default function Navbar({
                     <button
                       onClick={() => {
                         setShowUserDropdown(false);
-                        router.push(isBusinessPage ? "/business-dashboard" : "/list-your-business");
+                        router.push(businessCtaHref);
                       }}
                       className="flex items-between justify-between cursor-pointer w-full hover:opacity-85"
                     >
                       <div className="flex items-center gap-3">
                         <HugeiconsIcon icon={ProfileIcon} className="w-[18px] h-[18px] text-[#141B34]" />
                         <span className="font-medium text-base text-[#1C1B1C]">
-                          {isBusinessPage ? "Marketplace" : "List your Business"}
+                          {businessCtaLabel}
                         </span>
                       </div>
                       <HugeiconsIcon icon={ArrowRight02Icon} className="w-6 h-6 text-[#111111]" />
@@ -518,17 +403,17 @@ export default function Navbar({
                 <button
                   onClick={() => {
                     setShowMobileMenu(false);
-                    router.push(isBusinessPage ? "/business-dashboard" : "/list-your-business");
+                    router.push(businessCtaHref);
                   }}
                   className="w-full text-center bg-[#1C1B1C] hover:bg-black text-[#F9FAFB] py-2.5 text-sm font-medium rounded-full transition-all duration-200 cursor-pointer"
                 >
-                  {isBusinessPage ? "Marketplace" : "List your business"}
+                  {businessCtaLabel}
                 </button>
               </>
             ) : (
               <>
                 <Link
-                  href="/customer/profile"
+                  href={accountHref}
                   className="flex items-center gap-3 py-2 border-b border-neutral-100 cursor-pointer hover:opacity-80 transition-opacity"
                   onClick={(e) => {
                     e.preventDefault();
@@ -540,7 +425,7 @@ export default function Navbar({
                 >
                   <Image src={avatar} alt="User Avatar" className="w-10 h-10 rounded-full object-cover border border-[#ACAAB4]/40" width={40} height={40} />
                   <div>
-                    <div className="font-semibold text-sm text-[#1C1B1C]">Logged In User (Profile)</div>
+                    <div className="font-semibold text-sm text-[#1C1B1C]">{user?.email}</div>
                     <div className="text-xs text-[#757575]">{selectedLanguage}</div>
                   </div>
                 </Link>
@@ -610,101 +495,7 @@ export default function Navbar({
 
           <div className="border-t border-[#ACAAB4] w-full"></div>
 
-          {/* 2. Profile */}
-          <Link
-            href="/customer/profile"
-            onClick={(e) => {
-              e.preventDefault();
-              router.push("/customer/profile");
-              setTimeout(() => {
-                setShowUserDropdown(false);
-              }, 100);
-            }}
-            className="flex items-center gap-3 w-full hover:opacity-85"
-          >
-            <HugeiconsIcon icon={User02Icon} className="w-5 h-5 text-[#141B34]" />
-            <span className="font-medium text-base text-[#1C1B1C]">Profile</span>
-          </Link>
-
-          <div className="border-t border-[#ACAAB4] w-full"></div>
-
-          {/* 3. My Bookings */}
-          <button
-            className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
-            onClick={() => {
-              setShowUserDropdown(false);
-              router.push("/customer/bookings");
-            }}
-          >
-            <HugeiconsIcon icon={File01Icon} className="w-[18px] h-[18px] text-[#0C0C0C]" />
-            <span className="font-medium text-base text-[#1C1B1C]">My Bookings</span>
-          </button>
-
-          <div className="border-t border-[#ACAAB4] w-full"></div>
-
-          {/* 3b. My Packages */}
-          <button
-            className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
-            onClick={() => {
-              setShowUserDropdown(false);
-              router.push("/customer/bookings?view=packages");
-            }}
-          >
-            <HugeiconsIcon icon={GiftCardIcon} className="w-[18px] h-[18px] text-[#0C0C0C]" />
-            <span className="font-medium text-base text-[#1C1B1C]">My Packages</span>
-          </button>
-
-          <div className="border-t border-[#ACAAB4] w-full"></div>
-
-          {/* 4. Favorites */}
-          <button
-            className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
-            onClick={() => {
-              setShowUserDropdown(false);
-              router.push("/customer/favorites");
-            }}
-          >
-            <HugeiconsIcon icon={FavouriteIcon} className="w-5 h-5 text-[#141B34]" />
-            <span className="font-medium text-base text-[#1C1B1C]">Favorites</span>
-          </button>
-
-          <div className="border-t border-[#ACAAB4] w-full"></div>
-
-          {/* 5. Payment card */}
-          <button className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85" onClick={() => setShowUserDropdown(false)}>
-            <HugeiconsIcon icon={CreditCardPosIcon} className="w-[18px] h-[18px] text-[#111111]" />
-            <span className="font-medium text-base text-[#1C1B1C]">Payment card</span>
-          </button>
-
-          <div className="border-t border-[#ACAAB4] w-full"></div>
-
-          {/* 6. Book again */}
-          <button
-            className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
-            onClick={() => {
-              setShowUserDropdown(false);
-              router.push("/customer/book-again");
-            }}
-          >
-            <HugeiconsIcon icon={Clock01Icon} className="w-[18px] h-[18px] text-[#111111]" />
-            <span className="font-medium text-base text-[#1C1B1C]">Book again</span>
-          </button>
-
-          <div className="border-t border-[#ACAAB4] w-full"></div>
-
-          {/* 7. Setting */}
-          <button
-            className="flex items-center gap-3 cursor-pointer text-left w-full hover:opacity-85"
-            onClick={() => {
-              setShowUserDropdown(false);
-              router.push("/customer/settings");
-            }}
-          >
-            <HugeiconsIcon icon={Clock01Icon} className="w-[18px] h-[18px] text-[#111111]" />
-            <span className="font-medium text-base text-[#1C1B1C]">Setting</span>
-          </button>
-
-          <div className="border-t border-[#ACAAB4] w-full"></div>
+          {user && <AccountNavigation role={user.role} onNavigate={() => setShowUserDropdown(false)} />}
 
           {/* 8. Add to Home Screen */}
           <button 
@@ -738,14 +529,14 @@ export default function Navbar({
           <button
             onClick={() => {
               setShowUserDropdown(false);
-              router.push(isBusinessPage ? "/business-dashboard" : "/list-your-business");
+              router.push(businessCtaHref);
             }}
             className="flex items-center justify-between cursor-pointer w-full hover:opacity-85"
           >
             <div className="flex items-center gap-3">
               <HugeiconsIcon icon={ProfileIcon} className="w-[18px] h-[18px] text-[#141B34]" />
               <span className="font-medium text-base text-[#1C1B1C]">
-                {isBusinessPage ? "Marketplace" : "List your Business"}
+                {businessCtaLabel}
               </span>
             </div>
             <HugeiconsIcon icon={ArrowRight02Icon} className="w-6 h-6 text-[#111111]" />

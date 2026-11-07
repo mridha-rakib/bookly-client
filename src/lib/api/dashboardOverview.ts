@@ -12,6 +12,7 @@ export type DashboardOverviewScope = "FULL" | "STAFF_SCOPED";
 export type DashboardOverviewLeadType = "NEW_CUSTOMER" | "RETURNING" | "MANUAL";
 
 export interface DashboardOverviewScheduleRow {
+  date?: string;
   bookingId: string;
   bookingReference: string;
   time: string;
@@ -27,6 +28,7 @@ export interface DashboardOverviewScheduleRow {
 }
 
 export interface DashboardOverviewTimelineEntry {
+  date?: string;
   bookingId: string;
   time: string;
   customerName: string;
@@ -65,6 +67,7 @@ export interface DashboardOverviewFinancials {
 }
 
 export interface DashboardOverview {
+  period?: { fromDate: string; toDate: string; timezone: string; scheduleLimit: number };
   scope: DashboardOverviewScope;
   currency: "EUR";
   todayDateStr: string;
@@ -75,10 +78,12 @@ export interface DashboardOverview {
   financials: DashboardOverviewFinancials | null;
 }
 
+export type OverviewRange = { range: "Today" | "7D" | "30D" | "Custom"; fromDate?: string; toDate?: string };
 export const dashboardOverviewApi = {
-  get: (businessId: string) =>
+  get: (businessId: string, range?: OverviewRange) =>
     apiRequest<DashboardOverview>({
       method: "GET",
       url: `/businesses/${businessId}/dashboard/overview`,
+      params: range,
     }),
 };

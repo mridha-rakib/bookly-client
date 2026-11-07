@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
+import type { PackageOffer } from "./package-views";
 
 export type ConsentOffer = {
   businessId: string;
@@ -9,6 +10,7 @@ export type ConsentOffer = {
   fulfilmentMode?: "AT_BUSINESS_LOCATION" | "TRAVEL_TO_CUSTOMER";
   bundlePriceCents?: number;
   checkoutAvailable?: boolean;
+  checkoutUnavailableReason?: PackageOffer["checkoutUnavailableReason"];
   items: {
     definitionItemId: string;
     serviceId: string;
@@ -55,6 +57,22 @@ export interface RetainedPurchaseQuote {
   certification: "UNRESOLVED" | "CERTIFIED"; purchaseAvailable: boolean; name: string;
   financials: { currency: "EUR"; bundlePriceCents: number; addonsCents: number; travelCents: number;
     normalTotalCents: number; requiredUpfrontCents: number; manualVenueDuesCents: number; classification: "FIRST" | "RETURNING" };
+  /** Informational VAT on the upfront payment (Stripe Tax); never part of the signed terms or the charge.
+   * Absent on an older API response; UNAVAILABLE when it could not be calculated. Neither means zero. */
+  tax?: { status: "CALCULATED"; taxMode: "PRE_ACTIVATION"; currency: "EUR"; preTaxChargeCents: number; taxCents: number }
+    | { status: "UNAVAILABLE"; taxMode: "PRE_ACTIVATION" };
+  /** Original selections read back from the retained quote. Absent on an older API response. */
+  items?: Array<{ serviceId: string; name: string; quantity: number }>;
+  appointments?: RetainedQuoteAppointment[];
+}
+export interface RetainedQuoteAppointment {
+  selectionId: string; definitionItemId?: string; serviceId: string; serviceName?: string; staffMembershipId: string;
+  startAt: string; endAt: string; durationMin?: number;
+  addons?: Array<{ id: string; name: string; priceCents: number }>;
+  location?: { mode: "AT_BUSINESS_LOCATION" | "TRAVEL_TO_CUSTOMER"; address: Partial<Record<
+    "city" | "area" | "streetName" | "streetNumber" | "floorUnit" | "aptRoom" | "propertyType" | "additionalDirections", string>> };
+  travelFeeCents?: number;
+  financials?: { includedBaseCents: number; addonsCents: number; travelCents: number; upfrontCents: number; manualVenueDuesCents: number };
 }
 export type ConsentAccepted = {
   certification?: "UNRESOLVED" | "CERTIFIED";

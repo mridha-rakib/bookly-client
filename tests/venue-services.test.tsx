@@ -21,6 +21,13 @@ async function render(props: React.ComponentProps<typeof Fixture> = {}) { await 
 async function click(label: string) { await act(async () => { const button = [...host.querySelectorAll("button")].find((b) => b.textContent === label); if (!button) throw Error(`Missing ${label}`); button.click(); }); }
 const names = () => [...host.querySelectorAll("h4")].map((n) => n.textContent);
 describe("Venue Services unified discovery", () => {
+  it("a failed Package tab read can be retried without changing the selected filter", async () => {
+    const retry = vi.fn(), changeFilter = vi.fn();
+    await act(async () => root.render(<VenueServices services={[]} subcategories={[]} selectedFilter="Packages" onSelectFilter={changeFilter} serviceLoading={false} serviceError={false} packages={[]} packageLoading={false} packageError={Error("offline")} isCustomer onRetryPackages={retry} renderService={() => null} />));
+    await click("Retry multi-service packages");
+    expect(retry).toHaveBeenCalledTimes(1); expect(changeFilter).not.toHaveBeenCalled();
+    expect(host.textContent).not.toContain("no bookable offerings");
+  });
   it("V1-01/02: original filters come first, with no independent package heading", async () => {
     await render(); expect(host.querySelector("#services")?.firstElementChild?.getAttribute("aria-label")).toBe("Service filters");
     expect(host.querySelector("h2,h3")).toBeNull();
@@ -51,7 +58,7 @@ describe("Venue Services unified discovery", () => {
   });
   it("V1-12/13/14/17: compact package uses bundle price, exact rows, Group rule and detail-only action", async () => {
     await render(); await click("Packages"); const card = host.querySelector('[data-offering-kind="first-class"]')!;
-    for (const text of ["€240.00", "Package bundle total", "6 sessions", "4 sessions", "10 total sessions", "Fixed", "one credit = one participant / seat", "FINITE6", "Checkout unavailable"]) expect(card.textContent).toContain(text);
+    for (const text of ["€240.00", "Package bundle total", "6 sessions", "4 sessions", "10 total sessions", "Fixed", "one credit = one participant / seat", "6 calendar months from purchase", "Checkout unavailable"]) expect(card.textContent).toContain(text);
     expect(card.querySelector("a")?.getAttribute("href")).toBe(`/customer/package-consent/${venuePackages[0].businessId}/${venuePackages[0].id}`);
     expect(card.querySelector("button")).toBeNull(); expect(card.querySelector(".line-through")).toBeNull();
   });

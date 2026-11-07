@@ -22,6 +22,7 @@ import {
 import PackageActionControls from "@/components/packages/PackageActionControls";
 import LegacyPackageRecovery from "@/components/packages/LegacyPackageRecovery";
 import RedeemSessionModal from "../RedeemSessionModal";
+import { LegacyRedemptionConfirmation } from "@/components/packages/LegacyRedemptionConfirmation";
 import { OwnedFirstClassDetail } from "@/components/packages/FirstClassPackageIntegration";
 
 
@@ -46,6 +47,7 @@ function PackageDetailContent() {
   const logout = useAuthStore((state) => state.logout);
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
   const [isScheduling, setIsScheduling] = useState(false);
+  const [bookedSessionId, setBookedSessionId] = useState<string>();
 
   const detailQuery = usePackageDetailQuery(packageProgressId);
   const pkg = detailQuery.data;
@@ -300,8 +302,12 @@ function PackageDetailContent() {
           nextSessionIndex={pkg.totalSessions - pkg.remainingSessions + 1}
           totalSessions={pkg.totalSessions}
           onClose={() => setIsScheduling(false)}
-          onBooked={() => setIsScheduling(false)}
+          onBooked={(bookingId) => { setIsScheduling(false); setBookedSessionId(bookingId); }}
         />
+      ) : null}
+      {bookedSessionId && pkg ? (
+        <LegacyRedemptionConfirmation bookingId={bookedSessionId} businessId={pkg.businessId} packageProgressId={pkg.id}
+          businessName={business?.name} onClose={() => setBookedSessionId(undefined)} />
       ) : null}
     </div>
   );

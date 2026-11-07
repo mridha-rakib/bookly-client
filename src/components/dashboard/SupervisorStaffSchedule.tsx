@@ -42,10 +42,15 @@ const buildDraft = (schedule: ScheduleDay[]): Draft => {
   return Object.fromEntries(
     daysOfWeek.map((dayOfWeek) => {
       const existing = byDay.get(dayOfWeek);
-      return [dayOfWeek, { intervals: existing ? existing.intervals : [] }];
+      return [dayOfWeek, { intervals: existing ? existing.intervals.map(interval => ({ ...interval })) : [] }];
     }),
   ) as Draft;
 };
+
+const scheduleIdentity = (member: StaffMember) => JSON.stringify([
+  daysOfWeek.map(day => [day, member.schedule?.find(entry => entry.dayOfWeek === day)?.intervals ?? []]),
+  daysOfWeek.filter(day => member.offDays?.includes(day)),
+]);
 
 /**
  * Phase 4A — Supervisor's Staff tab: read the team list and manage schedules (Owner-or-Supervisor
@@ -55,28 +60,42 @@ const buildDraft = (schedule: ScheduleDay[]): Draft => {
  */
 export default function SupervisorStaffSchedule() {
   const { businessId, isLoading: businessIsLoading } = useManagedBusinessContext();
+  return <SupervisorStaffScheduleContent key={businessId ?? "unresolved"} businessId={businessId} businessIsLoading={businessIsLoading} />;
+}
+
+function SupervisorStaffScheduleContent({ businessId, businessIsLoading }: {
+  businessId: string | undefined;
+  businessIsLoading: boolean;
+}) {
   const staffListQuery = useStaffListQuery(businessId);
   const putScheduleMutation = usePutStaffScheduleMutation();
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [draftOffDays, setDraftOffDays] = useState<DayOfWeek[]>([]);
+  const [draftIdentity, setDraftIdentity] = useState("");
 
   const members = (staffListQuery.data?.members ?? []).filter((member) => !member.isOwner);
+  const editingMember = members.find(member => member.membershipId === editingStaffId);
+  const draftIsStale = Boolean(editingStaffId && (!editingMember || scheduleIdentity(editingMember) !== draftIdentity));
 
   const startEditing = (member: StaffMember) => {
     if (!member.membershipId) {
       return;
     }
     setEditingStaffId(member.membershipId);
-    setDraft(buildDraft(member.schedule));
+    setDraft(buildDraft(member.schedule ?? []));
+    setDraftOffDays([...(member.offDays ?? [])]);
+    setDraftIdentity(scheduleIdentity(member));
   };
 
   const cancelEditing = () => {
     setEditingStaffId(null);
     setDraft(null);
+    setDraftOffDays([]);
   };
 
   const saveSchedule = async () => {
-    if (!businessId || !editingStaffId || !draft) {
+    if (!businessId || !editingStaffId || !draft || draftIsStale || staffListQuery.isError || staffListQuery.isFetching || putScheduleMutation.isPending) {
       return;
     }
 
@@ -88,6 +107,8 @@ export default function SupervisorStaffSchedule() {
       }));
 
     try {
+      // This editor changes working hours. Omit offDays deliberately: the API merges the
+      // latest off-days transactionally, removing only weekdays explicitly made working.
       await putScheduleMutation.mutateAsync({ businessId, staffId: editingStaffId, input: { days } });
       toast.success("Schedule updated");
       cancelEditing();
@@ -113,6 +134,9 @@ export default function SupervisorStaffSchedule() {
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-y-auto bg-[#FCF8F8] select-none font-poppins relative">
       <DashboardHeader title="Staff" subtitle="Team members and schedules" />
       <div className="flex-1 p-6 md:p-8 flex flex-col gap-4">
+        {editingStaffId && !editingMember && !staffListQuery.isLoading && (
+          <div role="alert">This team member is no longer available. <button type="button" onClick={cancelEditing}>Close editor</button></div>
+        )}
         {staffListQuery.isLoading ? (
           <span className="font-poppins text-sm text-neutral-400">Loading staff…</span>
         ) : staffListQuery.isError ? (
@@ -142,6 +166,7 @@ export default function SupervisorStaffSchedule() {
                     <button
                       type="button"
                       onClick={cancelEditing}
+                      disabled={putScheduleMutation.isPending}
                       className="h-9 px-4 rounded-lg text-xs font-poppins font-semibold text-[#5F5E5A] border border-[#D5D2C9] hover:bg-neutral-50"
                     >
                       Cancel
@@ -149,7 +174,7 @@ export default function SupervisorStaffSchedule() {
                     <button
                       type="button"
                       onClick={saveSchedule}
-                      disabled={putScheduleMutation.isPending}
+                      disabled={putScheduleMutation.isPending || draftIsStale || staffListQuery.isFetching || staffListQuery.isError}
                       className="h-9 px-4 rounded-lg text-xs font-poppins font-semibold text-white bg-[#0F6E56] hover:opacity-90 disabled:opacity-50"
                     >
                       {putScheduleMutation.isPending ? "Saving…" : "Save"}
@@ -159,6 +184,7 @@ export default function SupervisorStaffSchedule() {
                   <button
                     type="button"
                     onClick={() => startEditing(member)}
+                    disabled={putScheduleMutation.isPending}
                     className="h-9 px-4 rounded-lg text-xs font-poppins font-semibold text-[#111111] border border-[#D5D2C9] hover:bg-neutral-50"
                   >
                     Edit schedule
@@ -167,7 +193,13 @@ export default function SupervisorStaffSchedule() {
               </div>
 
               {editingStaffId === member.membershipId && draft ? (
-                <div className="flex flex-col gap-2.5">
+                <fieldset disabled={putScheduleMutation.isPending} className="flex flex-col gap-2.5">
+                  {draftIsStale && !putScheduleMutation.isPending && (
+                    <div role="alert" className="text-sm text-[#BA1A1A]">
+                      This schedule changed while you were editing. Reload it before saving.
+                      <button type="button" onClick={() => startEditing(member)} className="ml-2 underline">Reload schedule</button>
+                    </div>
+                  )}
                   {daysOfWeek.map((dayOfWeek) => {
                     const dayIntervals = draft[dayOfWeek].intervals;
                     const updateInterval = (index: number, patch: Partial<ScheduleInterval>) =>
@@ -214,6 +246,7 @@ export default function SupervisorStaffSchedule() {
                         <div className="flex items-center gap-3">
                           <button
                             type="button"
+                            aria-label={`${dayIntervals.length > 0 ? "Remove first interval for" : "Set working hours for"} ${DAY_LABELS[dayOfWeek]}`}
                             onClick={() => (dayIntervals.length > 0 ? removeInterval(0) : addInterval())}
                             className={`w-[22px] h-[22px] rounded-[5px] flex items-center justify-center shrink-0 ${
                               dayIntervals.length > 0
@@ -231,7 +264,7 @@ export default function SupervisorStaffSchedule() {
                             {DAY_LABELS[dayOfWeek]}
                           </span>
                           {dayIntervals.length === 0 && (
-                            <span className="font-poppins text-xs text-[#ABAAA6]">No hours configured</span>
+                            <span className="font-poppins text-xs text-[#ABAAA6]">{draftOffDays.includes(dayOfWeek) ? "Recurring day off" : "No hours configured"}</span>
                           )}
                           {dayIntervals.length > 0 && (
                             <button
@@ -312,14 +345,15 @@ export default function SupervisorStaffSchedule() {
                       </div>
                     );
                   })}
-                </div>
+                </fieldset>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {member.schedule.filter((day) => day.intervals.length > 0).length === 0 ? (
+                  {(member.offDays ?? []).map(day => <span key={`off-${day}`} className="font-poppins text-xs text-[#5F5E5A] bg-[#F5F3EE] rounded-md px-2 py-1">{DAY_LABELS[day]} · Off</span>)}
+                  {(member.schedule ?? []).filter((day) => day.intervals.length > 0).length === 0 ? (
                     <span className="font-poppins text-xs text-[#ABAAA6]">No schedule set</span>
                   ) : (
                     daysOfWeek
-                      .map((dayOfWeek) => member.schedule.find((day) => day.dayOfWeek === dayOfWeek))
+                      .map((dayOfWeek) => (member.schedule ?? []).find((day) => day.dayOfWeek === dayOfWeek))
                       .filter((day): day is ScheduleDay => day !== undefined && day.intervals.length > 0)
                       .map((day) => (
                         <span

@@ -11,11 +11,7 @@ import ResultsList from "@/components/explore/ResultsList";
 import { useAuthStore } from "@/lib/auth/store";
 import { useDiscoveryCategoriesQuery, useDiscoverySearchQuery } from "@/lib/discovery/hooks";
 import { discoveryCardToRecommendation } from "@/lib/discovery/card";
-import {
-  useAddFavoriteMutation,
-  useFavoriteIdsQuery,
-  useRemoveFavoriteMutation,
-} from "@/lib/favorite/hooks";
+import { useBusinessFavorites } from "@/lib/favorite/use-business-favorites";
 import type { DiscoverySortOption } from "@/lib/api/discovery";
 import type { BusinessCity } from "@/lib/constants/cities";
 
@@ -47,18 +43,13 @@ export default function ExplorePage() {
   const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
 
-  // Filter states — all real (search/travelsToYou/categories/locations/rating/sort) except the
-  // ones explicitly confirmed to have no real backing (quick actions/distance/availability),
-  // which stay exactly as inert as they already were rather than being faked or removed.
+  // Only supported server filters have selectable state. Unsupported controls are disabled.
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [travelsToYou, setTravelsToYou] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<BusinessCity[]>([]);
   const [selectedRatings, setSelectedRatings] = useState<number[]>([]);
-  const [selectedQuickActions, setSelectedQuickActions] = useState<string[]>([]);
-  const [distanceLimit, setDistanceLimit] = useState(15);
-  const [selectedAvailability, setSelectedAvailability] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [sortBy, setSortBy] = useState("Most relevant");
   const [showMobileFilters, setShowMobileFilters] = useState(false);
@@ -107,38 +98,27 @@ export default function ExplorePage() {
 
   const searchQueryResult = useDiscoverySearchQuery(searchParams);
   const categoriesQuery = useDiscoveryCategoriesQuery();
-  const favoriteIdsQuery = useFavoriteIdsQuery(isLoggedIn);
-  const addFavoriteMutation = useAddFavoriteMutation();
-  const removeFavoriteMutation = useRemoveFavoriteMutation();
+  const favorites = useBusinessFavorites();
 
-  const total = searchQueryResult.data?.pagination.total ?? 0;
+  const searchPending = searchQuery.trim() !== debouncedQuery;
+  const total = searchPending ? 0 : searchQueryResult.data?.pagination.total ?? 0;
   const recommendations = useMemo(
-    () => (searchQueryResult.data?.businesses ?? []).map(cardToRecommendation),
-    [searchQueryResult.data],
+    () => searchPending ? [] : (searchQueryResult.data?.businesses ?? []).map(cardToRecommendation),
+    [searchPending, searchQueryResult.data],
   );
-  const favoriteIds = favoriteIdsQuery.data?.businessIds ?? [];
+  const favoriteIds = favorites.businessIds;
 
-  const handleToggleFavorite = (id: string) => {
-    if (!isLoggedIn) {
-      router.push("/customer");
-      return;
-    }
-    if (favoriteIds.includes(id)) {
-      removeFavoriteMutation.mutate(id);
-    } else {
-      addFavoriteMutation.mutate(id);
-    }
-  };
+  const handleToggleFavorite = favorites.toggle;
 
   const handleClearAll = () => {
     setSearchQuery("");
+    setDebouncedQuery("");
     setTravelsToYou(false);
     setSelectedCategories([]);
     setSelectedLocations([]);
     setSelectedRatings([]);
-    setSelectedQuickActions([]);
-    setDistanceLimit(15);
-    setSelectedAvailability([]);
+    setSortBy("Most relevant");
+    setPage(1);
   };
 
   const toggleCategory = (cat: string) => {
@@ -157,13 +137,9 @@ export default function ExplorePage() {
     setSelectedRatings((prev) => (prev.includes(rating) ? prev.filter((r) => r !== rating) : [...prev, rating]));
   };
 
-  const toggleQuickAction = (action: string) => {
-    setSelectedQuickActions((prev) => (prev.includes(action) ? prev.filter((a) => a !== action) : [...prev, action]));
-  };
 
-  const toggleAvailability = (avail: string) => {
-    setSelectedAvailability((prev) => (prev.includes(avail) ? prev.filter((a) => a !== avail) : [...prev, avail]));
-  };
+
+
 
   return (
     <div className="min-h-screen bg-[#FCFAF9] flex flex-col relative text-[#1C1B1C] font-poppins ">
@@ -194,12 +170,6 @@ export default function ExplorePage() {
               toggleLocation={toggleLocation}
               selectedRatings={selectedRatings}
               toggleRating={toggleRating}
-              selectedQuickActions={selectedQuickActions}
-              toggleQuickAction={toggleQuickAction}
-              distanceLimit={distanceLimit}
-              setDistanceLimit={setDistanceLimit}
-              selectedAvailability={selectedAvailability}
-              toggleAvailability={toggleAvailability}
               handleClearAll={handleClearAll}
               showMap={showMap}
               setShowMap={setShowMap}
@@ -211,7 +181,7 @@ export default function ExplorePage() {
   {/* RIGHT SIDE CONTENT CONTAINER (Contains list & map split container) */}
           <ResultsList
             filteredServices={recommendations}
-            isLoading={searchQueryResult.isLoading}
+            isLoading={searchPending || searchQueryResult.isLoading}
             isError={searchQueryResult.isError}
             total={total}
             page={page}
@@ -267,13 +237,8 @@ export default function ExplorePage() {
         toggleLocation={toggleLocation}
         selectedRatings={selectedRatings}
         toggleRating={toggleRating}
-        selectedQuickActions={selectedQuickActions}
-        toggleQuickAction={toggleQuickAction}
-        distanceLimit={distanceLimit}
-        setDistanceLimit={setDistanceLimit}
-        selectedAvailability={selectedAvailability}
-        toggleAvailability={toggleAvailability}
         handleClearAll={handleClearAll}
+        onApplyFilters={applyFiltersNow}
       />
 
       {/* MOBILE MAP OVERLAY MODAL (Full screen on mobile) */}

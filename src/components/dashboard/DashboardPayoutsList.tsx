@@ -180,7 +180,7 @@ export default function DashboardPayoutsList({ businessId }: DashboardPayoutsLis
 
         {/* Section 1: Transaction Breakdown */}
         <div className="pt-[20px] w-full">
-          <PayoutsBreakdown businessId={businessId} period={period} periodLabel={`${selectedMonth} ${selectedYear}`} />
+          <PayoutsBreakdown key={`${businessId}:${period?.from}:${period?.to}`} businessId={businessId} period={period} periodLabel={`${selectedMonth} ${selectedYear}`} />
         </div>
 
         {/* Section 2: Payout History */}

@@ -6,18 +6,38 @@ import { SaveMoneyDollarIcon, Store01Icon, UserGroup03Icon, Calendar01Icon } fro
 import { formatBookingMoney } from "@/lib/bookings/format";
 import { useSuperAdminDashboardSummaryQuery } from "@/lib/superAdminDashboard/hooks";
 import { useSuperAdminPendingPayoutsQuery } from "@/lib/superAdminFinance/hooks";
+import { describeOverviewPeriod, type OverviewPeriodParams } from "@/lib/superAdminDashboard/period";
+import SuperAdminOverviewError from "./SuperAdminOverviewError";
 
 /** Batch 11 — every number here comes straight from GET /super-admin/dashboard/summary (one
  * server-side aggregation) or the existing pending-payouts primitive the Finance tab already
  * uses — never a metric requiring undefined semantics (rating, returning-customer rate,
  * no-show rate — none of those are computed anywhere in this codebase yet). */
-export default function SuperAdminStatsGrid() {
-  const { data: summary, isLoading } = useSuperAdminDashboardSummaryQuery();
-  const { data: pendingPayouts } = useSuperAdminPendingPayoutsQuery();
+interface SuperAdminStatsGridProps {
+  /** P1.9 — applies only to the PERIOD metrics (Bookings, No-shows/Cancellations, Platform
+   * Revenue); every other card is current-state or all-time and says so. */
+  period?: OverviewPeriodParams;
+}
 
-  if (isLoading || !summary) {
+export default function SuperAdminStatsGrid({ period }: SuperAdminStatsGridProps) {
+  const summaryQuery = useSuperAdminDashboardSummaryQuery(period);
+  const summary = summaryQuery.data;
+  const { data: pendingPayouts } = useSuperAdminPendingPayoutsQuery();
+  const periodLabel = describeOverviewPeriod(period);
+
+  if (!summary && summaryQuery.isError) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 w-full">
+      <SuperAdminOverviewError
+        message="Platform statistics could not be loaded."
+        retrying={summaryQuery.isFetching}
+        onRetry={() => void summaryQuery.refetch()}
+      />
+    );
+  }
+
+  if (!summary) {
+    return (
+      <div role="status" aria-label="Loading platform statistics" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 w-full">
         {[1, 2, 3, 4].map((i) => (
           <div key={i} className="bg-white rounded-xl p-5 shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 min-h-[120px] animate-pulse" />
         ))}
@@ -29,25 +49,25 @@ export default function SuperAdminStatsGrid() {
     {
       title: "Total Businesses",
       value: summary.businesses.total.toLocaleString(),
-      sub: `Approved: ${summary.businesses.APPROVED} · Pending: ${summary.businesses.PENDING}`,
+      sub: `Current · Approved: ${summary.businesses.APPROVED} · Pending: ${summary.businesses.PENDING}`,
       icon: Store01Icon,
     },
     {
       title: "Total Customers",
       value: summary.customers.total.toLocaleString(),
-      sub: "Platform-wide, all statuses",
+      sub: "Current · platform-wide, all statuses",
       icon: UserGroup03Icon,
     },
     {
       title: "Total Bookings",
       value: summary.bookings.total.toLocaleString(),
-      sub: `Upcoming: ${summary.bookings.UPCOMING} · Completed: ${summary.bookings.COMPLETED}`,
+      sub: `${summary.period.isAllTime ? "All time" : `Created ${periodLabel}`} · Upcoming: ${summary.bookings.UPCOMING} · Completed: ${summary.bookings.COMPLETED}`,
       icon: Calendar01Icon,
     },
     {
       title: "Pending Payouts",
       value: formatBookingMoney(summary.pendingBusinessPayableCents),
-      sub: pendingPayouts ? `${pendingPayouts.businessCount} Business awaiting payout` : "—",
+      sub: pendingPayouts ? `Current balance · ${pendingPayouts.businessCount} Business awaiting payout` : "Current balance",
       icon: SaveMoneyDollarIcon,
     },
   ];
@@ -77,7 +97,7 @@ export default function SuperAdminStatsGrid() {
             {formatBookingMoney(summary.platformRevenueCents)}
           </span>
           <span className="font-sans font-normal text-xs text-gray-400 mt-auto leading-4">
-            All time · platform fees, net of processing costs
+            {summary.period.isAllTime ? "All time" : periodLabel} · platform fees, net of processing costs
           </span>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 flex flex-col gap-2 min-h-[120px]">
@@ -95,7 +115,9 @@ export default function SuperAdminStatsGrid() {
               summary.bookings.LATE_CANCELLATION
             ).toLocaleString()}
           </span>
-          <span className="font-sans font-normal text-xs text-gray-400 mt-auto leading-4">All time · platform-wide</span>
+          <span className="font-sans font-normal text-xs text-gray-400 mt-auto leading-4">
+            {summary.period.isAllTime ? "All time" : `Bookings created ${periodLabel}`} · platform-wide
+          </span>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 flex flex-col gap-2 min-h-[120px]">
           <span className="font-sans font-medium text-[13px] text-gray-500 leading-4">Completed Payouts</span>
@@ -103,7 +125,7 @@ export default function SuperAdminStatsGrid() {
             {formatBookingMoney(summary.completedPayoutsAllTimeCents)}
           </span>
           <span className="font-sans font-normal text-xs text-gray-400 mt-auto leading-4">
-            All time · already sent to Businesses
+            All time · already sent to Businesses (not affected by the period)
           </span>
         </div>
       </div>

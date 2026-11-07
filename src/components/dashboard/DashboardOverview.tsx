@@ -14,9 +14,12 @@ import { formatEuro } from "@/lib/services/format";
 import { describeActivity } from "@/utils/dashboardActivity";
 import { formatTime12Hour } from "@/lib/staff/format";
 import { formatPackageSessionLabel } from "@/lib/bookings/format";
+import type { OverviewRange } from "@/lib/api/dashboardOverview";
+import { toUserMessage } from "@/lib/auth/messages";
 
 export default function DashboardOverview() {
   const [timeFilter, setTimeFilter] = useState("Today");
+  const [range, setRange] = useState<OverviewRange>({ range: "Today" });
   const [scheduleFilter, setScheduleFilter] = useState("All");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
@@ -27,8 +30,8 @@ export default function DashboardOverview() {
   const ratingSummaryQuery = useBusinessRatingSummaryQuery(businessId);
   const ratingSummary = ratingSummaryQuery.data;
   const currentUserQuery = useCurrentUserQuery();
-  const overviewQuery = useDashboardOverviewQuery(businessId);
-  const overview = overviewQuery.data;
+  const overviewQuery = useDashboardOverviewQuery(businessId, range);
+  const overview = overviewQuery.isError ? undefined : overviewQuery.data;
   const financials = overview?.financials ?? null;
 
   const scheduleData = useMemo(() => {
@@ -62,6 +65,7 @@ export default function DashboardOverview() {
                 if (tab === "Custom") {
                   setShowCustomPicker(prev => !prev);
                 } else {
+                  setRange({ range: tab as OverviewRange["range"] });
                   setShowCustomPicker(false);
                 }
               }}
@@ -112,14 +116,17 @@ export default function DashboardOverview() {
                   setCustomStartDate("");
                   setCustomEndDate("");
                   setTimeFilter("Today");
+                  setRange({ range: "Today" });
                 }}
                 className="flex-1 px-3 py-2 border border-neutral-300 rounded-lg text-xs font-semibold hover:bg-neutral-50 cursor-pointer text-[#1C1B1C] text-center"
               >
                 Clear
               </button>
               <button
+                disabled={!customStartDate || !customEndDate || customStartDate > customEndDate || Date.parse(customEndDate) - Date.parse(customStartDate) > 365 * 86400000}
                 onClick={() => {
-                  if (customStartDate && customEndDate) {
+                  if (customStartDate && customEndDate && customStartDate <= customEndDate && Date.parse(customEndDate) - Date.parse(customStartDate) <= 365 * 86400000) {
+                    setRange({ range: "Custom", fromDate: customStartDate, toDate: customEndDate });
                     setShowCustomPicker(false);
                   }
                 }}
@@ -128,15 +135,19 @@ export default function DashboardOverview() {
                 Apply
               </button>
             </div>
+            <p className="text-[11px] text-neutral-500">Choose an ordered range of up to 366 days.</p>
           </div>
         )}
       </div>
 
       {/* 3. Metric Strip Row */}
+      <p className="text-xs text-neutral-500">Selected range: {overview?.period ? `${overview.period.fromDate} – ${overview.period.toDate} (${overview.period.timezone})` : range.range}. Schedule displays up to 200 records; totals cover the complete range.</p>
+      {overviewQuery.isLoading && <p role="status">Loading overview…</p>}
+      {overviewQuery.isError && <p role="alert">{toUserMessage(overviewQuery.error)} <button className="underline" onClick={() => void overviewQuery.refetch()}>Retry</button></p>}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 mb-8">
         {/* Card 1 */}
         <div className="bg-white border border-[#D3D3D3] rounded-xl p-4.5 shadow-sm flex flex-col justify-between h-[96px]">
-          <span className="text-[11px] font-normal text-[#888780] font-poppins">Today&apos;s bookings</span>
+          <span className="text-[11px] font-normal text-[#888780] font-poppins">Bookings in range</span>
           <div className="flex flex-col mt-0.5">
             <span className="text-3xl font-semibold text-[#1A1A1A] leading-none">
               {overview ? overview.todayBookingsCount : "—"}
@@ -149,7 +160,7 @@ export default function DashboardOverview() {
 
         {/* Card 2 */}
         <div className="bg-white border border-[#D3D3D3] rounded-xl p-4.5 shadow-sm flex flex-col justify-between h-[96px]">
-          <span className="text-[11px] font-normal text-[#888780] font-poppins">To collect today</span>
+          <span className="text-[11px] font-normal text-[#888780] font-poppins">To collect in range</span>
           <div className="flex flex-col mt-0.5">
             <span className="text-3xl font-semibold text-[#1D9E75] leading-none">
               {financials ? formatEuro(financials.payAtVenueDueCents) : "—"}
@@ -160,7 +171,7 @@ export default function DashboardOverview() {
 
         {/* Card 3 */}
         <div className="bg-white border border-[#D3D3D3] rounded-xl p-4.5 shadow-sm flex flex-col justify-between h-[96px]">
-          <span className="text-[11px] font-normal text-[#888780] font-poppins">No-shows this month</span>
+          <span className="text-[11px] font-normal text-[#888780] font-poppins">No-shows in range</span>
           <div className="flex flex-col mt-0.5">
             <span className="text-3xl font-semibold text-[#E24B4A] leading-none">
               {financials ? financials.noShowMonthCount : "—"}
@@ -173,7 +184,7 @@ export default function DashboardOverview() {
 
         {/* Card 4 */}
         <div className="bg-white border border-[#D3D3D3] rounded-xl p-4.5 shadow-sm flex flex-col justify-between h-[96px]">
-          <span className="text-[11px] font-normal text-[#888780] font-poppins">Monthly revenue</span>
+          <span className="text-[11px] font-normal text-[#888780] font-poppins">Net revenue in range</span>
           <div className="flex flex-col mt-0.5">
             <span className="text-3xl font-semibold text-[#1D9E75] leading-none">
               {financials ? formatEuro(financials.monthlyRevenueCents) : "—"}
@@ -213,7 +224,7 @@ export default function DashboardOverview() {
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">
                 <HugeiconsIcon icon={Clock01Icon} className="w-5 h-5 text-[#888780]" />
-                <h2 className="text-sm font-medium text-[#5F5E5A] font-poppins">Today&apos;s schedule</h2>
+                <h2 className="text-sm font-medium text-[#5F5E5A] font-poppins">Schedule in range</h2>
               </div>
 
               {/* Filter toggle buttons */}
@@ -251,7 +262,7 @@ export default function DashboardOverview() {
                 <tbody className="divide-y divide-neutral-100">
                   {scheduleData.map((row) => (
                     <tr key={row.bookingId} className="hover:bg-neutral-50/50 transition-colors">
-                      <td className="py-3 px-4 text-xs text-[#888780] font-poppins">{formatTime12Hour(row.time)}</td>
+                      <td className="py-3 px-4 text-xs text-[#888780] font-poppins">{row.date && <span className="block">{row.date}</span>}{formatTime12Hour(row.time)}</td>
                       <td className="py-3 px-4">
                         <div className="flex flex-col">
                           <span className="text-xs font-medium text-[#1A1A1A] font-poppins">{row.customerName}</span>
@@ -287,7 +298,7 @@ export default function DashboardOverview() {
                   {overview && scheduleData.length === 0 && (
                     <tr>
                       <td colSpan={7} className="py-6 px-4 text-xs text-[#888780] font-poppins text-center">
-                        No bookings scheduled today.
+                        No bookings scheduled in this range.
                       </td>
                     </tr>
                   )}
@@ -311,12 +322,12 @@ export default function DashboardOverview() {
         <div className="space-y-6">
           {/* Today's Schedule Card */}
           <div className="bg-white border border-[#E8E8E6] rounded-xl p-5 shadow-sm">
-            <h3 className="text-sm font-semibold text-[#0F1E35] font-poppins mb-4">Today&apos;s Schedule</h3>
+            <h3 className="text-sm font-semibold text-[#0F1E35] font-poppins mb-4">Schedule in range</h3>
             <div className="space-y-4">
               {timelineEvents.map((evt) => (
                 <div key={evt.bookingId} className="flex gap-4 items-start">
                   <span className="bg-[#111111] text-white text-[10px] font-medium px-2 py-1 rounded w-12 text-center shrink-0">
-                    {formatTime12Hour(evt.time)}
+                    {evt.date && <span className="block">{evt.date}</span>}{formatTime12Hour(evt.time)}
                   </span>
                   <div className="flex flex-col pl-1">
                     <span className="text-xs font-semibold text-[#111111]">{evt.customerName}</span>
@@ -331,7 +342,7 @@ export default function DashboardOverview() {
                 </div>
               ))}
               {overview && timelineEvents.length === 0 && (
-                <span className="text-xs text-[#888780] font-poppins">No bookings scheduled today.</span>
+                <span className="text-xs text-[#888780] font-poppins">No bookings scheduled in this range.</span>
               )}
             </div>
           </div>

@@ -7,11 +7,12 @@ import {
   useSuperAdminChangeSupportStatusMutation,
   useSuperAdminReopenSupportMutation,
   useSuperAdminReplySupportMutation,
-  useSuperAdminSupportMessagesQuery,
+  useSuperAdminSupportConversation,
   useSuperAdminSupportTicketQuery,
   useSuperAdminSupportTicketsQuery,
 } from "@/lib/superAdminSupport/hooks";
 import { formatClockTime12Hour } from "@/lib/staff/format";
+import SupportOlderMessages from "@/components/support/SupportOlderMessages";
 
 const PAGE_SIZE = 20;
 const MESSAGE_MAX_LENGTH = 5000;
@@ -85,11 +86,11 @@ export default function SuperAdminSupport() {
   const closedCount = closedCountQuery.data?.pagination.total ?? 0;
 
   const ticketQuery = useSuperAdminSupportTicketQuery(selectedTicketId ?? undefined);
-  const messagesQuery = useSuperAdminSupportMessagesQuery(selectedTicketId ?? undefined, {
-    limit: 100,
-  });
+  // P1.8 — latest messages first; older history loads in bounded pages on request.
+  const conversation = useSuperAdminSupportConversation(selectedTicketId ?? undefined);
   const ticket = ticketQuery.data;
-  const messages = messagesQuery.data?.messages ?? [];
+  const messages = conversation.messages;
+  const newestMessageId = messages.at(-1)?.id;
 
   const replyMutation = useSuperAdminReplySupportMutation();
   const statusMutation = useSuperAdminChangeSupportStatusMutation();
@@ -100,7 +101,8 @@ export default function SuperAdminSupport() {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [selectedTicketId, messages.length]);
+    // Follow the newest message only — loading older history must not jump to the bottom.
+  }, [selectedTicketId, newestMessageId]);
 
   const handleSendReply = async () => {
     if (!replyText.trim() || !selectedTicketId) return;
@@ -267,7 +269,7 @@ export default function SuperAdminSupport() {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-[#6B7280]">Messages</span>
-                      <span className="font-semibold text-[#111827]">{messages.length} messages</span>
+                      <span className="font-semibold text-[#111827]">{conversation.total} messages</span>
                     </div>
                     {ticket.bookingReference && (
                       <div className="flex justify-between items-center">
@@ -331,12 +333,29 @@ export default function SuperAdminSupport() {
               className="flex-grow p-6 flex flex-col gap-6 overflow-y-auto no-scrollbar"
               style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
             >
-              {messagesQuery.isLoading ? (
+              {conversation.isError ? (
+                <div role="alert" className="flex flex-col items-center gap-3">
+                  <p className="text-sm text-[#6B7280]">The conversation could not be loaded.</p>
+                  <button
+                    type="button"
+                    onClick={conversation.retry}
+                    className="px-4 py-1.5 bg-white border border-[#E5E7EB] rounded-lg text-xs font-semibold text-[#374151] hover:bg-gray-50 cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : conversation.isLoading ? (
                 <p className="text-sm text-[#6B7280]">Loading conversation…</p>
               ) : messages.length === 0 ? (
                 <p className="text-sm text-[#6B7280]">No messages yet.</p>
               ) : (
-                messages.map((msg, idx) => {
+                <>
+                <SupportOlderMessages
+                  conversation={conversation}
+                  textClassName="font-sans text-xs text-[#6B7280]"
+                  buttonClassName="px-4 py-1.5 bg-white border border-[#E5E7EB] rounded-lg text-xs font-semibold text-[#374151] hover:bg-gray-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                {messages.map((msg, idx) => {
                   const isRequester = msg.senderRole !== "SUPER_ADMIN";
                   const currentDate = new Date(msg.createdAt).toDateString();
                   const previousDate = idx > 0 ? new Date(messages[idx - 1].createdAt).toDateString() : null;
@@ -396,7 +415,8 @@ export default function SuperAdminSupport() {
                       </div>
                     </React.Fragment>
                   );
-                })
+                })}
+                </>
               )}
               <div ref={messagesEndRef} />
             </div>

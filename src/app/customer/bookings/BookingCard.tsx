@@ -6,40 +6,29 @@ import Image from "next/image";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   BarCode01Icon,
-  Location01Icon,
   Directions01Icon,
   Calendar03Icon,
   Clock01Icon,
-  Car04Icon,
 } from "@hugeicons/core-free-icons";
 
 import type { BookingListItem } from "@/lib/api/bookings";
 import CustomerFinancialRows from "@/components/bookings/CustomerFinancialRows";
+import { BookingStatusBadge, BookingVisitBadge } from "@/components/bookings/BookingBadges";
 import CustomerFinancialOutcome from "@/components/bookings/CustomerFinancialOutcome";
 import { presentCancellation, presentOnlineSnapshot, presentVenuePayment } from "@/lib/bookings/customer-financial";
 import { useBusinessCatalogQuery } from "@/lib/catalog/hooks";
 import { useCustomerBookingDetailQuery } from "@/lib/bookings/hooks";
 import {
-  BOOKING_STATUS_LABELS,
-  BOOKING_STATUS_TONE,
   buildBookingDirectionsUrl,
   formatBookingDate,
   formatBookingMoney,
   formatBookingTimeRange,
   formatPackageSessionLabel,
-  type BookingStatusTone,
 } from "@/lib/bookings/format";
 
 // Mirrors api/src/modules/booking/booking.types.ts MAX_CUSTOMER_RESCHEDULE_COUNT.
 const MAX_CUSTOMER_RESCHEDULE_COUNT = 2;
 
-const TONE_CLASSES: Record<BookingStatusTone, string> = {
-  info: "bg-[#CFE1FE] text-[#091C32]",
-  success: "bg-[#CFFED6] text-[#093213]",
-  warning: "bg-[#FEF8CF] text-[#322509]",
-  danger: "bg-red-50 text-red-700",
-  neutral: "bg-[#F1EDED] text-[#45474B]",
-};
 
 interface BookingCardProps {
   booking: BookingListItem;
@@ -61,7 +50,6 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
 
   const isUpcoming = booking.status === "UPCOMING" || booking.status === "PENDING";
   const isTerminal = !isUpcoming;
-  const tone = BOOKING_STATUS_TONE[booking.status];
 
   return (
     <div className="w-full bg-[#FFFFFF] border border-[#C6C6CB] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.05)] flex flex-col p-6 gap-6">
@@ -76,9 +64,7 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
             {booking.serviceCount > 1 && (
               <span className="text-xs font-medium text-[#45474B]">+{booking.serviceCount - 1} more</span>
             )}
-            <span className={`px-2.5 py-0.5 rounded-full font-manrope font-semibold text-xs leading-4 ${TONE_CLASSES[tone]}`}>
-              {BOOKING_STATUS_LABELS[booking.status]}
-            </span>
+            <BookingStatusBadge status={booking.status} />
           </div>
 
           {booking.packageSessions.map((session, index) => (
@@ -111,18 +97,10 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
           {fulfilmentLocation && (
             <div className="flex flex-wrap items-center gap-2 text-sm text-[#111111] font-manrope">
               {fulfilmentLocation.mode === "TRAVEL_TO_CUSTOMER" ? (
-                <div className="flex items-center gap-1.5">
-                  <HugeiconsIcon icon={Car04Icon} className="w-4 h-4 text-[#111111]" />
-                  <span className="font-normal">Traveling to you</span>
-                </div>
+                <BookingVisitBadge mode={fulfilmentLocation.mode} />
               ) : (
                 <>
-                  <div className="flex items-center gap-1.5">
-                    <HugeiconsIcon icon={Location01Icon} className="w-4 h-4 text-[#111111]" />
-                    <span className="font-normal">
-                      {fulfilmentLocation.address.streetName} {fulfilmentLocation.address.streetNumber}, {fulfilmentLocation.address.area}
-                    </span>
-                  </div>
+                  <BookingVisitBadge mode={fulfilmentLocation.mode} addressText={`${fulfilmentLocation.address.streetName} ${fulfilmentLocation.address.streetNumber}, ${fulfilmentLocation.address.area}`} />
                   <span className="text-gray-400">•</span>
                   <a
                     href={buildBookingDirectionsUrl({

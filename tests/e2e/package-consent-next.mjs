@@ -137,7 +137,7 @@ export async function runConsentNextE2E({ clientRoot, apiOrigin, businessId, pac
     const pageOrigin = await page.evaluate("performance.timeOrigin");
     await page.command("Page.reload");
     await page.waitFor(`performance.timeOrigin !== ${pageOrigin} && document.readyState === 'complete' && document.body.innerText.includes('Terms accepted')`, 180000);
-    ensure(await page.evaluate("document.body.innerText.includes('No Package purchase has been made')"), "Purchase success misreported");
+    ensure(await page.evaluate("document.body.innerText.includes('Acceptance alone does not confirm a purchase')"), "Purchase success misreported");
     await verifyPersistence("reloaded");
     await page.screenshot(390, "next-consent-mobile.png");
     values.push({ stage: "same-family-tabs-conflict-reload", result: "PASS", clientClock: "Date.now=0", duplicatePendingSubmit: "attempted" });

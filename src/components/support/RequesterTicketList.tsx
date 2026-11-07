@@ -2,7 +2,7 @@
 
 import React from "react";
 
-import { useSupportTicketsQuery } from "@/lib/support/hooks";
+import { useSupportTicketsPage } from "@/lib/support/hooks";
 import type { SupportTicketStatus } from "@/lib/api/support";
 
 const statusPill = (status: SupportTicketStatus) => {
@@ -30,10 +30,8 @@ interface RequesterTicketListProps {
  * existing card/button styling (font-manrope, #B3B3B3 borders, #0D0D0D primary buttons) — not the
  * Customer standalone page's styling, since this lives inside the dashboard shell. */
 export default function RequesterTicketList({ onSelectTicket }: RequesterTicketListProps) {
-  const [page, setPage] = React.useState(1);
-  const ticketsQuery = useSupportTicketsQuery({ page, limit: PAGE_SIZE });
+  const { page, setPage, totalPages, total, ticketsQuery } = useSupportTicketsPage(PAGE_SIZE);
   const tickets = ticketsQuery.data?.tickets ?? [];
-  const total = ticketsQuery.data?.pagination.total ?? 0;
 
   return (
     <div className="flex flex-col w-full md:w-[calc(100%-118px)] bg-white border border-[#F1F5F9] rounded-2xl shadow-sm overflow-hidden ml-0 md:ml-[118px]">
@@ -43,9 +41,18 @@ export default function RequesterTicketList({ onSelectTicket }: RequesterTicketL
             Loading your tickets…
           </p>
         ) : ticketsQuery.isError ? (
-          <p className="p-8 text-sm text-neutral-500 font-poppins text-center">
-            Your tickets could not be loaded right now.
-          </p>
+          <div className="p-8 flex flex-col items-center gap-3">
+            <p className="text-sm text-neutral-500 font-poppins text-center">
+              Your tickets could not be loaded right now.
+            </p>
+            <button
+              type="button"
+              onClick={() => void ticketsQuery.refetch()}
+              className="px-3 py-1.5 border border-[#B3B3B3] rounded-lg text-xs font-semibold text-neutral-600 cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
         ) : tickets.length === 0 ? (
           <p className="p-8 text-sm text-neutral-500 font-poppins text-center">
             You haven&apos;t submitted any support requests yet.
@@ -81,7 +88,7 @@ export default function RequesterTicketList({ onSelectTicket }: RequesterTicketL
         )}
       </div>
 
-      {total > PAGE_SIZE && (
+      {!ticketsQuery.isLoading && !ticketsQuery.isError && total > PAGE_SIZE && (
         <div className="flex items-center justify-between px-6 py-4 border-t border-[#F1F5F9]">
           <span className="text-xs text-neutral-400 font-poppins">
             Showing {tickets.length > 0 ? (page - 1) * PAGE_SIZE + 1 : 0}–
@@ -98,8 +105,8 @@ export default function RequesterTicketList({ onSelectTicket }: RequesterTicketL
             </button>
             <button
               type="button"
-              disabled={page * PAGE_SIZE >= total}
-              onClick={() => setPage((p) => p + 1)}
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               className="px-3 py-1.5 border border-[#B3B3B3] rounded-lg text-xs font-semibold text-neutral-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               Next →

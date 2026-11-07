@@ -1,4 +1,7 @@
 "use client";
+import { downloadCsv } from "@/lib/api/csv-download";
+import { toast } from "@/components/ui/sonner";
+import { toUserMessage } from "@/lib/auth/messages";
 
 import React, { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -34,33 +37,18 @@ interface PayoutsHistoryProps {
 
 export default function PayoutsHistory({ businessId }: PayoutsHistoryProps) {
   const [page, setPage] = useState(1);
+  const [isExporting, setIsExporting] = useState(false);
   const query = usePayoutHistoryQuery(businessId, { page, limit: PAGE_SIZE });
   const items = query.data?.payouts ?? [];
   const total = query.data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const handleExportCSV = () => {
-    const headers = ["PERIOD", "GROSS COLLECTED", "PROCESSING FEES", "NET PAYOUT", "PAID DATE", "STATUS"];
-    const rows = items.map((item) => [
-      formatPeriod(item.periodStart),
-      formatBookingMoney(item.grossBusinessOwnedCents),
-      `-${formatBookingMoney(item.processingFeesCents)}`,
-      formatBookingMoney(item.netPayoutCents),
-      item.paidAt ? formatDate(item.paidAt) : "—",
-      statusLabel[item.status],
-    ]);
-
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [headers.join(","), ...rows.map((row) => row.map((val) => `"${val.replace(/"/g, '""')}"`).join(","))].join("\n");
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "payout_history.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleExportCSV = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try { await downloadCsv(`/businesses/${businessId}/finance/payouts/export.csv`, {}, "finance-payouts.csv"); }
+    catch (error) { toast.error(toUserMessage(error)); }
+    finally { setIsExporting(false); }
   };
 
   return (
@@ -80,7 +68,7 @@ export default function PayoutsHistory({ businessId }: PayoutsHistoryProps) {
         {/* Export CSV button */}
         <button
           onClick={handleExportCSV}
-          disabled={items.length === 0}
+          disabled={items.length === 0 || isExporting || query.isError}
           className="box-sizing-border-box flex flex-row align-center items-center px-4 py-1 gap-2 bg-white border border-[#DEDBD3] hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-[0px_1px_0px_rgba(0,0,0,0.03)] rounded-[12px] h-[32px] text-[13px] font-medium text-[#4F504B] cursor-pointer transition-all"
         >
           <HugeiconsIcon icon={DownloadIcon} className="w-4 h-4 text-[#4F504B]" />

@@ -7,7 +7,8 @@ import Carousel from "./Carousel";
 import { useAuthStore } from "@/lib/auth/store";
 import { useBookAgainCandidatesQuery } from "@/lib/bookings/hooks";
 import { bookAgainHref } from "@/lib/bookings/book-again";
-import { useFavoriteIdsQuery, useAddFavoriteMutation, useRemoveFavoriteMutation } from "@/lib/favorite/hooks";
+import { useHomeNoDepositEligibility } from "@/lib/discovery/no-deposit-hooks";
+import { useBusinessFavorites } from "@/lib/favorite/use-business-favorites";
 
 export default function BookAgainSection() {
   const router = useRouter();
@@ -16,21 +17,18 @@ export default function BookAgainSection() {
   const isInitializing = useAuthStore((state) => state.isInitializing);
   const isCustomer = status === "authenticated" && !isInitializing && user?.role === "CUSTOMER";
   const query = useBookAgainCandidatesQuery({ page: 1, limit: 6 });
-  const favorites = useFavoriteIdsQuery(isCustomer);
-  const addFavorite = useAddFavoriteMutation();
-  const removeFavorite = useRemoveFavoriteMutation();
+  const eligibility = useHomeNoDepositEligibility(isCustomer && !query.isError ? (query.data?.candidates ?? []).map(item => ({ businessId: item.businessId, serviceId: item.serviceId })) : []);
+  const favorites = useBusinessFavorites();
   if (!isCustomer) return null;
   const candidates = query.data?.candidates ?? [];
-  const favoriteIds = favorites.data?.businessIds ?? [];
-  const toggleFavorite = (businessId: string) => {
-    if (favoriteIds.includes(businessId)) removeFavorite.mutate(businessId);
-    else addFavorite.mutate(businessId);
-  };
+  const favoriteIds = favorites.businessIds;
+  const toggleFavorite = favorites.toggle;
   const cards = candidates.map((item) => (
     <div key={item.originalBookingId} className={candidates.length > 5
       ? "w-[calc(50%-7.5px)] sm:w-[360px] md:w-[406px] shrink-0 snap-start"
       : "w-full sm:w-[360px] md:w-[406px]"}>
       <BookAgainCard item={item} isFav={favoriteIds.includes(item.businessId)}
+        noDeposit={eligibility.isEligible(item.businessId, item.serviceId)}
         onToggleFavorite={toggleFavorite}
         onRebook={(businessId, serviceId) => router.push(bookAgainHref(businessId, serviceId))} />
     </div>

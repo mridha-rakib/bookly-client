@@ -4,8 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import PackageConsentReview from "@/components/packages/PackageConsentReview";
 import { apiRequest } from "@/lib/api/client";
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/lib/api/client", async (original) => ({ ...await original<object>(), apiRequest: vi.fn() }));
-vi.mock("@/lib/payments/stripe-client", () => ({ getStripe: vi.fn() }));
+vi.mock("@/lib/payments/stripe-client", () => ({ getStripe: vi.fn(() => Promise.resolve(null)) }));
 vi.mock("next/link", () => ({ default: ({ children, ...props }: React.PropsWithChildren<{ href: string }>) => <a {...props}>{children}</a> }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -35,8 +36,13 @@ it("P4K: expired-terms recovery follows server purchase availability for status 
   expect(status?.disabled).toBe(false);
 });
 
-it("P4K: closed server gate keeps expired-terms recovery read-only", async () => {
+it("P4K: closed checkout still allows an explicit read-only status check without purchase dispatch", async () => {
   const status = await renderRecovery(false);
-  expect(status?.disabled).toBe(true);
+  expect(status?.disabled).toBe(false);
+  expect([...host.querySelectorAll("button")].find((button) => button.textContent === "Purchase this Package")?.disabled).toBe(true);
   expect(host.textContent).toContain("Purchase unavailable");
+  vi.mocked(apiRequest).mockRejectedValueOnce(Error("Server gate remains closed"));
+  await act(async () => status!.click());
+  expect(apiRequest).toHaveBeenLastCalledWith({ method: "POST", url: "/package-views/actions/purchase-status", data: { businessId: "business", operationId: "original" } });
+  expect(vi.mocked(apiRequest).mock.calls.some(([request]) => request.url === "/package-views/actions/purchase")).toBe(false);
 });

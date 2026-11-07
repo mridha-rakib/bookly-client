@@ -49,7 +49,8 @@ interface RedeemSessionModalProps {
   nextSessionIndex: number;
   totalSessions: number;
   onClose: () => void;
-  onBooked: () => void;
+  /** Receives the committed canonical Booking id. */
+  onBooked: (bookingId: string) => void;
 }
 
 const isCompleteTravelAddress = (
@@ -259,8 +260,20 @@ export default function RedeemSessionModal({
         .find((day) => day.date === selectedDateIso)
         ?.slots.some((slot) => slot.startAt === selectedSlot.startAt),
   );
-  const reviewDisabled =
-    !selectedSlotIsCurrentlyAvailable || availabilityQuery.isLoading || availabilityQuery.isError;
+  // P0.8: a chosen time in another month stays chosen while browsing; it is checked against that
+  // month's availability when it is in view, and the server re-checks it on Confirm.
+  const selectedDateVisible = Boolean(
+    selectedDateIso && selectedDateIso >= availabilityFromDate && selectedDateIso <= availabilityToDate,
+  );
+  const reviewDisabled = !selectedSlot || (selectedDateVisible &&
+    (!selectedSlotIsCurrentlyAvailable || availabilityQuery.isLoading || availabilityQuery.isError));
+  const goToReview = () => {
+    if (selectedDateIso && !selectedDateVisible) {
+      const [year, month] = selectedDateIso.split("-").map(Number);
+      setVisibleMonth(new Date(year!, month! - 1, 1));
+    }
+    setSubStep("review");
+  };
 
   const handleConfirm = async () => {
     if (submission.current || !selectedSlot || !selectedStaffMembershipId || !previewInput || !currentPreviewIsValid) return;
@@ -283,7 +296,7 @@ export default function RedeemSessionModal({
       resolveLegacyRecovery(record, status);
       await queryClient.invalidateQueries({ queryKey: ["packages"] });
       void queryClient.invalidateQueries({ queryKey: ["customerBookings", "list"] });
-      if (live()) onBooked();
+      if (live()) onBooked(status.bookingId);
     } catch (error) {
       if (!live()) return;
       if (error instanceof BooklyApiError && (error.code === "BOOKING_SLOT_RESERVATION_CONFLICT" || error.code === "AVAILABILITY_SLOT_NOT_BOOKABLE")) {
@@ -304,10 +317,9 @@ export default function RedeemSessionModal({
     if (subStep === "review") setSubStep("time");
   };
 
+  // Changing the visible month alone never erases a valid chosen date/time.
   const changeVisibleMonth = (offset: number) => {
     setSubmitError(undefined);
-    setSelectedDateIso(undefined);
-    setSelectedSlot(undefined);
     setVisibleMonth(
       (current) => new Date(current.getFullYear(), current.getMonth() + offset, 1),
     );
@@ -373,6 +385,8 @@ export default function RedeemSessionModal({
                   selectedProfessional={selectedProfessional}
                   setSelectedProfessional={(professional) => {
                     setSubmitError(undefined);
+                    // Re-selecting the same professional keeps the chosen time.
+                    if (professional === selectedProfessional) return;
                     setSelectedProfessional(professional);
                     setSelectedSlot(undefined);
                     setSelectedDateIso(undefined);
@@ -524,7 +538,7 @@ export default function RedeemSessionModal({
                 Continue
               </button>
             ) : subStep === "time" ? (
-              <button type="button" disabled={reviewDisabled} onClick={() => setSubStep("review")} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" disabled={reviewDisabled} onClick={goToReview} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
                 Review
               </button>
             ) : (

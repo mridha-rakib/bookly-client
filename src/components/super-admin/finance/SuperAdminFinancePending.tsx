@@ -5,7 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Download01Icon, ArrowDown01Icon, ArrowUp01Icon } from "@hugeicons/core-free-icons";
 
 import { formatBookingMoney } from "@/lib/bookings/format";
-import type { BusinessPayableSummary } from "@/lib/api/superAdminFinance";
+import { type BusinessPayableSummary, superAdminFinanceApi } from "@/lib/api/superAdminFinance";
 import { useExecutePayoutMutation, useSuperAdminPendingPayoutsQuery } from "@/lib/superAdminFinance/hooks";
 import { useSuperAdminPayoutDestinationQuery } from "@/lib/superAdminPayoutDestination/hooks";
 import PayoutDestinationPanel from "./PayoutDestinationPanel";
@@ -41,28 +41,19 @@ export default function SuperAdminFinancePending({
   // A manual transfer with no known destination must not be confirmable.
   const canConfirmTransfer = destination?.configured === true;
 
-  const handleExportCSV = () => {
-    const headers = ["Business", "City", "Category", "Transactions", "No-show €", "Late cancel €", "Deposits €", "Net Amount"];
-    const rows = items.map((p) => [
-      `"${p.businessName}"`,
-      `"${p.city}"`,
-      `"${p.category}"`,
-      p.transactionCount,
-      (p.noShowAmountCents / 100).toFixed(2),
-      (p.cancellationAmountCents / 100).toFixed(2),
-      (p.depositAmountCents / 100).toFixed(2),
-      `"${formatBookingMoney(p.netCents)}"`,
-    ]);
-
-    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `pending_sepa_payouts_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // P1.9 — server-streamed export of the complete pending list via the shared CSV encoder.
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const handleExportCSV = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await superAdminFinanceApi.exportPendingPayouts(`pending_sepa_payouts_${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch {
+      setExportError("Export failed. Please try again.");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleConfirmTransfer = () => {
@@ -92,13 +83,15 @@ export default function SuperAdminFinancePending({
         </div>
 
         <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+          {exportError && <span role="alert" className="text-xs text-rose-600">{exportError}</span>}
           <button
-            onClick={handleExportCSV}
-            disabled={items.length === 0}
+            onClick={() => void handleExportCSV()}
+            disabled={items.length === 0 || exporting}
+            title="All Businesses with a pending balance"
             className="flex items-center gap-2 bg-[#111111] hover:bg-black disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors flex-1 sm:flex-initial justify-center"
           >
             <HugeiconsIcon icon={Download01Icon} className="w-4 h-4 text-white" />
-            <span>Export CSV</span>
+            <span>{exporting ? "Exporting…" : `Export all ${items.length} (CSV)`}</span>
           </button>
 
           <button

@@ -49,6 +49,7 @@ export interface BookingServiceLineDto {
   packageProgressId?: string;
   packageItemId?: string;
   packageRole?: "PURCHASE" | "REDEMPTION";
+  packageName?: string;
 }
 
 export interface BookingFinancialsDto {
@@ -341,6 +342,8 @@ export interface BookingCreationPreview {
     amountCents: number;
   }>;
   financials: BookingFinancialsDto;
+  /** Server-resolved Business policy used to explain the current booking quote. */
+  cancellationPolicy?: { tiers: Array<{ tier: "MORE_THAN_72_HOURS" | "BETWEEN_24_AND_72_HOURS" | "BETWEEN_12_AND_24_HOURS" | "BETWEEN_2_AND_12_HOURS" | "UNDER_2_HOURS"; mode: "FREE" | "PERCENTAGE"; percentage?: number }>; noShowPercentage: number };
   /** Explicit server disclosure phase; does not authorize VAT collection. */
   taxMode: "PRE_ACTIVATION";
   /** Current server-owned pre-tax upfront obligation. */
@@ -402,6 +405,7 @@ export type CompleteVenuePaymentInput =
   | { settlement: "NOT_PAID"; note?: string };
 
 export interface ListBookingsParams {
+  reference?: string;
   status?: BookingStatus[];
   staffMembershipId?: string;
   businessClientId?: string;
@@ -433,6 +437,7 @@ export const bookingsApi = {
         ...(params.status ? { status: params.status.join(",") } : {}),
         ...(params.staffMembershipId ? { staffMembershipId: params.staffMembershipId } : {}),
         ...(params.businessClientId ? { businessClientId: params.businessClientId } : {}),
+        ...(params.reference ? { reference: params.reference } : {}),
         ...(params.fromDate ? { fromDate: params.fromDate } : {}),
         ...(params.toDate ? { toDate: params.toDate } : {}),
         ...(params.page ? { page: String(params.page) } : {}),
@@ -460,7 +465,7 @@ export const bookingsApi = {
     }),
 
   getCalendar: (businessId: string, fromDate: string, toDate: string) =>
-    apiRequest<{ bookings: BookingCalendarEntry[] }>({
+    apiRequest<{ bookings: BookingCalendarEntry[]; timezone?: string; openingHours?: import("./business-hours").BusinessHoursDay[] }>({
       method: "GET",
       url: `/businesses/${businessId}/bookings/calendar`,
       params: { fromDate, toDate },

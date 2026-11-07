@@ -7,16 +7,132 @@ import { packageLifecycleApi, packageLifecycleError } from "@/lib/api/package-li
 import { apiRequest, BooklyApiError } from "@/lib/api/client";
 import { owned } from "./visual/package-view-fixtures";
 import { bookingKeys } from "@/lib/bookings/hooks";
+const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock("@/components/packages/FirstClassBookingConfirmation", () => ({ FirstClassBookingConfirmation: ({ bookingIds }: { bookingIds: string[] }) => <section>Booking Confirmed!{bookingIds.map((id) => <a key={id} href={`/customer/bookings/view?id=${id}`}>View Booking</a>)}</section> }));
+vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
 
 vi.mock("@/lib/api/client", async (original) => ({ ...await original<object>(), apiRequest: vi.fn() }));
-vi.mock("@/lib/auth/store", () => ({ useAuthStore: (selector: (state: unknown) => unknown) => selector({ user: { id: "p2d-customer", role: "CUSTOMER" } }) }));
+const actor = vi.hoisted(() => ({ id: "p2d-customer" }));
+vi.mock("@/lib/auth/store", () => ({ useAuthStore: (selector: (state: unknown) => unknown) => selector({ user: { id: actor.id, role: "CUSTOMER" } }) }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement, root: Root;
-beforeEach(() => { sessionStorage.clear(); host = document.createElement("div"); document.body.append(host); root = createRoot(host); vi.mocked(apiRequest).mockReset(); });
+beforeEach(() => { navigation.push.mockReset(); actor.id = "p2d-customer"; sessionStorage.clear(); host = document.createElement("div"); document.body.append(host); root = createRoot(host); vi.mocked(apiRequest).mockReset(); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 async function render(node: React.ReactNode, client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   await act(async () => root.render(<QueryClientProvider client={client}>{node}</QueryClientProvider>));
 }
+async function setSettlementField(label: string, value: string) {
+  await act(async () => {
+    const field = host.querySelector<HTMLInputElement | HTMLSelectElement>(`[aria-label="${label}"]`)!;
+    const prototype = field.tagName === "SELECT" ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(field, value);
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    if (field.tagName === "INPUT") field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+it("a committed reschedule clears old availability before choosing another action", async () => {
+  const startAt = "2030-08-21T10:00:00Z";
+  vi.mocked(apiRequest).mockResolvedValueOnce({ bookingId: "booking", timezone: "UTC", days: [{ date: "2030-08-21", isOpen: true, slots: [{ startAt, endAt: "2030-08-21T11:00:00Z", eligibleStaffMembershipIds: ["staff"] }] }] })
+    .mockResolvedValueOnce({ state: "COMMITTED", status: "UPCOMING", bookingId: "booking", committedAt: "2030-08-19T10:00:00Z" });
+  await render(<FirstClassSessionActions businessId="business" progressId="progress" bookingId="booking" enabled />);
+  await setSettlementField("Package session action", "reschedule");
+  await setSettlementField("New appointment date", "2030-08-21");
+  const click = async (text: string) => { await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent === text)!.click()); };
+  await click("Find new appointment times");
+  await setSettlementField("New appointment instant", startAt);
+  await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  await click("Submit package action"); await click("Choose another action");
+  await setSettlementField("Package session action", "reschedule");
+  expect(host.querySelector<HTMLInputElement>('[aria-label="New appointment date"]')!.value).toBe("");
+  expect(host.querySelector<HTMLSelectElement>('[aria-label="New appointment instant"]')!.options).toHaveLength(1);
+  await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  expect([...host.querySelectorAll("button")].find((b) => b.textContent === "Submit package action")?.disabled).toBe(true);
+  expect(apiRequest).toHaveBeenCalledTimes(2);
+});
+it("rescheduling cannot select times returned for a different date", async () => {
+  vi.mocked(apiRequest).mockResolvedValueOnce({ bookingId: "booking", timezone: "UTC", days: [{ date: "2030-08-22", isOpen: true, slots: [{ startAt: "2030-08-22T10:00:00Z", endAt: "2030-08-22T11:00:00Z", eligibleStaffMembershipIds: ["staff"] }] }] });
+  await render(<FirstClassSessionActions businessId="business" progressId="progress" bookingId="booking" enabled />);
+  await setSettlementField("Package session action", "reschedule"); await setSettlementField("New appointment date", "2030-08-21");
+  await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Find new appointment times")!.click());
+  expect(host.querySelector<HTMLSelectElement>('[aria-label="New appointment instant"]')!.options).toHaveLength(1);
+  expect(host.textContent).toContain("No available replacement times");
+});
+it("uppercase provider failure is displayed as a failed session payment", async () => {
+  await render(<LifecycleResult result={{ state: "PAYMENT_PENDING", providerStatus: "FAILED" }} />);
+  expect(host.textContent).toContain("Session payment failed or needs a payment method");
+  expect(host.textContent).toContain("Booking unconfirmed");
+});
+it.each([
+  [true, "UPCOMING", ["cancel", "reschedule", "complete", "mark-no-show", "settlement", "expire"]],
+  [true, "PENDING", ["no-show", "reverse-no-show", "expire"]],
+  [true, "COMPLETED", ["settlement", "expire"]],
+  [false, "UPCOMING", ["cancel", "reschedule", "expire"]],
+  [false, "PENDING", ["expire"]],
+] as const)("management %s and Booking status %s expose only existing supported actions", async (management, bookingStatus, expected) => {
+  await render(<FirstClassSessionActions businessId="business" progressId="progress" bookingId="booking" enabled management={management} bookingStatus={bookingStatus} />);
+  expect([...host.querySelector<HTMLSelectElement>('[aria-label="Package session action"]')!.options].map((option) => option.value)).toEqual(expected);
+  expect(apiRequest).not.toHaveBeenCalled();
+});
+it("a changed Booking status cannot replace the exact retained action during recovery", async () => {
+  const input = { businessId: "business", packageProgressId: "progress", bookingId: "booking", key: "retained-cancel" };
+  sessionStorage.setItem("bookly:package-action:v1:p2d-customer:business:progress:booking:true", JSON.stringify({ action: "cancel", input }));
+  vi.mocked(apiRequest).mockResolvedValue({ state: "UNRESOLVED" });
+  await render(<FirstClassSessionActions businessId="business" progressId="progress" bookingId="booking" enabled management bookingStatus="COMPLETED" />);
+  const retry = [...host.querySelectorAll("button")].find((button) => button.textContent === "Retry identical action")!;
+  expect(retry.disabled).toBe(false);
+  await act(async () => retry.click());
+  expect(apiRequest).toHaveBeenLastCalledWith({ method: "POST", url: "/package-views/actions/cancel", data: input });
+});
+it("account changes discard mounted action state without copying the previous actor's request", async () => {
+  vi.mocked(apiRequest).mockRejectedValue(new Error("lost response"));
+  await render(<FirstClassSessionActions businessId="business" progressId="progress" bookingId="booking" enabled />);
+  await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Submit package action")!.click());
+  expect(host.textContent).toContain("Retry identical action");
+  actor.id = "different-customer";
+  await render(<FirstClassSessionActions businessId="business" progressId="progress" bookingId="booking" enabled />);
+  expect(host.textContent).not.toContain("Retry identical action");
+  expect(host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
+  expect(sessionStorage.getItem("bookly:package-action:v1:different-customer:business:progress:booking:false")).toBeNull();
+  expect(apiRequest).toHaveBeenCalledTimes(1);
+});
+it.each(["", "0", "1.5", "5000", "5001"])("an invalid partial amount %s stays editable without a retained operation", async (amount) => {
+  await render(<FirstClassSessionActions businessId="business" progressId="progress" bookingId="booking" enabled management outstandingBalanceCents={5000} />);
+  await setSettlementField("Package session action", "settlement");
+  await setSettlementField("Venue settlement", "PARTIAL");
+  await setSettlementField("Received amount (cents)", amount);
+  await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  const submit = [...host.querySelectorAll("button")].find((b) => b.textContent === "Submit package action")!;
+  expect(submit.disabled).toBe(true);
+  expect(host.querySelector("fieldset")!.disabled).toBe(false);
+  expect(apiRequest).not.toHaveBeenCalled();
+  expect(sessionStorage.length).toBe(0);
+});
+it("valid partial settlement uses exact cents and preserves the same request after a lost response", async () => {
+  vi.mocked(apiRequest).mockRejectedValue(new BooklyApiError({ message: "offline" }));
+  await render(<FirstClassSessionActions businessId="business" progressId="progress" bookingId="booking" enabled management outstandingBalanceCents={5000} />);
+  await setSettlementField("Package session action", "settlement");
+  await setSettlementField("Venue settlement", "PARTIAL");
+  await setSettlementField("Received amount (cents)", "1234");
+  await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Submit package action")!.click());
+  const original = vi.mocked(apiRequest).mock.calls[0]![0];
+  expect(original).toMatchObject({ url: "/package-views/actions/settlement", data: { venuePayment: { settlement: "PARTIAL", amountCents: 1234 } } });
+  await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Retry identical action")!.click());
+  expect(vi.mocked(apiRequest).mock.calls[1]![0]).toEqual(original);
+});
+it("restores the actual retained partial attestation after reload even if the displayed balance changed", async () => {
+  const input = { businessId: "business", packageProgressId: "progress", bookingId: "booking", key: "original-partial", venuePayment: { settlement: "PARTIAL", amountCents: 1234 } };
+  sessionStorage.setItem("bookly:package-action:v1:p2d-customer:business:progress:booking:true", JSON.stringify({ action: "settlement", input }));
+  vi.mocked(apiRequest).mockResolvedValue({ state: "UNRESOLVED" });
+  await render(<FirstClassSessionActions businessId="business" progressId="progress" bookingId="booking" enabled management outstandingBalanceCents={0} />);
+  expect(host.querySelector<HTMLSelectElement>('[aria-label="Venue settlement"]')!.value).toBe("PARTIAL");
+  expect(host.querySelector<HTMLInputElement>('[aria-label="Received amount (cents)"]')!.value).toBe("1234");
+  const retry = [...host.querySelectorAll("button")].find((b) => b.textContent === "Retry identical action")!;
+  expect(retry.disabled).toBe(false);
+  await act(async () => retry.click());
+  expect(apiRequest).toHaveBeenLastCalledWith({ method: "POST", url: "/package-views/actions/settlement", data: input });
+});
 it("real API transport uses the established action URL and preserves exact request keys", async () => {
   vi.mocked(apiRequest).mockResolvedValue({ state: "UNRESOLVED" });
   const input = { businessId: "business", packageProgressId: "progress", bookingId: "booking", key: "stable" };
@@ -63,6 +179,25 @@ it("only an explicit committed server response renders committed", async () => {
   await render(<LifecycleResult result={{ state: "COMMITTED", status: "UPCOMING", bookingId: "booking", committedAt: "2030-08-19T10:00:00Z" }} />);
   expect(host.textContent).toContain("Server committed: UPCOMING");
 });
+it("a committed redemption links to its actual Customer booking", async () => {
+  await render(<LifecycleResult result={{ state: "COMMITTED", status: "UPCOMING", bookingId: "canonical-booking", committedAt: "2030-08-19T10:00:00Z" }} customerBooking />);
+  expect(host.querySelector("a")?.getAttribute("href")).toBe("/customer/bookings/view?id=canonical-booking");
+});
+it("a failed refreshed redemption availability read clears the previous Staff and time", async () => {
+  const pkg = { ...owned, actionsAvailable: true, status: "RECORDED", validity: { mode: "FOREVER" as const, expiresAt: null, timezone: null },
+    purchaseFinancials: { ...owned.purchaseFinancials!, balanceSettled: true }, items: owned.items.map((item) => ({ ...item, remaining: 1, travelCities: [] })) };
+  vi.mocked(apiRequest).mockResolvedValueOnce({ timezone: "UTC", providers: [{ id: "staff", name: "Alex" }], addons: [], days: [{ date: "2030-08-21", slots: [{ startAt: "2030-08-21T10:00:00Z", endAt: "2030-08-21T11:00:00Z", eligibleStaffMembershipIds: ["staff"] }] }] })
+    .mockRejectedValueOnce(new Error("offline"));
+  await render(<FirstClassLifecycleControls pkg={pkg} />);
+  await setSettlementField("Purchased service", pkg.items[0]!.id); await setSettlementField("Session date", "2030-08-21");
+  const find = () => [...host.querySelectorAll("button")].find((button) => button.textContent === "Find professionals and times")!;
+  await act(async () => find().click()); await setSettlementField("Professional", "staff"); await setSettlementField("Appointment time", "2030-08-21T10:00:00Z");
+  await act(async () => find().click());
+  expect(host.querySelector<HTMLSelectElement>('[aria-label="Professional"]')!.value).toBe("");
+  expect(host.querySelector<HTMLSelectElement>('[aria-label="Appointment time"]')!.options.length).toBe(1);
+  expect([...host.querySelectorAll("button")].find((button) => button.textContent === "Review exact session terms")!.disabled).toBe(true);
+  expect(apiRequest).toHaveBeenCalledTimes(2);
+});
 it("a lost cancellation response freezes the original key for retry", async () => {
   vi.mocked(apiRequest).mockRejectedValue(new BooklyApiError({ message: "offline" }));
   await render(<FirstClassSessionActions businessId="business" progressId="progress" bookingId="booking" enabled />);
@@ -102,7 +237,10 @@ it("Customer selects server staff/slot, accepts exact dues and confirms only the
   expect(host.textContent).not.toContain("Server committed");
   await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
   await click("Accept session terms"); expect(host.textContent).not.toContain("Server committed");
-  await click("Confirm session booking"); expect(host.textContent).toContain("Server committed: UPCOMING");
+  expect(navigation.push).not.toHaveBeenCalled();
+  await click("Confirm session booking"); expect(host.textContent).toContain("Booking Confirmed!");
+  expect(navigation.push).not.toHaveBeenCalled();
+  expect(sessionStorage.getItem(`bookly:package-session:v1:p2d-customer:${pkg.id}`)).not.toBeNull();
   const quoteRequest = vi.mocked(apiRequest).mock.calls[1]?.[0];
   const bookingRequest = vi.mocked(apiRequest).mock.calls[3]?.[0];
   expect(bookingRequest?.data).toEqual(quoteRequest?.data);
@@ -174,7 +312,7 @@ it("P4K-3 reload recovers a committed redemption with one read-only status call 
   await render(<FirstClassLifecycleControls pkg={usable} />, client); await settle();
   expect(apiRequest).toHaveBeenCalledTimes(1);
   expect(apiRequest).toHaveBeenCalledWith({ method: "POST", url: "/package-views/actions/session-status", data: request });
-  expect(host.textContent).toContain("Server committed: UPCOMING · Booking booking-1");
+  expect(host.textContent).toContain("Booking Confirmed!");
   expect(host.textContent).not.toContain("Operation unresolved");
   expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Retry same booking request")).toBe(false);
   expect(client.getQueryState(listKey)?.isInvalidated).toBe(true);

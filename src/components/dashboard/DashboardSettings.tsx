@@ -20,6 +20,7 @@ import { SettingsInput } from "../settings/SettingsInput";
 import { SettingsSubSidebar } from "../settings/SettingsSubSidebar";
 import { Security2FAPanel } from "../settings/Security2FAPanel";
 import { PayoutDestinationSettings } from "../settings/PayoutDestinationSettings";
+import { BusinessTaxSettings } from "../settings/BusinessTaxSettings";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/sonner";
 import { useCurrentUserQuery } from "@/lib/auth/hooks";
@@ -41,6 +42,11 @@ import {
   useCancellationPolicyQuery,
   useUpdateCancellationPolicyMutation,
 } from "@/lib/business/cancellation-policy-hooks";
+
+// Approved v2 Normal Booking terms: more than 24 h is fixed free; these three windows are the
+// Business's to set. The 72 h and 24–72 h rows are still stored for First-Class Package quotes.
+const NORMAL_FEE_TIERS = ["BETWEEN_12_AND_24_HOURS", "BETWEEN_2_AND_12_HOURS", "UNDER_2_HOURS"] as const;
+const FIRST_CLASS_ONLY_TIERS = ["MORE_THAN_72_HOURS", "BETWEEN_24_AND_72_HOURS"] as const;
 
 // Batch 19 — fixed five-window labels matching cancellationTiers' order exactly (see
 // api/.../business-cancellation-policy.model.ts's own comment on why this UI never lets an
@@ -80,13 +86,18 @@ export default function DashboardSettings() {
     const googleCalendarResult = params.get("googleCalendar");
 
     if (params.get("settingsTab") === "Integration") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Consume the external OAuth redirect URL after mount.
       setActiveSubTab("Integration");
     }
 
     if (googleCalendarResult === "connected" || googleCalendarResult === "error") {
       setGoogleCalendarRedirectNotice(googleCalendarResult);
       void googleCalendarStatusQuery.refetch();
-      window.history.replaceState({}, "", window.location.pathname);
+      // Consume only the transient callback result. Native history updates also update
+      // Next's search params, so clearing section would navigate this dashboard to Calendar.
+      params.delete("googleCalendar");
+      params.set("section", "settings");
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
     }
     // Only ever needs to run once, right after the OAuth redirect lands.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,8 +205,17 @@ export default function DashboardSettings() {
     }
   }
 
+  const cancellationPolicyReady = Boolean(businessId) && cancellationPolicyQuery.isSuccess &&
+    !cancellationPolicyQuery.isFetching && cancellationFormInitialized;
   const handleSaveCancellationPolicy = async () => {
+    if (!cancellationPolicyReady || updateCancellationPolicyMutation.isPending) return;
     setCancellationFormError("");
+    const validPercentage = (value: number) => Number.isInteger(value) && value >= 20 && value <= 100;
+    if (!validPercentage(noShowPercent) || cancellationTiers.some((tier) =>
+      cancellationForm[tier].mode === "PERCENTAGE" && !validPercentage(cancellationForm[tier].percentage))) {
+      setCancellationFormError("Enter whole percentages between 20 and 100.");
+      return;
+    }
     try {
       await updateCancellationPolicyMutation.mutateAsync({
         tiers: cancellationTiers.map((tier) => {
@@ -222,6 +242,74 @@ export default function DashboardSettings() {
     { name: "Notifications", icon: Notification01Icon },
     { name: "Security & 2FA", icon: SecurityCheckIcon }
   ];
+
+  const renderCancellationRule = (tier: (typeof cancellationTiers)[number]) => {
+    const rule = cancellationForm[tier];
+    const isFree = rule.mode === "FREE";
+    return (
+      <div key={tier} className="flex flex-col gap-3 pb-3 border-b border-neutral-100 last:border-b-0 last:pb-0">
+        <div className="flex items-center justify-between w-full">
+          <span className="font-inter font-normal text-xs text-black">
+            {CANCELLATION_TIER_LABELS[tier]}
+          </span>
+
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={isFree}
+            aria-label={`Free cancellation: ${CANCELLATION_TIER_LABELS[tier]}`}
+            className="flex items-center gap-2 cursor-pointer"
+            onClick={() =>
+              setCancellationForm((prev) => ({
+                ...prev,
+                [tier]: isFree
+                  ? { mode: "PERCENTAGE", percentage: prev[tier].percentage }
+                  : { mode: "FREE", percentage: prev[tier].percentage },
+              }))
+            }
+          >
+            {isFree ? (
+              <div className="w-5 h-5 bg-[#111111] rounded-[4px] flex items-center justify-center">
+                <HugeiconsIcon icon={Tick01Icon} className="w-3.5 h-3.5 text-white" />
+              </div>
+            ) : (
+              <div className="w-5 h-5 border-2 border-[#666666] rounded-[4px]" />
+            )}
+            <span className="font-inter font-normal text-xs text-black select-none">
+              Free of charge
+            </span>
+          </button>
+        </div>
+
+        {!isFree && (
+          <div className="flex items-center border border-[#D3D1C7] rounded-[8px] overflow-hidden h-9 px-4">
+            <span className="font-poppins font-normal text-xs text-[#757575] mr-2">%</span>
+            <input
+              type="number"
+              min={20}
+              max={100}
+              value={rule.percentage}
+              onChange={(e) =>
+                setCancellationForm((prev) => ({
+                  ...prev,
+                  [tier]: { mode: "PERCENTAGE", percentage: Number(e.target.value) },
+                }))
+              }
+              className="flex-1 text-[13px] text-[#1A1A1A] font-poppins focus:outline-none h-full bg-transparent"
+            />
+          </div>
+        )}
+
+        {isFree && (
+          <div className="flex items-center border border-[#D3D1C7] bg-[#FCFAF9] rounded-[8px] overflow-hidden h-9 px-4">
+            <span className="font-poppins font-normal text-xs text-neutral-400">
+              Free cancellation
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] md: select-none font-poppins relative">
@@ -410,80 +498,41 @@ export default function DashboardSettings() {
                 </p>
               </div>
 
-              <div className="bg-white border border-neutral-100 rounded-[12px] p-5 flex flex-col gap-5">
+              {cancellationPolicyQuery.isPending && <p role="status">Loading cancellation policy…</p>}
+              {cancellationPolicyQuery.isError && <div role="alert" className="text-sm text-red-700">
+                <p>Cancellation policy could not be loaded. Reload it before making changes.</p>
+                <button type="button" disabled={cancellationPolicyQuery.isFetching} onClick={() => void cancellationPolicyQuery.refetch()} className="mt-2 underline">Retry cancellation policy</button>
+              </div>}
+              <fieldset disabled={!cancellationPolicyReady || updateCancellationPolicyMutation.isPending} className="bg-white border border-neutral-100 rounded-[12px] p-5 flex flex-col gap-5">
                 <div className="flex flex-col gap-1">
                   <h3 className="font-poppins font-normal text-[13px] text-[#1A1A1A]">
                     Cancellation window
                   </h3>
                   <p className="font-poppins font-normal text-[11px] text-[#757575] leading-[16px]">
-                    Set cancellation policy based on the appointment time, but the percentage can not be less than 20% e.g., If the client wants to cancel the appointment more than 24 hours before then he can set the cancellation fee as free.
+                    Cancelling 24 hours or more before a normal booking is always free and refunds the deposit. Set a fee for each later window (at least 20%), or keep it free of charge.
                   </p>
                 </div>
 
-                <div className="border border-neutral-200 rounded-[12px] p-5 flex flex-col gap-4">
-                  {cancellationTiers.map((tier) => {
-                    const rule = cancellationForm[tier];
-                    const isFree = rule.mode === "FREE";
-                    return (
-                      <div key={tier} className="flex flex-col gap-3 pb-3 border-b border-neutral-100 last:border-b-0 last:pb-0">
-                        <div className="flex items-center justify-between w-full">
-                          <span className="font-inter font-normal text-xs text-black">
-                            {CANCELLATION_TIER_LABELS[tier]}
-                          </span>
+                <div className="border border-neutral-200 rounded-[12px] p-5 flex flex-col gap-4" aria-label="Normal booking cancellation windows">
+                  <div className="flex flex-col gap-1 pb-3 border-b border-neutral-100">
+                    <span className="font-inter font-normal text-xs text-black">24 hours or more</span>
+                    <div className="flex items-center border border-[#D3D1C7] bg-[#FCFAF9] rounded-[8px] overflow-hidden min-h-9 px-4 py-2">
+                      <span className="font-poppins font-normal text-xs text-[#45474B]">
+                        Free cancellation. The customer&apos;s deposit is refunded in full (fixed by Bookly policy).
+                      </span>
+                    </div>
+                  </div>
+                  {NORMAL_FEE_TIERS.map((tier) => renderCancellationRule(tier))}
+                </div>
 
-                          <div
-                            className="flex items-center gap-2 cursor-pointer"
-                            onClick={() =>
-                              setCancellationForm((prev) => ({
-                                ...prev,
-                                [tier]: isFree
-                                  ? { mode: "PERCENTAGE", percentage: prev[tier].percentage }
-                                  : { mode: "FREE", percentage: prev[tier].percentage },
-                              }))
-                            }
-                          >
-                            {isFree ? (
-                              <div className="w-5 h-5 bg-[#111111] rounded-[4px] flex items-center justify-center">
-                                <HugeiconsIcon icon={Tick01Icon} className="w-3.5 h-3.5 text-white" />
-                              </div>
-                            ) : (
-                              <div className="w-5 h-5 border-2 border-[#666666] rounded-[4px]" />
-                            )}
-                            <span className="font-inter font-normal text-xs text-black select-none">
-                              Free of charge
-                            </span>
-                          </div>
-                        </div>
-
-                        {!isFree && (
-                          <div className="flex items-center border border-[#D3D1C7] rounded-[8px] overflow-hidden h-9 px-4">
-                            <span className="font-poppins font-normal text-xs text-[#757575] mr-2">%</span>
-                            <input
-                              type="number"
-                              min={20}
-                              max={100}
-                              value={rule.percentage}
-                              onChange={(e) =>
-                                setCancellationForm((prev) => ({
-                                  ...prev,
-                                  [tier]: { mode: "PERCENTAGE", percentage: Number(e.target.value) },
-                                }))
-                              }
-                              className="flex-1 text-[13px] text-[#1A1A1A] font-poppins focus:outline-none h-full bg-transparent"
-                            />
-                          </div>
-                        )}
-
-                        {isFree && (
-                          <div className="flex items-center border border-[#D3D1C7] bg-[#FCFAF9] rounded-[8px] overflow-hidden h-9 px-4">
-                            <span className="font-poppins font-normal text-xs text-neutral-400">
-                              Free cancellation
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="border border-neutral-200 rounded-[12px] p-5 flex flex-col gap-4" aria-label="First-Class Package cancellation windows">
+                  <div className="flex flex-col gap-1">
+                    <h4 className="font-poppins font-semibold text-xs text-[#1A1A1A]">First-Class Packages only</h4>
+                    <p className="font-poppins font-normal text-[11px] text-[#45474B] leading-[16px]">
+                      First-Class Package terms still use these two windows. They do not apply to normal bookings or legacy Package Deals.
+                    </p>
+                  </div>
+                  {FIRST_CLASS_ONLY_TIERS.map((tier) => renderCancellationRule(tier))}
                 </div>
 
                 <div className="flex flex-col gap-2 mt-2">
@@ -512,14 +561,14 @@ export default function DashboardSettings() {
 
                 <div className="flex items-center justify-end gap-3 mt-4 pt-4 border-t border-neutral-100">
                   <button
-                    disabled={updateCancellationPolicyMutation.isPending}
+                    disabled={!cancellationPolicyReady || updateCancellationPolicyMutation.isPending}
                     onClick={() => setCancellationFormInitialized(false)}
                     className="px-4 py-2 border border-[#DEDDE3] rounded-[8px] text-xs font-semibold text-[#5B5D58] hover:bg-neutral-50 cursor-pointer disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
-                    disabled={updateCancellationPolicyMutation.isPending}
+                    disabled={!cancellationPolicyReady || updateCancellationPolicyMutation.isPending}
                     onClick={handleSaveCancellationPolicy}
                     className="px-4 py-2 bg-[#111111] hover:bg-black text-white rounded-[8px] text-xs font-semibold cursor-pointer disabled:opacity-60"
                   >
@@ -527,13 +576,16 @@ export default function DashboardSettings() {
                   </button>
                 </div>
 
-              </div>
+              </fieldset>
             </div>
           )}
 
           {/* TAB 4: Bank & Payouts */}
           {activeSubTab === "Bank & Payouts" && (
-            <PayoutDestinationSettings businessId={businessId} />
+            <div className="flex flex-col gap-6 w-full">
+              <PayoutDestinationSettings businessId={businessId} />
+              <BusinessTaxSettings businessId={businessId} />
+            </div>
           )}
 
           {/* TAB 5: Integration */}

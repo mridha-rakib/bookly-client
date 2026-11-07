@@ -18,7 +18,7 @@ export default function AdditionalInfoSection({
   return (
     <div className="flex flex-col gap-6 w-full">
       <span className="font-poppins font-semibold text-sm text-[#111111] -mb-2">
-        Information will shown on display (max 3)
+        Additional Business information (max 3, saved in your private profile)
       </span>
 
       <div className="flex flex-col gap-4 w-full">

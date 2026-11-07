@@ -1,4 +1,7 @@
 "use client";
+import { downloadCsv } from "@/lib/api/csv-download";
+import { toast } from "@/components/ui/sonner";
+import { toUserMessage } from "@/lib/auth/messages";
 
 import React, { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -48,35 +51,18 @@ interface PayoutsBreakdownProps {
 
 export default function PayoutsBreakdown({ businessId, period, periodLabel }: PayoutsBreakdownProps) {
   const [page, setPage] = useState(1);
+  const [isExporting, setIsExporting] = useState(false);
   const query = useFinanceTransactionsQuery(businessId, period, { page, limit: PAGE_SIZE });
   const rows = query.data?.transactions ?? [];
   const total = query.data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const handleExportCSV = () => {
-    const headers = ["CLIENT", "REFERENCE", "DATE", "TYPE", "CUSTOMER", "FEE CHARGED", "YOUR PAYOUT", "STATUS"];
-    const dataRows = rows.map((t) => [
-      t.customerName,
-      t.bookingReference,
-      formatRowDate(t.date),
-      typeLabel[t.type],
-      customerLabel[t.customerType],
-      formatBookingMoney(t.amountCents),
-      formatBookingMoney(t.businessOwnedCents),
-      t.status,
-    ]);
-
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [headers.join(","), ...dataRows.map((row) => row.map((val) => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `transaction_breakdown_${periodLabel.replace(/\s+/g, "_").toLowerCase()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleExportCSV = async () => {
+    if (!period || isExporting) return;
+    setIsExporting(true);
+    try { await downloadCsv(`/businesses/${businessId}/finance/transactions/export.csv`, { ...period }, "finance-transactions.csv"); }
+    catch (error) { toast.error(toUserMessage(error)); }
+    finally { setIsExporting(false); }
   };
 
   return (
@@ -93,10 +79,10 @@ export default function PayoutsBreakdown({ businessId, period, periodLabel }: Pa
           </span>
         </div>
 
-        {/* Export CSV button — exports the currently loaded page only */}
+        {/* Export CSV button — exports all authorized rows in the selected period */}
         <button
           onClick={handleExportCSV}
-          disabled={rows.length === 0}
+          disabled={rows.length === 0 || isExporting || query.isError}
           className="box-sizing-border-box flex flex-row align-center items-center px-4 py-1 gap-2 bg-white border border-[#DEDBD3] hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-[0px_1px_0px_rgba(0,0,0,0.03)] rounded-[12px] h-[32px] text-[13px] font-medium text-[#4F504B] cursor-pointer transition-all"
         >
           <HugeiconsIcon icon={DownloadIcon} className="w-4 h-4 text-[#4F504B]" />

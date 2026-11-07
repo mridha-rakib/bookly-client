@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CheckoutSummaryAside from "@/app/venue/components/CheckoutSummaryAside";
 import type { BookingCreationPreview } from "@/lib/api/bookings";
+import type { RetainedPurchaseQuote } from "@/lib/api/package-consent";
 import { formatBookingMoney } from "@/lib/bookings/format";
 
 // Only visual dependencies are stubbed; the real financial renderer and formatter run.
@@ -52,6 +53,23 @@ describe("checkout pre-activation financial disclosure", () => {
     expect(text, label).toBeDefined();
     return text!.parentElement!.querySelectorAll("span")[1]?.textContent;
   }
+  it("shows the no-deposit badge only for the current Business's authoritative RETURNING zero-upfront quote", async () => {
+    const returning = quote(10000, 0, 0);
+    await render(returning);
+    expect(container.textContent).toContain("Returning Customer — No upfront deposit required");
+    await render({ ...returning, isFirstBooking: true });
+    expect(container.textContent).not.toContain("Returning Customer — No upfront deposit required");
+    await render(returning, { isPreviewLoading: true });
+    expect(container.textContent).not.toContain("Returning Customer — No upfront deposit required");
+    await render(returning, { previewError: true });
+    expect(container.textContent).not.toContain("Returning Customer — No upfront deposit required");
+    await render(quote());
+    expect(container.textContent).not.toContain("Returning Customer — No upfront deposit required");
+    await render(returning, { business: { id: "other-business", address: { streetName: "Main", streetNumber: "1", city: "Larnaca" } } as never });
+    expect(container.textContent).not.toContain("Returning Customer — No upfront deposit required");
+    await render(returning); // A newly issued quote after relationship changes controls the badge.
+    expect(container.textContent).toContain("Returning Customer — No upfront deposit required");
+  });
   function assertAmounts(scope: Element, total: number, due: number, remaining: number, tax: number) {
     expect(amount(scope, "Booking total")).toBe(formatBookingMoney(total));
     expect(amount(scope, "Due now")).toBe(formatBookingMoney(due));
@@ -90,12 +108,50 @@ describe("checkout pre-activation financial disclosure", () => {
 
   it.each([false, true])("does not fabricate financial amounts without a quote (failed=%s)", async failed => {
     await render(undefined, { previewError: failed });
+    // Unknown amounts read as a pending quote — never a dash placeholder or a fabricated €0.
     for (const label of ["Booking total", "Due now", "Remaining at appointment"])
-      expect(amount(container.querySelector("aside")!, label)).toBe("—");
+      expect(amount(container.querySelector("aside")!, label)).toBe("Pending quote");
     expect(container.textContent).not.toContain("€0.00");
     expect(container.textContent).not.toContain("not charged in this checkout");
     const confirm = Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Confirm")!;
     expect(confirm.disabled).toBe(true);
+  });
+
+  function packageQuote(upfront: number, tax?: RetainedPurchaseQuote["tax"]): RetainedPurchaseQuote {
+    return {
+      quoteId: "quote", termsHash: "a".repeat(64), issuedAt: "2030-08-01T07:00:00Z", expiresAt: "2030-08-01T07:30:00Z",
+      timezone: "Europe/Nicosia", lifetimeMs: 1800000, certification: "UNRESOLVED", purchaseAvailable: false, name: "Package",
+      financials: { currency: "EUR", bundlePriceCents: 16000, addonsCents: 1000, travelCents: 500, normalTotalCents: 17500,
+        requiredUpfrontCents: upfront, manualVenueDuesCents: 17500 - upfront, classification: upfront ? "FIRST" : "RETURNING" },
+      ...(tax ? { tax } : {}),
+    };
+  }
+  it("uses First-Class classification and its own upfront obligation, never Normal deposit assumptions", async () => {
+    const returning = packageQuote(0);
+    await render(undefined, { packageQuote: returning });
+    expect(container.textContent).toContain("Returning Customer — No upfront deposit required");
+    await render(undefined, { packageQuote: { ...returning, financials: { ...returning.financials, classification: "FIRST" } } });
+    expect(container.textContent).not.toContain("Returning Customer — No upfront deposit required");
+    await render(undefined, { packageQuote: { ...returning, financials: { ...returning.financials, requiredUpfrontCents: 100 } } });
+    expect(container.textContent).not.toContain("Returning Customer — No upfront deposit required");
+    await render(undefined, { packageQuote: returning, isPreviewLoading: true });
+    expect(container.textContent).not.toContain("Returning Customer — No upfront deposit required");
+  });
+  it.each([
+    ["FIRST calculated", 3200, { status: "CALCULATED", taxMode: "PRE_ACTIVATION", currency: "EUR", preTaxChargeCents: 3200, taxCents: 608 }, "€6.08", "Calculated on the €32.00 upfront payment"],
+    ["FIRST calculated zero", 3200, { status: "CALCULATED", taxMode: "PRE_ACTIVATION", currency: "EUR", preTaxChargeCents: 3200, taxCents: 0 }, "€0.00", "Informational only"],
+    ["RETURNING no online charge", 0, { status: "CALCULATED", taxMode: "PRE_ACTIVATION", currency: "EUR", preTaxChargeCents: 0, taxCents: 0 }, "€0.00", "Nothing is charged online"],
+    ["unavailable", 3200, { status: "UNAVAILABLE", taxMode: "PRE_ACTIVATION" }, "Unavailable", "could not be calculated"],
+    ["older response", 3200, undefined, "Unavailable", "could not be calculated"],
+  ] as const)("First-Class quote VAT: %s, never added to payable amounts", async (_n, upfront, tax, shown, note) => {
+    await render(undefined, { packageQuote: packageQuote(upfront, tax), isPackagePurchase: true });
+    const aside = container.querySelector("aside")!;
+    const info = aside.querySelector('[aria-label="Calculated VAT information"]')!;
+    expect(info.querySelectorAll("span")[1]?.textContent).toBe(shown);
+    expect(info.textContent).toContain(note);
+    expect(amount(aside, "Due now")).toBe(formatBookingMoney(upfront));
+    expect(amount(aside, "Booking total")).toBe(formatBookingMoney(17500));
+    expect(amount(aside, "Remaining at appointment")).toBe(formatBookingMoney(17500 - upfront));
   });
 
   it("does not invent a disclosure phase for an older response", async () => {

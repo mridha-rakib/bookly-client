@@ -15,12 +15,12 @@ import CustomerFinancialOutcome from "@/components/bookings/CustomerFinancialOut
 import { presentCancellation, presentOnlineSnapshot, presentVenuePayment, presentFinancialOutcome } from "@/lib/bookings/customer-financial";
 
 type Request = { url: string; method?: string; data?: unknown };
-const fx = vi.hoisted(() => ({ requests: [] as Request[], respond: undefined as undefined | ((req: Request) => unknown), push: vi.fn() }));
+const fx = vi.hoisted(() => ({ requests: [] as Request[], respond: undefined as undefined | ((req: Request) => unknown), push: vi.fn(), replace: vi.fn() }));
 vi.mock("@/lib/api/client", async (original) => ({
   ...(await original<typeof import("@/lib/api/client")>()),
   apiRequest: async (req: Request) => { fx.requests.push(req); return fx.respond!(req); },
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: fx.push, replace: vi.fn() }),
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: fx.push, replace: fx.replace }),
   usePathname: () => "/customer/bookings/view", useSearchParams: () => new URLSearchParams("id=bbbbbbbbbbbbbbbbbbbbbbbb") }));
 vi.mock("next/image", () => ({ default: ({ alt }: { alt: string }) => <span>{alt}</span> }));
 vi.mock("@/components/Navbar", () => ({ default: () => <nav /> }));
@@ -73,7 +73,7 @@ async function waitFor(check: () => void) {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); }); }
 }
 beforeEach(() => {
-  detail = booking(); fx.requests.length = 0; fx.push.mockClear(); authenticate("customer-a");
+  detail = booking(); fx.requests.length = 0; fx.push.mockClear(); fx.replace.mockClear(); authenticate("customer-a");
   fx.respond = (req) => req.url === `/me/bookings/${ID}` ? detail
     : req.url.startsWith("/catalog/") ? { business: { name: "Actual venue", visitType: "AT_BUSINESS_LOCATION" }, services: [], staff: [] } : {};
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
@@ -83,6 +83,83 @@ const texts = (rows: ReturnType<typeof presentCancellation>) => rows.map((row) =
 const detailReads = () => fx.requests.filter((req) => req.url === `/me/bookings/${ID}`);
 
 describe("F2D financial presentation", () => {
+  it("authorized First-Class details stay mounted through loading, readback invalidation and same-account refresh", async () => {
+    detail.status = "UPCOMING"; delete detail.cancellationOutcome;
+    detail.serviceLines[0]!.packageProgressId = "progress";
+    detail.serviceLines[0]!.packageItemId = "item";
+    detail.serviceLines[0]!.packageRole = "PURCHASE";
+    let finish: (value: BookingDetail) => void;
+    let initial = true;
+    fx.respond = (request) => request.url === `/me/bookings/${ID}`
+      ? initial ? (initial = false, new Promise<BookingDetail>((resolve) => { finish = resolve; })) : detail
+      : request.url.startsWith("/catalog/") ? { business: { name: "Actual venue" }, services: [], staff: [] } : {};
+    await render(<BookingView />);
+    expect(host.textContent).toContain("Loading your booking");
+    expect(fx.push).not.toHaveBeenCalled(); expect(fx.replace).not.toHaveBeenCalled();
+    await act(async () => finish!(detail));
+    await waitFor(() => expect(host.textContent).toContain("Original initial Package appointment"));
+    const heading = host.querySelector("h1");
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customerBookings"] });
+      await queryClient.invalidateQueries({ queryKey: ["packageViews"] });
+      useAuthStore.setState({ user: { ...useAuthStore.getState().user!, email: "refreshed@example.com" } });
+    });
+    await render(<BookingView />);
+    expect(host.querySelector("h1")).toBe(heading);
+    expect(host.textContent).toContain("Original initial Package appointment");
+    expect(host.querySelector('a[href="/customer/bookings"]')).not.toBeNull();
+    expect(host.querySelector('a[href="/customer/packages"]')).not.toBeNull();
+    expect(fx.push).not.toHaveBeenCalled(); expect(fx.replace).not.toHaveBeenCalled();
+  });
+  it.each(["AT_BUSINESS_LOCATION", "TRAVEL_TO_CUSTOMER"] as const)("common details use the persisted %s address and visit direction", async (mode) => {
+    const savedAddress = { city: "Larnaca" as const, area: "Booked area", streetName: "Booked street", streetNumber: "12", floorUnit: "3", aptRoom: "8", location: { lat: 34.92, lng: 33.62 } };
+    detail.fulfilment = mode === "AT_BUSINESS_LOCATION" ? { mode, businessLocation: savedAddress }
+      : { mode, travelAddress: { ...savedAddress, propertyType: "Apartment", additionalDirections: "Use the side entrance" } };
+    detail.status = "UPCOMING"; delete detail.cancellationOutcome;
+    detail.financials.travelFeeCents = mode === "TRAVEL_TO_CUSTOMER" ? 1200 : 0;
+    detail.serviceLines[0]!.addons = [{ addonId: "addon", name: "Recorded add-on", priceCents: 500 }];
+    detail.serviceLines[0]!.packageItemId = "item"; detail.serviceLines[0]!.packageProgressId = "progress";
+    detail.serviceLines[0]!.packageRole = "REDEMPTION"; detail.serviceLines[0]!.packageName = "Purchased package name";
+    fx.respond = (req) => req.url === `/me/bookings/${ID}` ? detail : req.url.startsWith("/catalog/")
+      ? { business: { name: "Actual venue", visitType: mode === "AT_BUSINESS_LOCATION" ? "TRAVEL_TO_CUSTOMER" : "AT_BUSINESS_LOCATION", address: { ...savedAddress, streetName: "MUTABLE PROFILE ADDRESS" } }, services: [], staff: [] } : {};
+    await render(<BookingView />);
+    await waitFor(() => expect(host.textContent).toContain("Booked street"));
+    expect(host.textContent).toContain(mode === "TRAVEL_TO_CUSTOMER" ? "Professional visits your location" : "Visit the business");
+    expect(host.textContent).toContain("Floor / unit: 3"); expect(host.textContent).toContain("Apartment / room: 8");
+    expect(host.textContent).not.toContain("MUTABLE PROFILE ADDRESS");
+    expect(host.textContent).toContain("Upcoming"); expect(host.textContent).toContain("Recorded professional");
+    expect(host.textContent).toContain("Purchased package name"); expect(host.textContent).toContain("Recorded add-on");
+    expect(host.textContent).toContain("UTC"); expect(host.textContent).toContain("255 min");
+    const maps = [...host.querySelectorAll("a")].find((link) => link.textContent === "Open in maps")!;
+    expect(maps.href).toContain("34.92%2C33.62");
+    expect(host.querySelector('a[href="/customer/packages/progress?kind=first-class"]')).not.toBeNull();
+    if (mode === "TRAVEL_TO_CUSTOMER") { expect(host.textContent).toContain("Use the side entrance"); expect(host.textContent).toContain("Travel fee"); }
+    expect(fx.requests.some((req) => req.method === "POST")).toBe(false);
+  });
+  it("missing or mismatched address snapshots never fall back to a current profile or the opposite address", async () => {
+    detail.fulfilment = { mode: "TRAVEL_TO_CUSTOMER", businessLocation: { city: "Larnaca", area: "Wrong area", streetName: "PRIVATE WRONG ADDRESS", streetNumber: "7" } };
+    await render(<BookingView />);
+    await waitFor(() => expect(host.textContent).toContain("The booked service address is unavailable"));
+    expect(host.textContent).not.toContain("PRIVATE WRONG ADDRESS");
+    expect([...host.querySelectorAll("a")].some((link) => link.textContent === "Open in maps")).toBe(false);
+  });
+  it("normal Booking details retain the existing cancellation and reschedule actions", async () => {
+    detail.status = "UPCOMING"; delete detail.cancellationOutcome;
+    await render(<BookingView />);
+    await waitFor(() => expect(host.textContent).toContain("Recorded service"));
+    expect([...host.querySelectorAll("button")].some((button) => button.textContent === "Cancel")).toBe(true);
+    expect([...host.querySelectorAll("button")].some((button) => button.textContent === "Reschedule")).toBe(true);
+  });
+  it("a real legacy Package Booking retains the common detail and original Package destination", async () => {
+    detail.status = "UPCOMING"; delete detail.cancellationOutcome;
+    detail.serviceLines[0]!.packageProgressId = "legacy-progress";
+    detail.serviceLines[0]!.sessionIndex = 2; detail.serviceLines[0]!.sessionsInPackage = 6;
+    await render(<BookingView />);
+    await waitFor(() => expect(host.textContent).toContain("Package session 2 of 6"));
+    expect(host.querySelector('a[href="/customer/packages/legacy-progress"]')).not.toBeNull();
+    expect([...host.querySelectorAll("button")].some((button) => button.textContent === "Cancel session")).toBe(true);
+    expect([...host.querySelectorAll("button")].some((button) => button.textContent === "Reschedule session")).toBe(true);
+  });
   it.each(["NOT_APPLICABLE", "PENDING", "SUCCEEDED", "FAILED", "WAIVED"] as const)("maps %s in refund/charge/neither contexts without raw enums or assumed completion", (status) => {
     const outcome = detail.cancellationOutcome!;
     for (const mode of ["refund", "charge", "neither"]) {
@@ -215,7 +292,8 @@ describe("F2D financial presentation", () => {
     fx.respond = () => new Promise((_, fail) => { reject = fail; });
     await render(<BookingView />); expect(host.textContent).toContain("Loading your booking");
     await act(async () => reject(new Error("offline")));
-    await waitFor(() => expect(host.textContent).toContain("could not be found"));
+    await waitFor(() => expect(host.textContent).toContain("could not be loaded"));
+    expect([...host.querySelectorAll("button")].some((button) => button.textContent === "Retry booking details")).toBe(true);
     expect(host.textContent).not.toMatch(/Payment provider confirmed|No refunds|Everything settled/);
   });
   it("retains last recorded facts with a refresh error, without calling it a financial failure", async () => {

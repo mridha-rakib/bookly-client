@@ -24,12 +24,6 @@ export interface FilterSidebarProps {
   toggleLocation: (loc: string) => void;
   selectedRatings: number[];
   toggleRating: (rating: number) => void;
-  selectedQuickActions: string[];
-  toggleQuickAction: (action: string) => void;
-  distanceLimit: number;
-  setDistanceLimit: (val: number) => void;
-  selectedAvailability: string[];
-  toggleAvailability: (avail: string) => void;
   handleClearAll: () => void;
   showMap: boolean;
   setShowMap: (val: boolean) => void;
@@ -48,12 +42,6 @@ export default function FilterSidebar({
   toggleLocation,
   selectedRatings,
   toggleRating,
-  selectedQuickActions,
-  toggleQuickAction,
-  distanceLimit,
-  setDistanceLimit,
-  selectedAvailability,
-  toggleAvailability,
   handleClearAll,
   showMap,
   setShowMap,
@@ -61,7 +49,7 @@ export default function FilterSidebar({
 }: FilterSidebarProps) {
   return (
     <aside className="hidden lg:flex flex-col items-start px-3 gap-6 w-[284px] bg-white border border-[#E5E5E5]/50 rounded-2xl py-6 shrink-0 shadow-sm sticky top-24 h-fit">
-      
+
       {/* Filter & View Map Row */}
       <div className="flex flex-row items-center gap-3 w-full self-stretch">
         <button
@@ -71,7 +59,7 @@ export default function FilterSidebar({
           <HugeiconsIcon icon={FilterHorizontalIcon} size={18} className="text-white" />
           <span>Filter</span>
         </button>
-        <button 
+        <button
           onClick={() => setShowMap(!showMap)}
           className={`box-border flex flex-row items-center justify-center py-2 px-4 gap-2 h-10 border rounded-xl text-sm font-semibold cursor-pointer shrink-0 transition-colors whitespace-nowrap ${showMap ? "bg-black text-white border-black" : "border-[#000000] text-[#111111] bg-white hover:bg-neutral-50"}`}
         >
@@ -88,6 +76,7 @@ export default function FilterSidebar({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search..."
+              aria-label="Search businesses"
           className="flex-1 w-0 bg-transparent border-none outline-none text-base placeholder-[#ACAAB4] text-[#1C1B1C]"
         />
         <button
@@ -107,8 +96,9 @@ export default function FilterSidebar({
           <span className="font-semibold text-xs text-[#1C1B1C]">We Came to you</span>
           <span className="text-[9px] text-[#757575]">Show businesses that come to you</span>
         </div>
-        <button 
+        <button
           onClick={() => setTravelsToYou(!travelsToYou)}
+          role="switch" aria-label="Travels to you" aria-checked={travelsToYou}
           className={`w-[46px] h-[24px] rounded-full p-0.5 flex items-center transition-colors cursor-pointer ${travelsToYou ? "bg-[#2BB54F] justify-end" : "bg-[#EDEDED] justify-start"}`}
         >
           <div className="w-[20px] h-[20px] rounded-full bg-white shadow-sm" />
@@ -132,7 +122,7 @@ export default function FilterSidebar({
                       type="checkbox"
                       checked={selectedCategories.includes(cat)}
                       onChange={() => toggleCategory(cat)}
-                      className="w-4 h-4 border border-neutral-300 rounded cursor-pointer accent-black"
+                      className="w-4 h-4 border border-neutral-300 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 accent-black"
                     />
                     <span className="text-[#4E5F78]">{cat}</span>
                   </label>
@@ -148,14 +138,16 @@ export default function FilterSidebar({
       {/* Quick Actions Section */}
       <div className="flex flex-col gap-3 w-full">
         <span className="font-semibold text-xs text-black uppercase tracking-wider">Quick actions</span>
+        <p className="text-xs text-[#757575]">Quick action filters are unavailable. Use search, category or city filters.</p>
         <div className="flex flex-col gap-2.5">
           {["Recommended", "Services near you", "Trending services"].map((action, idx) => (
             <label key={idx} className="flex items-center gap-2.5 text-sm cursor-pointer">
               <input
                 type="checkbox"
-                checked={selectedQuickActions.includes(action)}
-                onChange={() => toggleQuickAction(action)}
-                className="w-4 h-4 border border-neutral-300 rounded cursor-pointer accent-black"
+                checked={false}
+                disabled
+                aria-label={`${action} (unavailable)`}
+                className="w-4 h-4 border border-neutral-300 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 accent-black"
               />
               <span className="text-[#4E5F78]">{action}</span>
             </label>
@@ -195,7 +187,7 @@ export default function FilterSidebar({
                 type="checkbox"
                 checked={selectedRatings.includes(rating)}
                 onChange={() => toggleRating(rating)}
-                className="w-4 h-4 border border-neutral-300 rounded cursor-pointer accent-black"
+                className="w-4 h-4 border border-neutral-300 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 accent-black"
               />
               <div className="flex items-center gap-1">
                 <HugeiconsIcon icon={StarIcon} size={14} className="text-[#FBBC05] fill-[#FBBC05]" />
@@ -211,14 +203,17 @@ export default function FilterSidebar({
       {/* Distance Section */}
       <div className="flex flex-col gap-3 w-full">
         <span className="font-semibold text-xs text-black uppercase tracking-wider">Distance</span>
+        <p className="text-xs text-[#757575]">Distance filtering is unavailable. Choose a city instead.</p>
         <div className="flex flex-col gap-2 w-full px-1">
           <input
             type="range"
             min="1"
             max="30"
-            value={distanceLimit}
-            onChange={(e) => setDistanceLimit(Number(e.target.value))}
-            className="w-full h-1 bg-[#EDEDED] rounded-lg appearance-none cursor-pointer accent-black"
+            value={15}
+            disabled
+            aria-label="Distance (unavailable)"
+
+            className="w-full h-1 bg-[#EDEDED] rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 accent-black"
           />
           <div className="flex justify-between text-[10px] text-[#757575] font-medium mt-1">
             <span>5 km</span>
@@ -233,14 +228,16 @@ export default function FilterSidebar({
       {/* Availability Section */}
       <div className="flex flex-col gap-3 w-full">
         <span className="font-semibold text-xs text-black uppercase tracking-wider">Availability</span>
+        <p className="text-xs text-[#757575]">Choose a service and appointment time on a Business page to check availability.</p>
         <div className="flex flex-col gap-2.5">
           {["Today", "This week", "This weekend", "Weekends", "Evenings"].map((avail, idx) => (
             <label key={idx} className="flex items-center gap-2.5 text-sm cursor-pointer">
               <input
                 type="checkbox"
-                checked={selectedAvailability.includes(avail)}
-                onChange={() => toggleAvailability(avail)}
-                className="w-4 h-4 border border-neutral-300 rounded cursor-pointer accent-black"
+                checked={false}
+                disabled
+                aria-label={`${avail} (unavailable)`}
+                className="w-4 h-4 border border-neutral-300 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 accent-black"
               />
               <span className="text-[#4E5F78]">{avail}</span>
             </label>

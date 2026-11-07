@@ -1,5 +1,12 @@
 import { apiRequest } from "@/lib/api/client";
-import type { SupportMessage, SupportMessageListResult, SupportTicketStatus } from "@/lib/api/support";
+import {
+  type SupportMessage,
+  type SupportMessageHistoryParams,
+  type SupportMessageHistoryResult,
+  type SupportMessageListResult,
+  type SupportTicketStatus,
+  supportMessageHistoryParams,
+} from "@/lib/api/support";
 
 /** Batch 15B — Super Admin Support. SUPER_ADMIN-only on the backend (see
  * api/src/modules/super-admin/super-admin.route.ts). Matches
@@ -74,6 +81,13 @@ export const superAdminSupportApi = {
         ...(pagination.page ? { page: String(pagination.page) } : {}),
         ...(pagination.limit ? { limit: String(pagination.limit) } : {}),
       },
+    }),
+
+  listMessageHistory: (ticketId: string, params: SupportMessageHistoryParams = {}) =>
+    apiRequest<SupportMessageHistoryResult>({
+      method: "GET",
+      url: `/super-admin/support/tickets/${ticketId}/messages`,
+      params: supportMessageHistoryParams(params),
     }),
 
   reply: (ticketId: string, message: string) =>

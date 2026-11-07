@@ -91,6 +91,8 @@ export interface BusinessDetail {
   address: BusinessAddress;
   location?: BusinessLocation;
   briefDescription: string;
+  registrationNumber?: string;
+  additionalInformation?: string[];
   timezone: string;
   category: string;
   subcategories: string[];
@@ -115,6 +117,8 @@ export interface UpdateBusinessInput {
   floorUnit?: string;
   aptRoom?: string;
   briefDescription?: string;
+  registrationNumber?: string;
+  additionalInformation?: string[];
   timezone?: string;
   category?: string;
   subcategories?: string[];

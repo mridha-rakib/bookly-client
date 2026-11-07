@@ -7,7 +7,7 @@ import Footer from "@/components/Footer";
 
 import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
-import { useCreateSupportTicketMutation, useSupportTicketsQuery } from "@/lib/support/hooks";
+import { useCreateSupportTicketMutation, useSupportTicketsPage } from "@/lib/support/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
 import type { SupportTicketStatus } from "@/lib/api/support";
 
@@ -23,6 +23,8 @@ const statusBadge = (status: SupportTicketStatus) => {
       return "bg-neutral-100 text-neutral-500";
   }
 };
+
+const PAGE_SIZE = 20;
 
 /** Batch 15B — the smallest design-consistent Customer "My Tickets" list, following the same
  * layout conventions customer/bookings/page.tsx already established. */
@@ -44,7 +46,8 @@ function CustomerTicketsPageContent() {
   const [message, setMessage] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
-  const ticketsQuery = useSupportTicketsQuery({ limit: 50 });
+  // P1.8 — server-paginated (newest first); every page of the Customer's tickets is reachable.
+  const { page, setPage, totalPages, total, ticketsQuery } = useSupportTicketsPage(PAGE_SIZE);
   const tickets = ticketsQuery.data?.tickets ?? [];
   const createMutation = useCreateSupportTicketMutation();
 
@@ -57,6 +60,7 @@ function CustomerTicketsPageContent() {
     setErrorMsg("");
     try {
       await createMutation.mutateAsync({ subject, message });
+      setPage(1);
       setSubject("");
       setMessage("");
       setShowCreateForm(false);
@@ -145,10 +149,17 @@ function CustomerTicketsPageContent() {
                 <p className="text-[#45474B] text-lg font-medium">Loading your tickets…</p>
               </div>
             ) : ticketsQuery.isError ? (
-              <div className="w-full text-center py-20 bg-white border border-[#C6C6CB] rounded-xl">
+              <div className="w-full flex flex-col items-center gap-4 py-20 bg-white border border-[#C6C6CB] rounded-xl">
                 <p className="text-[#45474B] text-lg font-medium">
                   Your tickets could not be loaded right now.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => void ticketsQuery.refetch()}
+                  className="py-2.5 px-6 border border-[#020305] rounded-full text-sm font-semibold text-[#020305] hover:bg-neutral-50 transition-colors cursor-pointer"
+                >
+                  Retry
+                </button>
               </div>
             ) : tickets.length > 0 ? (
               tickets.map((ticket) => (
@@ -183,6 +194,39 @@ function CustomerTicketsPageContent() {
                   You have no support tickets yet.
                 </p>
               </div>
+            )}
+
+            {!ticketsQuery.isLoading && !ticketsQuery.isError && total > PAGE_SIZE && (
+              <nav
+                aria-label="My Tickets pages"
+                className="w-full flex items-center justify-between gap-4 pt-2"
+              >
+                <span className="text-sm text-[#767676]">
+                  Showing {tickets.length > 0 ? (page - 1) * PAGE_SIZE + 1 : 0}–
+                  {(page - 1) * PAGE_SIZE + tickets.length} of {total}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="py-2 px-4 border border-[#C6C6CB] rounded-full text-sm font-semibold text-[#020305] hover:border-black transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    ← Previous
+                  </button>
+                  <span className="text-sm text-[#45474B]">
+                    Page {page} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    className="py-2 px-4 border border-[#C6C6CB] rounded-full text-sm font-semibold text-[#020305] hover:border-black transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Next →
+                  </button>
+                </div>
+              </nav>
             )}
           </div>
         </div>

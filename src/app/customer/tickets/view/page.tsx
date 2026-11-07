@@ -11,9 +11,10 @@ import { useAuthStore } from "@/lib/auth/store";
 import {
   useReopenSupportTicketMutation,
   useReplySupportTicketMutation,
-  useSupportMessagesQuery,
+  useSupportConversation,
   useSupportTicketQuery,
 } from "@/lib/support/hooks";
+import SupportOlderMessages from "@/components/support/SupportOlderMessages";
 import { toUserMessage } from "@/lib/auth/messages";
 import type { SupportTicketStatus } from "@/lib/api/support";
 import { formatClockTime12Hour } from "@/lib/staff/format";
@@ -49,12 +50,12 @@ function TicketViewContent() {
   const [errorMsg, setErrorMsg] = useState("");
 
   const ticketQuery = useSupportTicketQuery(ticketId);
-  const messagesQuery = useSupportMessagesQuery(ticketId, { limit: 100 });
+  const conversation = useSupportConversation(ticketId);
   const replyMutation = useReplySupportTicketMutation();
   const reopenMutation = useReopenSupportTicketMutation();
 
   const ticket = ticketQuery.data;
-  const messages = messagesQuery.data?.messages ?? [];
+  const messages = conversation.messages;
   const canReply = ticket ? ticket.status === "OPEN" || ticket.status === "PENDING" : false;
   const canReopen = ticket ? ticket.status === "RESOLVED" || ticket.status === "CLOSED" : false;
 
@@ -101,6 +102,17 @@ function TicketViewContent() {
             <div className="w-full text-center py-20 bg-white border border-[#C6C6CB] rounded-xl">
               <p className="text-[#45474B] text-lg font-medium">Loading ticket…</p>
             </div>
+          ) : ticketQuery.isError && !ticket ? (
+            <div className="w-full flex flex-col items-center gap-4 py-20 bg-white border border-[#C6C6CB] rounded-xl">
+              <p className="text-[#45474B] text-lg font-medium">This ticket could not be loaded.</p>
+              <button
+                type="button"
+                onClick={() => void ticketQuery.refetch()}
+                className="py-2.5 px-6 border border-[#020305] rounded-full text-sm font-semibold text-[#020305] hover:bg-neutral-50 transition-colors cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
           ) : !ticket ? (
             <div className="w-full text-center py-20 bg-white border border-[#C6C6CB] rounded-xl">
               <p className="text-[#45474B] text-lg font-medium">Ticket not found.</p>
@@ -122,16 +134,30 @@ function TicketViewContent() {
               </div>
 
               <div className="w-full flex flex-col gap-4 bg-white border border-[#C6C6CB] rounded-xl p-6">
-                {messagesQuery.isLoading ? (
+                {conversation.isError ? (
+                  <div role="alert" className="flex flex-col items-center gap-3 py-4">
+                    <p className="text-sm text-[#767676]">The conversation could not be loaded.</p>
+                    <button
+                      type="button"
+                      onClick={conversation.retry}
+                      className="px-4 py-1.5 border border-[#C6C6CB] rounded-full text-xs font-semibold text-[#020305] hover:border-black transition-colors cursor-pointer"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : conversation.isLoading ? (
                   <p className="text-sm text-[#767676]">Loading conversation…</p>
                 ) : messages.length === 0 ? (
                   <p className="text-sm text-[#767676]">No messages yet.</p>
                 ) : (
-                  messages.map((message) => {
+                  <>
+                  <SupportOlderMessages conversation={conversation} />
+                  {messages.map((message) => {
                     const fromSupport = message.senderRole === "SUPER_ADMIN";
                     return (
                       <div
                         key={message.id}
+                        data-testid="support-message"
                         className={`flex flex-col gap-1 max-w-[80%] ${fromSupport ? "self-start" : "self-end items-end"}`}
                       >
                         <span className="text-[10px] font-semibold uppercase tracking-wide text-[#767676]">
@@ -147,7 +173,8 @@ function TicketViewContent() {
                         </span>
                       </div>
                     );
-                  })
+                  })}
+                  </>
                 )}
               </div>
 
