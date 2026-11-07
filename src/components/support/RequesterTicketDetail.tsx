@@ -5,9 +5,10 @@ import React, { useState } from "react";
 import {
   useReopenSupportTicketMutation,
   useReplySupportTicketMutation,
-  useSupportMessagesQuery,
+  useSupportConversation,
   useSupportTicketQuery,
 } from "@/lib/support/hooks";
+import SupportOlderMessages from "@/components/support/SupportOlderMessages";
 import { toUserMessage } from "@/lib/auth/messages";
 import type { SupportTicketStatus } from "@/lib/api/support";
 import { formatClockTime12Hour } from "@/lib/staff/format";
@@ -46,12 +47,12 @@ export default function RequesterTicketDetail({ ticketId }: RequesterTicketDetai
   const [errorMsg, setErrorMsg] = useState("");
 
   const ticketQuery = useSupportTicketQuery(ticketId);
-  const messagesQuery = useSupportMessagesQuery(ticketId, { limit: 100 });
+  const conversation = useSupportConversation(ticketId);
   const replyMutation = useReplySupportTicketMutation();
   const reopenMutation = useReopenSupportTicketMutation();
 
   const ticket = ticketQuery.data;
-  const messages = messagesQuery.data?.messages ?? [];
+  const messages = conversation.messages;
   const canReply = ticket ? ticket.status === "OPEN" || ticket.status === "PENDING" : false;
   const canReopen = ticket ? ticket.status === "RESOLVED" || ticket.status === "CLOSED" : false;
 
@@ -84,6 +85,21 @@ export default function RequesterTicketDetail({ ticketId }: RequesterTicketDetai
     );
   }
 
+  if (ticketQuery.isError && !ticket) {
+    return (
+      <div className="w-full md:w-[calc(100%-118px)] ml-0 md:ml-[118px] bg-white border border-[#F1F5F9] rounded-2xl p-8 flex flex-col items-center gap-3 text-sm text-neutral-500 font-poppins">
+        This ticket could not be loaded.
+        <button
+          type="button"
+          onClick={() => void ticketQuery.refetch()}
+          className="px-3 py-1.5 border border-[#B3B3B3] rounded-lg text-xs font-semibold text-neutral-600 cursor-pointer"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   if (!ticket) {
     return (
       <div className="w-full md:w-[calc(100%-118px)] ml-0 md:ml-[118px] bg-white border border-[#F1F5F9] rounded-2xl p-8 text-center text-sm text-neutral-500 font-poppins">
@@ -107,16 +123,34 @@ export default function RequesterTicketDetail({ ticketId }: RequesterTicketDetai
       </div>
 
       <div className="flex flex-col gap-4 bg-white border border-[#F1F5F9] rounded-2xl p-6">
-        {messagesQuery.isLoading ? (
+        {conversation.isError ? (
+          <div role="alert" className="flex flex-col items-center gap-3 py-2">
+            <p className="text-sm text-neutral-500 font-poppins">The conversation could not be loaded.</p>
+            <button
+              type="button"
+              onClick={conversation.retry}
+              className="px-3 py-1.5 border border-[#B3B3B3] rounded-lg text-xs font-semibold text-neutral-600 cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        ) : conversation.isLoading ? (
           <p className="text-sm text-neutral-500 font-poppins">Loading conversation…</p>
         ) : messages.length === 0 ? (
           <p className="text-sm text-neutral-500 font-poppins">No messages yet.</p>
         ) : (
-          messages.map((message) => {
+          <>
+          <SupportOlderMessages
+            conversation={conversation}
+            textClassName="text-xs text-neutral-400 font-poppins"
+            buttonClassName="px-3 py-1.5 border border-[#B3B3B3] rounded-lg text-xs font-semibold text-neutral-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          />
+          {messages.map((message) => {
             const fromSupport = message.senderRole === "SUPER_ADMIN";
             return (
               <div
                 key={message.id}
+                data-testid="support-message"
                 className={`flex flex-col gap-1 max-w-[80%] ${fromSupport ? "self-start" : "self-end items-end"}`}
               >
                 <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400 font-poppins">
@@ -134,7 +168,8 @@ export default function RequesterTicketDetail({ ticketId }: RequesterTicketDetai
                 </span>
               </div>
             );
-          })
+          })}
+          </>
         )}
       </div>
 

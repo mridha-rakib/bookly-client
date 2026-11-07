@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { FinancePeriodParams } from "@/lib/api/finance";
 import { superAdminFinanceApi, type PlatformTransactionType } from "@/lib/api/superAdminFinance";
+import { centralPayoutsApi, type InitiateCentralPayoutInput } from "@/lib/api/centralPayouts";
 
 export const superAdminFinanceKeys = {
   all: ["superAdminFinance"] as const,
@@ -130,5 +131,42 @@ export const useExecutePayoutMutation = () => {
         queryKey: superAdminFinanceKeys.businessPayable(variables.businessId),
       });
     },
+  });
+};
+
+// --- P0.6 central Stripe withdrawals ---------------------------------------------------------
+
+export const centralPayoutKeys = {
+  all: [...superAdminFinanceKeys.all, "centralPayouts"] as const,
+  overview: () => [...centralPayoutKeys.all, "overview"] as const,
+  list: (page: number, limit: number) => [...centralPayoutKeys.all, "list", page, limit] as const,
+};
+
+export const useCentralPayoutOverviewQuery = () =>
+  useQuery({
+    queryKey: centralPayoutKeys.overview(),
+    queryFn: () => centralPayoutsApi.getOverview(),
+    retry: false,
+  });
+
+export const useCentralPayoutsQuery = (page: number, limit: number) =>
+  useQuery({
+    queryKey: centralPayoutKeys.list(page, limit),
+    queryFn: () => centralPayoutsApi.list(page, limit),
+  });
+
+export const useInitiateCentralPayoutMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: InitiateCentralPayoutInput) => centralPayoutsApi.initiate(input),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: centralPayoutKeys.all }),
+  });
+};
+
+export const useRefreshCentralPayoutMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (operationId: string) => centralPayoutsApi.refresh(operationId),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: centralPayoutKeys.all }),
   });
 };

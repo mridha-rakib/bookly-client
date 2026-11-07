@@ -232,7 +232,8 @@ describe.each(["customer", "business"] as const)("F1C-A %s reschedule", (scope) 
     fx.respond = respond;
     await act(async () => { await client.invalidateQueries({ queryKey: bookingKeys.rescheduleAvailability }); });
     await waitFor(() => expect(cachedAvailability()).toEqual([staleValid]));
-    expect(button("Save changes").disabled).toBe(true);
+    // Query cache notifications can render after the cache itself changes under load.
+    await waitFor(() => expect(button("Save changes").disabled).toBe(true));
     await select(scope);
     await waitFor(() => expect(button("Save changes").disabled).toBe(false));
     await click("Save changes");
@@ -266,4 +267,14 @@ it("requires matching Booking identity/version, end and original staff in the cu
   expect(isRescheduleSlotCurrent(detail, result, "2030-08-20", { ...selected, endAt: "2030-08-20T10:00:00Z" })).toBe(false);
   expect(matchesRescheduleContext(detail, { ...result, bookingId: "foreign" })).toBe(false);
   expect(matchesRescheduleContext(detail, { ...result, bookingUpdatedAt: "old" })).toBe(false);
+});
+
+it("discloses actual online payment instead of assuming the contractual deposit was paid", async () => {
+  fx.detail = booking();
+  fx.detail.financials.depositCents = 1200;
+  fx.detail.paymentSummary.actualOnlinePaidCents = 800;
+  await render("customer");
+  await waitFor(() => expect(host.textContent).toContain("Deposit already paid"));
+  expect(host.textContent).toContain("€8.00");
+  expect(host.textContent).not.toContain("€12.00");
 });

@@ -9,6 +9,8 @@ import { toast } from "@/components/ui/sonner";
 import { toUserMessage } from "@/lib/auth/messages";
 import { useClientQuery, useClientsQuery, useRestoreClientMutation } from "@/lib/clients/hooks";
 import ClientDetails from "./ClientDetails";
+import ClientPagination from "./ClientPagination";
+import { CLIENT_TAGS, type ClientTag } from "@/lib/api/clients";
 
 interface ArchivedClientsListProps {
   businessId: string;
@@ -17,8 +19,10 @@ interface ArchivedClientsListProps {
 
 export default function ArchivedClientsList({ businessId, onBack }: ArchivedClientsListProps) {
   const [viewingClientId, setViewingClientId] = useState<string | null>(null);
+  const [page, setPage] = useState(1), [search, setSearch] = useState("");
+  const [tag, setTag] = useState<ClientTag | undefined>();
 
-  const archivedQuery = useClientsQuery(businessId, { archived: true, limit: 100 });
+  const archivedQuery = useClientsQuery(businessId, { archived: true, page, limit: 20, q: search.trim() || undefined, tag });
   const viewingClientQuery = useClientQuery(businessId, viewingClientId ?? undefined);
   const restoreMutation = useRestoreClientMutation();
 
@@ -26,29 +30,35 @@ export default function ArchivedClientsList({ businessId, onBack }: ArchivedClie
     restoreMutation.mutate(
       { businessId, clientId },
       {
-        onSuccess: () => toast.success(`${name} restored`),
+        onSuccess: () => { toast.success(`${name} restored`); if (page > 1 && archivedQuery.data?.clients.length === 1) setPage(page - 1); },
         onError: (error) => toast.error(toUserMessage(error)),
       },
     );
   };
 
+  if (viewingClientId && viewingClientQuery.isError) return <div role="alert" className="p-8">Could not load client. <button onClick={() => void viewingClientQuery.refetch()}>Retry</button> <button onClick={() => setViewingClientId(null)}>Back to archived clients</button></div>;
+  if (viewingClientId && !viewingClientQuery.data) return <p role="status" className="p-8">Loading client…</p>;
   if (viewingClientId && viewingClientQuery.data) {
     const dto = viewingClientQuery.data;
     return (
       <ClientDetails
+        key={viewingClientId}
+        businessId={businessId}
+        clientId={viewingClientId}
+        readOnly
         clientFirstName={dto.firstName}
         clientLastName={dto.lastName ?? ""}
         clientEmail={dto.email}
         clientGender={dto.gender ? dto.gender[0]!.toUpperCase() + dto.gender.slice(1) : ""}
         clientDob={dto.dateOfBirth ?? ""}
         clientPhone={`${dto.phone.countryCode} ${dto.phone.nationalNumber}`}
-        clientCity={dto.address.city}
-        clientPropertyType={dto.address.propertyType}
-        clientArea={dto.address.area}
-        clientStreetName={dto.address.streetName}
-        clientStreetNumber={dto.address.streetNumber}
-        clientFloor={dto.address.floorUnit ?? ""}
-        clientAptNo={dto.address.aptRoom ?? ""}
+        clientCity={dto.address?.city ?? ""}
+        clientPropertyType={dto.address?.propertyType ?? ""}
+        clientArea={dto.address?.area ?? ""}
+        clientStreetName={dto.address?.streetName ?? ""}
+        clientStreetNumber={dto.address?.streetNumber ?? ""}
+        clientFloor={dto.address?.floorUnit ?? ""}
+        clientAptNo={dto.address?.aptRoom ?? ""}
         isLinked={dto.linkState === "LINKED"}
         setIsViewingClient={() => setViewingClientId(null)}
         setEditingClientIndex={() => setViewingClientId(null)}
@@ -70,6 +80,8 @@ export default function ArchivedClientsList({ businessId, onBack }: ArchivedClie
           <span>Back to Clients</span>
         </button>
 
+        <div className="flex flex-wrap gap-3"><input aria-label="Search archived clients" value={search} maxLength={200} placeholder="Search name, email or phone…" onChange={event => { setSearch(event.target.value); setPage(1); }} className="rounded-lg border bg-white px-3 py-2 text-sm" />
+          <select aria-label="Archived client tag" value={tag ?? ""} onChange={event => { setTag((event.target.value || undefined) as ClientTag | undefined); setPage(1); }} className="rounded-lg border bg-white px-3 py-2 text-sm"><option value="">All Tags</option>{CLIENT_TAGS.map(value => <option key={value}>{value}</option>)}</select></div>
         <div className="bg-white border border-[#E8E8E6] rounded-xl flex-1 flex flex-col overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -82,7 +94,7 @@ export default function ArchivedClientsList({ businessId, onBack }: ArchivedClie
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E8E8E6] font-poppins text-xs">
-                {archivedQuery.isLoading ? (
+                {archivedQuery.isError ? <tr><td colSpan={4} role="alert" className="p-8 text-center text-rose-700">{toUserMessage(archivedQuery.error)} <button onClick={() => void archivedQuery.refetch()} className="underline">Retry</button></td></tr> : archivedQuery.isLoading ? (
                   <tr>
                     <td colSpan={4} className="px-5 py-10 text-center text-neutral-500">
                       Loading archived clients…
@@ -129,6 +141,7 @@ export default function ArchivedClientsList({ businessId, onBack }: ArchivedClie
               </tbody>
             </table>
           </div>
+          <ClientPagination label="Archived clients pagination" pagination={archivedQuery.data?.pagination ?? { page, limit: 20, total: 0 }} onChange={setPage} busy={archivedQuery.isLoading} />
         </div>
       </div>
     </main>

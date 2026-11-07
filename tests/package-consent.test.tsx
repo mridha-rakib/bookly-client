@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PackageConsentReview from "@/components/packages/PackageConsentReview";
 import { apiClient } from "@/lib/api/client";
 import { setAccessToken } from "@/lib/auth/token-memory";
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("@/lib/catalog/hooks", () => ({ useBusinessCatalogQuery: () => ({ data: undefined }), useServiceAvailabilityQuery: () => ({ data: undefined }) }));
 import {
   matchesConsentAcceptance,
   type ConsentAccepted,
@@ -160,6 +162,13 @@ afterEach(async () => {
 describe("Customer terms interaction and bounded real API-client dispatches", () => {
   it("renders exact text safely, starts unchecked and disables submit", async () => {
     await render();
+    expect(container.querySelector('nav[aria-label="Booking progress"]')).not.toBeNull();
+    expect(container.querySelector("#wizard-aside")).not.toBeNull();
+    // The shared Normal Booking step sequence, restored onto the original operation's Payment step.
+    const progress = [...container.querySelectorAll('nav[aria-label="Booking progress"] [data-step-label]')].map((label) => label.textContent).join("");
+    expect(progress).toBe("ServicesAdd-onsProfessionalsTimePaymentConfirm");
+    expect(container.querySelector('[aria-current="step"] [data-step-label]')?.textContent).toBe("Payment");
+    expect(container.textContent).not.toContain("Review Package terms");
     expect(container.querySelector('[aria-label="Exact Package terms"]')?.textContent).toBe(
       presentation.text,
     );
@@ -188,7 +197,7 @@ describe("Customer terms interaction and bounded real API-client dispatches", ()
     expect(request.data).not.toHaveProperty("acceptedAt");
     expect(request.data).not.toHaveProperty("text");
     expect(container.textContent).toContain("Terms accepted");
-    expect(container.textContent).toContain("No Package purchase has been made");
+    expect(container.textContent).toContain("Acceptance alone does not confirm a purchase");
     expect(calls).toHaveLength(2);
   });
   it("prevents duplicate clicks while submitting", async () => {
@@ -217,7 +226,7 @@ describe("Customer terms interaction and bounded real API-client dispatches", ()
     const sent = calls.filter((c) => c.url.endsWith("/acceptance"));
     expect(sent).toHaveLength(2); expect(sent[1].data).toEqual(sent[0].data);
     expect(calls.some((c) => c.url.endsWith("/purchase"))).toBe(false);
-    expect(container.textContent).toContain("No Package purchase has been made");
+    expect(container.textContent).toContain("Acceptance alone does not confirm a purchase");
   });
   it("network loss shows no fake success and manual retry reuses event identity", async () => {
     await render();
@@ -263,18 +272,25 @@ describe("Customer terms interaction and bounded real API-client dispatches", ()
     await render();
     expect(container.textContent).toContain("Terms accepted");
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
+    expect(calls.filter((call) => call.url.endsWith("/purchase-status"))).toHaveLength(1);
+    expect(calls.some((call) => call.url.endsWith("/purchase") || call.url.endsWith("/acceptance"))).toBe(false);
   });
   it("selection entry uses server offer and generates no quote on render", async () => {
     await render("");
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toContain("/offers/");
     expect(container.textContent).toContain("Hair Package");
+    expect(container.querySelector('[aria-current="step"] [data-step-label]')?.textContent).toBe("Services");
+    expect(container.textContent).toContain("Included in package");
     const add = Array.from(container.querySelectorAll("button")).find((b) =>
-      b.textContent?.includes("Add Hair"),
+      b.getAttribute("aria-label") === "Book Hair",
     )!;
     await act(async () => add.click());
-    expect(container.querySelector("legend")?.textContent).toContain("Hair");
+    expect(container.querySelector('[aria-label="Selected Hair"]')).not.toBeNull();
+    expect(container.textContent).toContain("3 sessions included · 1 booking now · 2 kept as credits");
+    expect(container.querySelector("#wizard-aside")?.textContent).toContain("1 initial appointment selected");
+    expect(container.querySelector('[aria-label="Exact Package terms"]')).toBeNull();
     expect(calls).toHaveLength(1);
   });
   it("confirmation identity comparison requires same event, quote and disclosure", () => {

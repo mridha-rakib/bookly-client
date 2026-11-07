@@ -171,11 +171,11 @@ export default function DashboardAnalytics({ onBookingStatusClick }: DashboardAn
           </button>
         </div>
 
-        {isLoading || !analytics ? (
+        {analyticsQuery.isError || businessQuery.isError ? <div role="alert" className="p-8 text-sm text-red-700">Could not load analytics. <button className="underline" onClick={() => { void businessQuery.refetch(); void analyticsQuery.refetch(); }}>Retry</button></div> : isLoading ? (
           <div className="flex flex-1 items-center justify-center py-20">
             <span className="font-poppins text-sm text-neutral-400">Loading analytics…</span>
           </div>
-        ) : (
+        ) : !analytics ? <p className="p-8 text-sm">Analytics are unavailable for this Business.</p> : (
         <>
         {/* Top Metric Cards Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-[14px] w-full mt-2">

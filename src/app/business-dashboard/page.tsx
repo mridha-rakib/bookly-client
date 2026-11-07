@@ -509,6 +509,7 @@ function BusinessDashboardContent() {
       {/* Cancel No-show Confirm Modal Overlay */}
       <NoShowModal
         isOpen={showNoShowModal}
+        mode="cancel"
         onClose={() => setShowNoShowModal(false)}
         onConfirm={() => {
           if (bookingsBusinessId && viewingBookingId) {

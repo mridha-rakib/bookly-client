@@ -218,6 +218,12 @@ function BusinessFormContent() {
     ) {
       setStep(2);
     }
+    // Completing registration signs the owner in, and the auth-boundary remount (Providers'
+    // cacheEpoch key) discards the local step-3 state. Restore the pending-approval step from
+    // the authoritative session instead of showing an empty, unsubmittable form again.
+    if (progress.currentStep === "COMPLETED") {
+      setStep(3);
+    }
 
     if (progress.categorySelection) {
       setSelectedCategoryKey(progress.categorySelection.categoryKey);

@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 
 // Simple right arrow icon if ArrowRight02Icon is not available
 const ArrowRightIcon = () => (
@@ -22,6 +20,17 @@ interface DatePickerModalProps {
   onClose: () => void;
   onSelect: (dateStr: string) => void;
   initialDate?: string;
+  timezone?: string;
+}
+
+function calendarDate(initialDate?: string, timezone?: string) {
+  if (initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate)) {
+    const [year, month, day] = initialDate.split("-").map(Number);
+    return { year, month: month - 1, day };
+  }
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const part = (name: string) => Number(parts.find(value => value.type === name)?.value);
+  return { year: part("year"), month: part("month") - 1, day: part("day") };
 }
 
 const MONTHS = [
@@ -35,46 +44,37 @@ export default function DatePickerModal({
   isOpen,
   onClose,
   onSelect,
-  initialDate
+  initialDate,
+  timezone,
 }: DatePickerModalProps) {
-  // Use August 2026 as the default starting date if none provided to match user screenshot
-  const [currentYear, setCurrentYear] = useState(2026);
-  const [currentMonth, setCurrentMonth] = useState(7); // August is index 7
-  const [selectedDay, setSelectedDay] = useState(18);
+  const [currentYear, setCurrentYear] = useState(() => calendarDate(initialDate, timezone).year);
+  const [currentMonth, setCurrentMonth] = useState(() => calendarDate(initialDate, timezone).month);
+  const [selectedDay, setSelectedDay] = useState(() => calendarDate(initialDate, timezone).day);
 
   useEffect(() => {
-    if (initialDate) {
-      const d = new Date(initialDate);
-      if (!isNaN(d.getTime())) {
-        setCurrentYear(d.getFullYear());
-        setCurrentMonth(d.getMonth());
-        setSelectedDay(d.getDate());
-      }
-    }
-  }, [initialDate, isOpen]);
+    if (!isOpen) return;
+    const selected = calendarDate(initialDate, timezone);
+    // This modal hydrates its editable date when opened, from the saved Business-local date.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setCurrentYear(selected.year);
+    setCurrentMonth(selected.month);
+    setSelectedDay(selected.day);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [initialDate, isOpen, timezone]);
 
   if (!isOpen) return null;
 
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
   const firstDayIndex = new Date(currentYear, currentMonth, 1).getDay();
 
-  const handlePrevMonth = () => {
-    if (currentMonth === 0) {
-      setCurrentMonth(11);
-      setCurrentYear(currentYear - 1);
-    } else {
-      setCurrentMonth(currentMonth - 1);
-    }
+  const changeMonth = (delta: number) => {
+    const next = new Date(currentYear, currentMonth + delta, 1);
+    setCurrentYear(next.getFullYear());
+    setCurrentMonth(next.getMonth());
+    setSelectedDay(Math.min(selectedDay, new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate()));
   };
-
-  const handleNextMonth = () => {
-    if (currentMonth === 11) {
-      setCurrentMonth(0);
-      setCurrentYear(currentYear + 1);
-    } else {
-      setCurrentMonth(currentMonth + 1);
-    }
-  };
+  const handlePrevMonth = () => changeMonth(-1);
+  const handleNextMonth = () => changeMonth(1);
 
   const handleSelectDay = (day: number) => {
     setSelectedDay(day);

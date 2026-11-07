@@ -120,7 +120,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(fx.searchParams),
   usePathname: () => "/venue",
 }));
-vi.mock("next/image", () => ({ default: ({ alt }: { alt?: string }) => <img alt={alt ?? ""} /> }));
+vi.mock("next/image", () => ({ default: ({ alt }: { alt?: string }) => <span role="img" aria-label={alt ?? ""} /> }));
 vi.mock("next/link", () => ({ default: ({ children, href }: React.PropsWithChildren<{ href: string }>) => <a href={href}>{children}</a> }));
 vi.mock("@/lib/auth/store", async () => {
   const { useSyncExternalStore } = await import("react");
@@ -164,10 +164,12 @@ vi.mock("@/app/venue/components/ProfessionalsStep", () => ({
   ),
 }));
 vi.mock("@/app/venue/components/TimeStep", () => ({
-  default: ({ availability, onSelectDate, onSelectSlot, selectedSlot }: {
+  default: ({ availability, onSelectDate, onSelectSlot, selectedSlot, onNextMonth, onPrevMonth }: {
     availability?: AvailabilityResult; onSelectDate: (d: string) => void; onSelectSlot: (s: AvailabilitySlot) => void; selectedSlot?: AvailabilitySlot;
+    onNextMonth: () => void; onPrevMonth: () => void;
   }) => (
-    <div data-testid="time-step">
+    <div data-testid="time-step" data-selected-slot={selectedSlot?.startAt ?? ""}>
+      <button onClick={onPrevMonth}>Previous month</button><button onClick={onNextMonth}>Next month</button>
       {(availability?.days ?? []).flatMap((day) => day.slots.map((slot) => (
         <button key={slot.startAt} aria-pressed={selectedSlot?.startAt === slot.startAt}
           onClick={() => { onSelectDate(day.date); onSelectSlot(slot); }}>{`Slot ${slot.startAt.slice(11, 16)}`}</button>
@@ -180,10 +182,11 @@ vi.mock("@/app/venue/components/PaymentStep", () => ({
 }));
 vi.mock("@/app/venue/components/ConfirmedStep", () => ({ default: () => <p>Booking confirmed</p> }));
 vi.mock("@/app/venue/components/CheckoutSummaryAside", () => ({
-  default: ({ onContinue, canContinue, preview, submitError }: { onContinue: () => void | Promise<void>; canContinue: boolean; preview?: { fixtureHours?: number }; submitError?: string }) => {
+  default: ({ onContinue, canContinue, preview, submitError, selection }: { onContinue: () => void | Promise<void>; canContinue: boolean; preview?: { fixtureHours?: number }; submitError?: string; selection?: { name: string; quantityLabel?: string; indicativePriceCents?: number } }) => {
     fx.continueWizard = onContinue;
     return <>
       {submitError ? <p role="alert">{submitError}</p> : null}
+      {selection && <aside id="wizard-aside">{selection.name} {selection.quantityLabel} {selection.indicativePriceCents !== undefined ? `${selection.indicativePriceCents / 100} indicative` : ""}</aside>}
       <button data-preview-hours={preview?.fixtureHours} disabled={!canContinue} onClick={() => void onContinue()}>Wizard continue</button>
     </>;
   },
@@ -386,6 +389,11 @@ describe("Venue page — PER_PERSON quantity and party size (V-1, V-2)", () => {
     expect(stepperValue(groupService.id)).toBe("2");
     expect(card(groupService.id)!.textContent).toContain("€30.00");
     await openWizard(groupService);
+    const summary = host.querySelector("#wizard-aside");
+    expect(summary?.textContent).toContain(groupService.name);
+    expect(summary?.textContent).toContain("2 people");
+    expect(summary?.textContent).toContain("30 indicative");
+    expect(summary?.textContent).toContain("indicative");
     await advanceToTime();
     await waitFor(() => expect(availabilityRequests(groupService.id).length).toBeGreaterThan(0));
     for (const r of availabilityRequests(groupService.id)) expect(r.params?.partySize).toBe(2);
@@ -434,6 +442,24 @@ describe("Venue page — PER_PERSON quantity and party size (V-1, V-2)", () => {
     await waitFor(() => expect(lastPost("/bookings/preview")?.serviceLines[0]).toMatchObject({
       pricingInput: { personCount: 3 }, staffMembershipId: "ffffffffffffffffffffffff",
     }));
+  });
+
+  it("P0.8: browsing calendar months keeps the chosen time; Continue quotes that exact slot", async () => {
+    await openWizard(fixedService);
+    await advanceToTime();
+    await selectSlot("11:00");
+    const chosen = (document.querySelector("[data-testid=time-step]") as HTMLElement).dataset.selectedSlot!;
+    expect(chosen).toMatch(/T11:00/);
+    await click(byText("Next month"));
+    await click(byText("Next month"));
+    expect((document.querySelector("[data-testid=time-step]") as HTMLElement).dataset.selectedSlot).toBe(chosen);
+    expect(byText("Wizard continue").disabled).toBe(false);
+    await click(byText("Previous month"));
+    await click(byText("Previous month"));
+    await waitFor(() => expect(byText("Slot 11:00").getAttribute("aria-pressed")).toBe("true"));
+    await click(byText("Next month"));
+    await click(byText("Wizard continue"));
+    await waitFor(() => expect(lastPost("/bookings/preview")?.startAt).toBe(chosen));
   });
 
   it("F1-P7: rapid changes request only the final size; a late response for an old size is never shown", async () => {
@@ -919,5 +945,15 @@ describe("F3B payment continuation and authoritative confirmation", () => {
     expectNoConfirmation();
     expect(posts("/bookings/finalize")).toHaveLength(0);
     expect(fx.stripeConfirm).not.toHaveBeenCalled();
+  });
+});
+
+describe("BC-F06 ordinary booking policy disclosure", () => {
+  it("states zero online upfront for RETURNING and excludes travel from FIRST deposit basis", async () => {
+    await click(byText("about"));
+    expect(host.textContent).toContain("Returning customer? No ordinary booking payment is collected online upfront.");
+    expect(host.textContent).toContain("promo-adjusted service and add-on amount");
+    expect(host.textContent).toContain("Travel is excluded from this deposit");
+    expect(host.textContent).not.toContain("The same deposit is charged now");
   });
 });

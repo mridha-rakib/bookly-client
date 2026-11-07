@@ -130,6 +130,7 @@ export default function ServicesListPage() {
   };
 
   const handleGapEliminationToggle = () => {
+    if (!businessId || !bookingSettingsQuery.isSuccess || bookingSettingsQuery.isFetching || updateBookingSettingsMutation.isPending) return;
     updateBookingSettingsMutation.mutate(
       { businessId, gapEliminationEnabled: !gapEliminationEnabled },
       { onError: (error) => toast.error(toUserMessage(error)) }
@@ -173,16 +174,29 @@ export default function ServicesListPage() {
             </div>
             <button
               type="button"
+              role="switch"
+              aria-label="Gap Elimination"
+              aria-checked={gapEliminationEnabled}
               onClick={handleGapEliminationToggle}
-              disabled={!businessId || updateBookingSettingsMutation.isPending}
+              disabled={!businessId || !bookingSettingsQuery.isSuccess || bookingSettingsQuery.isFetching || updateBookingSettingsMutation.isPending}
               className={`w-[38px] h-[21px] rounded-full p-[3px] transition-colors duration-200 focus:outline-none flex items-center ${gapEliminationEnabled ? "bg-[#0F6E56]" : "bg-neutral-300"}`}
             >
               <div className={`w-[15px] h-[15px] bg-white rounded-full transition-transform duration-200 ${gapEliminationEnabled ? "translate-x-[17px]" : "translate-x-0"}`} />
             </button>
           </div>
+          {bookingSettingsQuery.isPending && <p role="status" className="text-xs text-neutral-500">Loading booking settings…</p>}
+          {bookingSettingsQuery.isError && <div role="alert" className="text-sm text-red-700">
+            <p>Booking settings could not be loaded. Reload them before changing Gap Elimination.</p>
+            <button type="button" disabled={bookingSettingsQuery.isFetching} onClick={() => void bookingSettingsQuery.refetch()} className="mt-2 underline">Retry booking settings</button>
+          </div>}
         </div>
 
-        {servicesQuery.isLoading ? (
+        {servicesQuery.isError ? (
+          <div role="alert" className="text-sm text-red-700">
+            <p>Services could not be loaded.</p>
+            <button type="button" onClick={() => void servicesQuery.refetch()} className="mt-2 underline">Retry services</button>
+          </div>
+        ) : servicesQuery.isLoading ? (
           <div className="text-sm text-neutral-500 py-10 text-center">Loading services…</div>
         ) : services.length === 0 ? (
           <div className="text-sm text-neutral-500 py-10 text-center">

@@ -2,13 +2,11 @@
 
 import Image from "next/image";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
-import React, { useState, useRef } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
+import React, { useState } from "react";
 import {
   User02Icon,
   Notification01Icon,
-  SecurityCheckIcon,
-  Camera01Icon
+  SecurityCheckIcon
 } from "@hugeicons/core-free-icons";
 
 import { SettingsInput } from "../settings/SettingsInput";
@@ -30,28 +28,7 @@ export default function StaffSettings() {
     ? `${meQuery.data.profile.phone.countryCode} ${meQuery.data.profile.phone.nationalNumber}`
     : "";
 
-  // Avatar is a browser-only preview — no backend avatar-upload capability exists yet for any
-  // Business role.
-  const [profileImage, setProfileImage] = useState<string>(
-    () =>
-      (typeof window !== "undefined" && localStorage.getItem("settingsProfileImage")) ||
-      "/businessDashboard/downLogo.png",
-  );
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        setProfileImage(base64String);
-        localStorage.setItem("settingsProfileImage", base64String);
-        window.dispatchEvent(new Event("settingsProfileUpdate"));
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+  const profileImage = meQuery.data?.profile?.avatarUrl || "/businessDashboard/downLogo.png";
 
   // Subtabs list
   const subTabs = [
@@ -96,24 +73,11 @@ export default function StaffSettings() {
                   <div className="flex items-center gap-4 mt-2">
                     <div className="relative w-20 h-20 rounded-full border border-neutral-200 overflow-hidden bg-neutral-100">
                       <Image src={profileImage} alt="Profile" className="w-full h-full object-cover" fill />
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="absolute bottom-1 right-1 w-6 h-6 bg-white border border-neutral-300 rounded-full flex items-center justify-center hover:bg-neutral-50 shadow-sm cursor-pointer"
-                      >
-                        <HugeiconsIcon icon={Camera01Icon} className="w-3.5 h-3.5 text-[#111111]" />
-                      </button>
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleImageChange}
-                        accept="image/*"
-                        className="hidden"
-                      />
                     </div>
                   </div>
                 </div>
 
+                <p className="text-xs text-[#666666]">Your profile photo is managed by your Business Owner.</p>
                 {/* Name */}
                 <SettingsInput label="Name" value={personalName} onChange={() => {}} disabled={true} />
 

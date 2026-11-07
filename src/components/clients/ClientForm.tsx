@@ -352,6 +352,7 @@ export default function ClientForm({
             {/* Address Section */}
             <div className="border border-[#E8E8E6] rounded-xl p-5 bg-white flex flex-col gap-4">
               <h4 className="font-poppins text-xs font-semibold text-[#5F5E5A] tracking-wider uppercase">Address</h4>
+              {editingClientIndex !== null && <p className="text-xs text-neutral-500">If no address is on file, leave this section empty to keep it unset. Complete all required address fields when adding one.</p>}
 
               <div className="flex flex-col gap-2">
                 <label className="font-poppins text-xs font-medium text-[#5F5E5A] flex items-center gap-0.5">

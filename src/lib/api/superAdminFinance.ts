@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
+import { downloadCsv } from "@/lib/api/csv-download";
 import type {
   BusinessPayoutStatus,
   FinanceCustomerType,
@@ -145,6 +146,18 @@ export const superAdminFinanceApi = {
         ...(types && types.length > 0 ? { types: types.join(",") } : {}),
       },
     }),
+
+  /** P1.9 — complete server-streamed CSV exports (Super Admin-only routes, shared encoder). */
+  exportPlatformTransactions: (period: FinancePeriodParams, types: PlatformTransactionType[], filename: string) =>
+    downloadCsv(
+      "/super-admin/finance/transactions/export.csv",
+      { ...period, ...(types.length > 0 ? { types: types.join(",") } : {}) },
+      filename,
+    ),
+  exportPlatformPayouts: (filename: string) =>
+    downloadCsv("/super-admin/finance/payouts/export.csv", {}, filename),
+  exportPendingPayouts: (filename: string) =>
+    downloadCsv("/super-admin/finance/pending-payouts/export.csv", {}, filename),
 
   listPendingPayouts: () =>
     apiRequest<PendingPayoutsResponse>({ method: "GET", url: "/super-admin/finance/pending-payouts" }),

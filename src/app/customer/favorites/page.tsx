@@ -14,7 +14,8 @@ import SearchBar from "@/components/landing-page/SearchBar";
 
 import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
-import { useFavoritesListQuery, useRemoveFavoriteMutation } from "@/lib/favorite/hooks";
+import { useFavoritesListQuery } from "@/lib/favorite/hooks";
+import { useBusinessFavorites } from "@/lib/favorite/use-business-favorites";
 import type { DiscoveryBusinessCard } from "@/lib/api/discovery";
 
 const PAGE_SIZE = 12;
@@ -50,7 +51,7 @@ function FavoritesPageContent() {
   const [currentPage, setCurrentPage] = useState(1);
 
   const favoritesQuery = useFavoritesListQuery({ page: currentPage, limit: PAGE_SIZE });
-  const removeFavoriteMutation = useRemoveFavoriteMutation();
+  const businessFavorites = useBusinessFavorites();
 
   const favorites = favoritesQuery.data?.favorites ?? [];
   const total = favoritesQuery.data?.pagination.total ?? 0;
@@ -66,7 +67,7 @@ function FavoritesPageContent() {
 
   const handleToggleFavorite = (id: string) => {
     // Every card on this page is already favorited — the only real action here is removing.
-    removeFavoriteMutation.mutate(id);
+    businessFavorites.remove(id);
   };
 
   return (

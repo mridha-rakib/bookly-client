@@ -19,8 +19,9 @@ interface PaymentStepProps {
   isReplacingCard: boolean;
   setIsReplacingCard: (val: boolean) => void;
   setBookingStep: (step: BookingStep) => void;
-  notes: string;
-  setNotes: (val: string) => void;
+  /** Omitted when the Booking contract has no customer note (First-Class purchase). */
+  notes?: string;
+  setNotes?: (val: string) => void;
 }
 
 export default function PaymentStep(props: PaymentStepProps) {
@@ -165,18 +166,18 @@ function PaymentStepContent({
       )}
 
       {/* Special requests textarea — persisted as the real Booking's `notes` field */}
-      <div className="flex flex-col gap-2 w-full mt-6">
+      {setNotes && <div className="flex flex-col gap-2 w-full mt-6">
         <div className="border border-[#E8E8E4] rounded-lg p-4 bg-white shadow-sm w-full">
           <textarea
             rows={3}
-            value={notes}
+            value={notes ?? ""}
             onChange={(e) => setNotes(e.target.value)}
             maxLength={2000}
             placeholder="Got a special request? Leave a note here."
             className="w-full text-sm text-[#1C1C1A] placeholder-neutral-400 outline-none border-none resize-none bg-transparent"
           />
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

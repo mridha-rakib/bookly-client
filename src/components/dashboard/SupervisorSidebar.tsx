@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   DashboardSquare01Icon,
@@ -39,9 +39,9 @@ export default function SupervisorSidebar({
   setShowFooterMenu,
   footerMenuRef
 }: SupervisorSidebarProps) {
-  const [profileImage, setProfileImage] = useState("/businessDashboard/downLogo.png");
   const logout = useAuthStore((state) => state.logout);
   const meQuery = useCurrentUserQuery();
+  const profileImage = meQuery.data?.profile?.avatarUrl || "/businessDashboard/downLogo.png";
   const businessName = meQuery.data?.business?.name ?? meQuery.data?.profile?.fullName ?? "";
   const userEmail = meQuery.data?.user.email ?? "";
 
@@ -50,25 +50,10 @@ export default function SupervisorSidebar({
     void logout();
   };
 
-  useEffect(() => {
-    const loadProfileImage = () => {
-      const saved = localStorage.getItem("settingsProfileImage");
-      if (saved) {
-        setProfileImage(saved);
-      } else {
-        setProfileImage("/businessDashboard/downLogo.png");
-      }
-    };
-    loadProfileImage();
-    window.addEventListener("settingsProfileUpdate", loadProfileImage);
-    return () => {
-      window.removeEventListener("settingsProfileUpdate", loadProfileImage);
-    };
-  }, []);
 
   const renderMenuItem = (
     tabName: string,
-    icon: any,
+    icon: React.ComponentProps<typeof HugeiconsIcon>["icon"],
     labelText: string,
     badgeCount?: number
   ) => {
@@ -182,7 +167,7 @@ export default function SupervisorSidebar({
       </div>
 
       {/* User Footer Profile */}
-      <div className="border-t border-[#757575]/30 bg-[#C0D5D8] flex flex-col shrink-0 relative">
+      <div ref={footerMenuRef} className="border-t border-[#757575]/30 bg-[#C0D5D8] flex flex-col shrink-0 relative">
         <div className={`p-4 flex items-center ${isCollapsed ? "justify-center" : "justify-between"}`}>
           <div className="flex items-center gap-3 cursor-pointer select-none" onClick={() => setShowFooterMenu(!showFooterMenu)}>
             <Image src={profileImage} alt="User Profile" className="w-10 h-10 rounded-full object-cover border border-[#4E5F78]" width={40} height={40} />

@@ -8,9 +8,10 @@ describe("S6 existing detail destination", () => {
     vi.stubEnv("PACKAGE_CONSENT_UI_ENABLED", flag);
     const page = await Page({ params: Promise.resolve({ businessId: "b", packageId: "p" }), searchParams: Promise.resolve({ operation: "old" }) });
     expect(page.type).toBe(RequireCustomer);
-    const children = page.props.children.props.children.props.children;
-    expect(children[0].props.children).toContain("Back to venue");
-    expect(children[1].props).toEqual({ businessId: "b", packageId: "p", operationId: "old" });
+    const main = page.props.children;
+    expect(main.type).toBe("main");
+    expect(main.props.className).toContain("min-h-screen");
+    expect(main.props.children.props).toEqual({ businessId: "b", packageId: "p", operationId: "old" });
     vi.unstubAllEnvs();
   });
 });

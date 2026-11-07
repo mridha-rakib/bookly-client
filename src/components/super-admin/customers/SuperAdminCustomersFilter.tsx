@@ -12,10 +12,11 @@ export default function SuperAdminCustomersFilter({ search, setSearch }: SuperAd
     <div className="flex items-center gap-3">
       <input
         type="text"
+        aria-label="Search customers by name, email or phone"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search name, email or phone…"
-        className="bg-white border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-[13px] font-medium text-[#314158] focus:outline-none focus:ring-1 focus:ring-[#2E9DA7] w-64"
+        className="bg-white border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-[13px] font-medium text-[#314158] focus:outline-none focus:ring-1 focus:ring-[#2E9DA7] w-full sm:w-64"
       />
     </div>
   );

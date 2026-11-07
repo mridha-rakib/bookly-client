@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Location01Icon } from "@hugeicons/core-free-icons";
+import NoDepositImageBadge from "@/components/payments/NoDepositImageBadge";
 
 export interface Recommendation {
   id: string;
@@ -105,6 +106,9 @@ export default function ServiceCard({
 
         {/* Favorite Heart Icon Overlay */}
         <button
+          type="button"
+          aria-label={`${isFavorite ? "Remove" : "Save"} ${rec.title} ${isFavorite ? "from" : "to"} favorites`}
+          aria-pressed={isFavorite}
           className="absolute top-[10px] sm:top-[14px] right-[10px] sm:right-[14px] rounded-full backdrop-blur-sm flex items-center justify-center text-[#E49D12] hover:bg-white active:scale-90 transition-all cursor-pointer z-10"
           onClick={(e) => {
             e.stopPropagation();
@@ -115,19 +119,11 @@ export default function ServiceCard({
         </button>
 
         {/* No Deposit Needed Badge Overlay (Bottom Left) */}
-        {noDeposit && (
-          <div className="absolute bottom-[8px] sm:bottom-[12px] left-[8px] sm:left-[12px] px-2 py-0.5 sm:w-[152px] sm:h-[22px] bg-[#2E9DA7] text-white flex items-center justify-center gap-0.5 rounded-full text-[9px] sm:text-xs font-medium shadow-sm z-10 whitespace-nowrap">
-            <span>No deposit</span>
-            <span className="hidden sm:inline"> needed</span>
-            <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-white shrink-0 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-        )}
+        {noDeposit && isAvailable && <NoDepositImageBadge />}
 
         {/* Travels to You Badge Overlay (Bottom Right) */}
         {travelsToYou && (
-          <div className="absolute bottom-[8px] sm:bottom-[11px] right-[8px] sm:right-[11px] px-2 py-0.5 sm:w-[130px] sm:h-[24px] bg-[#2E9DA7] text-white flex items-center justify-center gap-1 sm:gap-1.5 rounded-full text-[9px] sm:text-xs font-medium shadow-sm z-10 whitespace-nowrap">
+          <div className={`absolute ${noDeposit && isAvailable ? "bottom-[32px]" : "bottom-[8px]"} sm:bottom-[11px] right-[8px] sm:right-[11px] px-2 py-0.5 sm:w-[130px] sm:h-[24px] bg-[#2E9DA7] text-white flex items-center justify-center gap-1 sm:gap-1.5 rounded-full text-[9px] sm:text-xs font-medium shadow-sm z-10 whitespace-nowrap`}>
             <Image src="/Icons/van.svg" alt="Van" className="w-3 h-2.5 sm:w-4 sm:h-3.5 object-contain inline-block" draggable="false" width={12} height={8} />
             <span>Travels to you</span>
           </div>

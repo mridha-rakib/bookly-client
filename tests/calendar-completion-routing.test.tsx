@@ -4,8 +4,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { BookingCalendarEntry } from "@/lib/api/bookings";
 import DashboardCalendar from "@/components/dashboard/DashboardCalendar";
 
-const fx = vi.hoisted(() => ({ rows: [] as BookingCalendarEntry[], completion: vi.fn(), calendar: vi.fn(), ordinary: vi.fn() }));
+const fx = vi.hoisted(() => ({ rows: [] as BookingCalendarEntry[], completion: vi.fn(), calendar: vi.fn(), ordinary: vi.fn(), cancel: vi.fn(), waive: vi.fn(), error: vi.fn(), success: vi.fn() }));
+vi.mock("@/components/ui/sonner", () => ({ toast: { error: fx.error, success: fx.success } }));
 vi.mock("next/image", () => ({ default: () => null }));
+vi.mock("@/lib/business/availability-hooks", () => ({ useCalendarBlocksQuery: () => ({ data: { blocks: [], closedPeriods: [] } }), useChangeCalendarBlocksMutation: () => ({ isPending: false }) }));
 vi.mock("@/components/notifications/NotificationBell", () => ({ default: () => null }));
 vi.mock("@/components/dashboard/CalendarBookingCompletion", () => ({
   default: (props: unknown) => { fx.completion(props); return createElement("p", {}, "Authoritative completion entry"); },
@@ -14,9 +16,9 @@ vi.mock("@/lib/staff/hooks", () => ({ useStaffListQuery: () => ({ data: { member
 vi.mock("@/lib/bookings/hooks", () => ({
   useBusinessCalendarQuery: (businessId: string) => { fx.calendar(businessId); return { data: { bookings: fx.rows } }; },
   useCompleteBookingMutation: () => { fx.ordinary(); return { mutate: vi.fn() }; },
-  useCancelByBusinessMutation: () => ({ mutate: vi.fn() }),
+  useCancelByBusinessMutation: () => ({ mutate: fx.cancel }),
   useMarkNoShowMutation: () => ({ mutate: vi.fn() }),
-  useWaiveFeeMutation: () => ({ mutate: vi.fn() }),
+  useWaiveFeeMutation: () => ({ mutate: fx.waive }),
 }));
 
 let root: Root, host: HTMLDivElement;
@@ -40,6 +42,7 @@ beforeEach(() => {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }, serviceNames: ["Test service"], customerName: "Customer",
     staffMembershipIds: ["staff"], staffNames: ["Professional"], totalCents: 999999, currency: "EUR", packageSessions: [] }];
   fx.completion.mockReset(); fx.ordinary.mockReset(); fx.calendar.mockReset(); view.mockReset();
+  fx.cancel.mockReset(); fx.waive.mockReset(); fx.error.mockReset(); fx.success.mockReset();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
@@ -72,4 +75,15 @@ it.each([false, true])("ordinary/legacy=%s passes only identity to the authorita
   }));
   expect(fx.completion.mock.lastCall?.[0]).not.toHaveProperty("defaultBalanceDueCents");
   expect(fx.ordinary).not.toHaveBeenCalled();
+});
+it.each(["Cancel Booking", "Waive charge"])("BC-F03 reports a failed %s action", async (label) => {
+  if (label === "Waive charge") fx.rows[0]!.status = "PENDING";
+  const mutation = label === "Cancel Booking" ? fx.cancel : fx.waive;
+  mutation.mockImplementation((_input, callbacks) => callbacks?.onError?.(Error("Lifecycle request failed")));
+  await mount(); await openCard();
+  await act(async () => action(label).click());
+  await act(async () => action("Yes").click());
+  expect(mutation).toHaveBeenCalledTimes(1);
+  expect(fx.error).toHaveBeenCalledWith(expect.stringContaining("Lifecycle request failed"));
+  expect(fx.success).not.toHaveBeenCalled();
 });

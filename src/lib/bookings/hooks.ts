@@ -1,4 +1,5 @@
 "use client";
+import { invalidateBusinessBookingViews } from "@/lib/bookings/dashboard-cache";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -69,8 +70,7 @@ const invalidateBookingCaches = (
   queryClient: ReturnType<typeof useQueryClient>,
   businessId: string,
 ) => {
-  void queryClient.invalidateQueries({ queryKey: bookingKeys.lists(businessId) });
-  void queryClient.invalidateQueries({ queryKey: bookingKeys.calendars(businessId) });
+  void invalidateBusinessBookingViews(queryClient, businessId);
 };
 
 export const useBusinessBookingsQuery = (
@@ -323,6 +323,7 @@ const invalidateLinkedPackage = (
   queryClient: ReturnType<typeof useQueryClient>,
   booking: BookingDetail,
 ) => {
+  void invalidateBusinessBookingViews(queryClient, booking.businessId);
   const packageProgressId = booking.serviceLines.find((line) => line.packageProgressId)
     ?.packageProgressId;
   if (!packageProgressId) return;
@@ -364,6 +365,7 @@ export const useFinalizeCustomerBookingMutation = () => {
       // field is a BookingStatus value like "UPCOMING", never the literal "confirmed".
       if (!("clientSecret" in result)) {
         queryClient.setQueryData(bookingKeys.customerDetail(result.id), result);
+        void invalidateBusinessBookingViews(queryClient, _variables.businessId);
         invalidateCustomerBookingCaches(queryClient);
       }
     },

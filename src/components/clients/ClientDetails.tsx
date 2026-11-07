@@ -19,13 +19,15 @@ import {
 } from "@hugeicons/core-free-icons";
 
 import { useBusinessBookingsQuery } from "@/lib/bookings/hooks";
+import ClientPagination from "./ClientPagination";
 import type { BookingStatus } from "@/lib/api/bookings";
 import { BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingDate, formatBookingMoney, formatBookingTime, formatPackageSessionLabel } from "@/lib/bookings/format";
 
 interface ClientDetailsProps {
+  readOnly?: boolean;
   /** Real backend ids (Batch 6) — power the History tab's real booking list via
    * bookingsApi.listForBusiness(businessId, { businessClientId: clientId }). Undefined only
-   * while the parent is still resolving them, in which case History renders its loading state. */
+   * while the parent is resolving them; missing identities never trigger an unscoped read. */
   businessId?: string;
   clientId?: string;
   clientFirstName: string;
@@ -49,6 +51,7 @@ interface ClientDetailsProps {
 }
 
 export default function ClientDetails({
+  readOnly = false,
   businessId,
   clientId,
   clientFirstName,
@@ -71,17 +74,17 @@ export default function ClientDetails({
 }: ClientDetailsProps) {
   const [viewClientTab, setViewClientTab] = useState("PROFILE");
   const [historySearch, setHistorySearch] = useState("");
+  const [historyPage, setHistoryPage] = useState(1);
   const [historyStatusFilter, setHistoryStatusFilter] = useState<BookingStatus | "All">("All");
 
-  const historyQuery = useBusinessBookingsQuery(businessId, {
+  const historyQuery = useBusinessBookingsQuery(clientId ? businessId : undefined, {
     ...(clientId ? { businessClientId: clientId } : {}),
     ...(historyStatusFilter !== "All" ? { status: [historyStatusFilter] } : {}),
-    limit: 50,
+    reference: historySearch.trim() || undefined,
+    page: historyPage,
+    limit: 20,
   });
-  const historyBookings = (historyQuery.data?.bookings ?? []).filter((b) => {
-    if (!historySearch) return true;
-    return b.reference.toLowerCase().includes(historySearch.toLowerCase());
-  });
+  const historyBookings = historyQuery.data?.bookings ?? [];
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] relative">
@@ -136,13 +139,13 @@ export default function ClientDetails({
                   Linked Bookly account
                 </span>
               ) : <span />}
-              <button
+              {!readOnly && <button
                 onClick={() => setIsViewingClient(false)}
                 className="bg-[#0D0D0D] hover:bg-neutral-800 text-white rounded-lg px-4 py-2 text-xs font-semibold font-poppins flex items-center justify-center gap-1.5 transition-all shadow-sm"
               >
                 <HugeiconsIcon icon={PencilEdit02Icon} className="w-4 h-4 text-white" />
                 <span>Edit</span>
-              </button>
+              </button>}
             </div>
 
             {/* Profile Avatar section */}
@@ -287,7 +290,7 @@ export default function ClientDetails({
               <div className="relative w-[214px]">
                 <select
                   value={historyStatusFilter}
-                  onChange={(e) => setHistoryStatusFilter(e.target.value as BookingStatus | "All")}
+                  onChange={(e) => { setHistoryStatusFilter(e.target.value as BookingStatus | "All"); setHistoryPage(1); }}
                   className="w-full h-10 border border-[#ECEBEF] rounded-xl px-4 text-xs font-semibold text-[#111111] appearance-none focus:outline-none focus:border-neutral-800 font-poppins"
                 >
                   <option value="All">All bookings</option>
@@ -303,20 +306,23 @@ export default function ClientDetails({
                 <input
                   type="text"
                   value={historySearch}
-                  onChange={(e) => setHistorySearch(e.target.value)}
+                  onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1); }}
+                  maxLength={200}
+                  aria-label="Search client booking history by reference"
                   placeholder="Search by reference..."
                   className="bg-transparent text-xs placeholder-[#666666] text-[#111111] focus:outline-none w-full font-poppins"
                 />
               </div>
             </div>
 
-            {!businessId || !clientId || historyQuery.isLoading ? (
+            {!businessId || !clientId ? <p role="alert">Booking history is unavailable without a Business and Client identity.</p> : historyQuery.isLoading ? (
               <div className="flex flex-col items-center justify-center gap-3 w-full py-16 text-center">
                 <span className="font-poppins text-sm text-neutral-400">Loading booking history…</span>
               </div>
             ) : historyQuery.isError ? (
               <div className="flex flex-col items-center justify-center gap-3 w-full py-16 text-center">
                 <span className="font-poppins text-sm font-semibold text-[#BA1A1A]">Couldn&apos;t load booking history</span>
+                <button onClick={() => void historyQuery.refetch()} className="text-xs underline">Retry</button>
               </div>
             ) : historyBookings.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 w-full py-16 text-center">
@@ -364,6 +370,7 @@ export default function ClientDetails({
                 })}
               </div>
             )}
+            <ClientPagination label="Client booking history pagination" pagination={historyQuery.data?.pagination ?? { page: historyPage, limit: 20, total: 0 }} onChange={setHistoryPage} busy={historyQuery.isLoading} />
           </div>
         )}
       </div>

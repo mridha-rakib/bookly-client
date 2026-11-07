@@ -114,8 +114,8 @@ export interface UpdateStaffInput {
 
 export interface PutScheduleInput {
   days: ScheduleDay[];
-  /** Explicit recurring weekly Weekend/Off days. Optional — omitting it keeps exactly the
-   * pre-existing behavior (backend defaults it to []). */
+  /** Explicit replacement of recurring off-days. Omit to preserve the current stored value
+   * (new working weekdays leave that set); send [] only to clear it intentionally. */
   offDays?: DayOfWeek[];
 }
 

@@ -2,7 +2,7 @@
 import Image from "next/image";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowLeft02Icon,
@@ -118,14 +118,15 @@ export default function DashboardBookingForm({
     setIsAddingNewClient(false);
     setClientSearch("");
     setTravelAddress({
-      city: client.address.city,
-      propertyType: client.address.propertyType,
-      area: client.address.area,
-      streetName: client.address.streetName,
-      streetNumber: client.address.streetNumber,
-      floorUnit: client.address.floorUnit ?? "",
-      aptRoom: client.address.aptRoom ?? "",
-      additionalDirections: client.address.additionalDirections ?? "",
+      // Self-service at-venue clients legitimately have no structured address.
+      city: client.address?.city ?? "",
+      propertyType: client.address?.propertyType ?? "",
+      area: client.address?.area ?? "",
+      streetName: client.address?.streetName ?? "",
+      streetNumber: client.address?.streetNumber ?? "",
+      floorUnit: client.address?.floorUnit ?? "",
+      aptRoom: client.address?.aptRoom ?? "",
+      additionalDirections: client.address?.additionalDirections ?? "",
     });
   };
 
@@ -316,6 +317,7 @@ export default function DashboardBookingForm({
   const [submitError, setSubmitError] = useState<string | undefined>(undefined);
 
   const createManualBookingMutation = useCreateManualBookingMutation();
+  const submitInFlight = useRef(false);
   const isSubmitting = createClientMutation.isPending || createManualBookingMutation.isPending;
 
   const buildClientInput = (): CreateClientInput => ({
@@ -348,8 +350,7 @@ export default function DashboardBookingForm({
     !availabilityQuery.isError &&
     !isSubmitting;
 
-  const handleSubmit = async () => {
-    if (!canSubmit) return;
+  const submitBooking = async () => {
     setSubmitError(undefined);
     setClientFormErrors({});
 
@@ -365,6 +366,8 @@ export default function DashboardBookingForm({
       try {
         const client = await createClientMutation.mutateAsync({ businessId, input });
         businessClientId = client.id;
+        // Client creation is a completed independent write. A booking retry must reuse it.
+        selectClient(client);
       } catch (error) {
         const fieldErrors = getFieldErrors(error);
         if (Object.keys(fieldErrors).length > 0) {
@@ -391,6 +394,7 @@ export default function DashboardBookingForm({
       idempotencyKey,
       ...(visitType === "TRAVEL_TO_CUSTOMER"
         ? {
+            customerCity: addressState.city as BusinessCity,
             travelAddress: {
               city: addressState.city as BusinessCity,
               propertyType: addressState.propertyType,
@@ -410,6 +414,16 @@ export default function DashboardBookingForm({
       onCreated(booking.id);
     } catch (error) {
       setSubmitError(toUserMessage(error));
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!canSubmit || submitInFlight.current) return;
+    submitInFlight.current = true;
+    try {
+      await submitBooking();
+    } finally {
+      submitInFlight.current = false;
     }
   };
 

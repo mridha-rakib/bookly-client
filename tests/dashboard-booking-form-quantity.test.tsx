@@ -10,6 +10,8 @@ const fx = vi.hoisted(() => ({
   services: [] as CatalogService[],
   requests: [] as GetAvailabilityParams[],
   create: vi.fn().mockResolvedValue({ id: "created" }),
+  createClient: vi.fn(),
+  omitAddress: false,
   delay: undefined as undefined | ((params: GetAvailabilityParams) => Promise<AvailabilityResult> | undefined),
 }));
 vi.mock("@/lib/api/client", async (original) => ({
@@ -32,9 +34,9 @@ vi.mock("@/lib/staff/hooks", () => ({ useStaffListQuery: () => ({ data: { member
 vi.mock("@/lib/clients/hooks", () => ({
   useClientsQuery: () => ({ data: { clients: [{ id: "client", firstName: "Customer", email: "test@example.com",
     phone: { countryCode: "+357", nationalNumber: "99112233" },
-    address: { city: "Larnaca", propertyType: "HOUSE", area: "Centre", streetName: "Main", streetNumber: "1" },
+    ...(fx.omitAddress ? {} : { address: { city: "Larnaca", propertyType: "HOUSE", area: "Centre", streetName: "Main", streetNumber: "1" } }),
   }] } }),
-  useCreateClientMutation: () => ({ isPending: false }),
+  useCreateClientMutation: () => ({ mutateAsync: fx.createClient, isPending: false }),
 }));
 vi.mock("@/lib/superAdminSettings/hooks", () => ({ usePublicBookingConfigQuery: () => ({ data: { maxServicesPerBooking: 5 } }) }));
 vi.mock("next/image", () => ({ default: () => <span /> }));
@@ -98,7 +100,7 @@ async function setup(service: CatalogService) {
   await waitFor(() => button("Slot 09:00"));
 }
 beforeEach(async () => {
-  fx.services = [hourly, group, fixed]; fx.requests.length = 0; fx.create.mockClear(); fx.delay = undefined;
+  fx.omitAddress = false; fx.services = [hourly, group, fixed]; fx.requests.length = 0; fx.create.mockReset().mockResolvedValue({ id: "created" }); fx.createClient.mockReset(); fx.delay = undefined;
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   await act(async () => root.render(<QueryClientProvider client={queryClient}><DashboardBookingForm businessId="business"
@@ -172,4 +174,74 @@ describe("Manual Booking quantity (F1B)", () => {
       { serviceId: fixed.id, staffMembershipId: "staff", addonIds: [], pricingInput: {} },
     ]);
   });
+});
+
+async function fillInput(placeholder: string, value: string) {
+  const input = host.querySelector<HTMLInputElement>(`input[placeholder="${placeholder}"]`)!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+async function newClientForm() {
+  await click("Change"); await click("+ Add new client");
+  for (const [placeholder, value] of [["John", "New"], ["Doe", "Client"], ["example@email.com", "new@example.com"], ["99111111", "99123456"], ["e.g. Mackenzie, finikoudes", "Centre"], ["e.g. Emrou", "Main"], ["e.g. 14", "1"]]) {
+    await fillInput(placeholder!, value!);
+  }
+  for (const value of ["Larnaca", "House"]) {
+    const select = [...host.querySelectorAll("select")].find(el => [...el.options].some(option => option.value === value))!;
+    await act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  }
+  fx.createClient.mockResolvedValue({ id: "new-client", firstName: "New", email: "new@example.com",
+    phone: { countryCode: "+357", nationalNumber: "99123456" },
+    address: { city: "Larnaca", propertyType: "HOUSE", area: "Centre", streetName: "Main", streetNumber: "1" },
+  });
+  await setup(fixed); await click("Slot 09:00");
+}
+it("BC-F02 retries booking with the already created client instead of creating it again", async () => {
+  await newClientForm();
+  fx.create.mockRejectedValueOnce(Error("Booking unavailable"));
+  await click("Create booking");
+  expect(fx.createClient).toHaveBeenCalledTimes(1);
+  expect(fx.create).toHaveBeenCalledTimes(1);
+  await click("Create booking");
+  expect(fx.createClient).toHaveBeenCalledTimes(1);
+  expect(fx.create).toHaveBeenCalledTimes(2);
+  expect(fx.create.mock.calls[1]![0].input.businessClientId).toBe("new-client");
+  expect(fx.create.mock.calls[1]![0].input.idempotencyKey).toBe(fx.create.mock.calls[0]![0].input.idempotencyKey);
+});
+it("BC-F02 client creation failure never dispatches a booking", async () => {
+  await newClientForm();
+  fx.createClient.mockRejectedValueOnce(Error("Contact conflict"));
+  await click("Create booking");
+  expect(fx.create).not.toHaveBeenCalled();
+});
+it("BC-F02 coalesces rapid submission while new-client creation is pending", async () => {
+  await newClientForm();
+  let finish!: (value: unknown) => void;
+  const result = new Promise(resolve => { finish = resolve; });
+  fx.createClient.mockReturnValue(result);
+  await act(async () => { button("Create booking").click(); button("Create booking").click(); });
+  expect(fx.createClient).toHaveBeenCalledTimes(1);
+  await act(async () => finish({ id: "new-client", firstName: "New", email: "new@example.com", phone: { countryCode: "+357", nationalNumber: "99123456" }, address: { city: "Larnaca", propertyType: "House", area: "Centre", streetName: "Main", streetNumber: "1" } }));
+  expect(fx.create).toHaveBeenCalledTimes(1);
+});
+it("BC-F02 accepts an existing client without a structured address for an at-venue booking", async () => {
+  await click("Change"); fx.omitAddress = true;
+  const search = host.querySelector<HTMLInputElement>('input[placeholder^="Type a client"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "Customer");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Customer +357 99112233 • test@example.com");
+  await setup(fixed); await click("Slot 09:00"); await click("Create booking");
+  expect(fx.create).toHaveBeenCalledTimes(1);
+  expect(fx.create.mock.calls[0]![0].input.businessClientId).toBe("client");
+});
+it("BC-F02 sends the selected travel city with the booking address", async () => {
+  await act(async () => root.render(<QueryClientProvider client={queryClient}><DashboardBookingForm businessId="business"
+    visitType="TRAVEL_TO_CUSTOMER" onClose={() => undefined} onCreated={() => undefined} /></QueryClientProvider>));
+  await setup(fixed); await click("Slot 09:00"); await click("Create booking");
+  expect(fx.create.mock.calls[0]![0].input.travelAddress.city).toBe("Larnaca");
+  expect(fx.create.mock.calls[0]![0].input.customerCity).toBe("Larnaca");
 });

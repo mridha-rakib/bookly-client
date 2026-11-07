@@ -7,6 +7,8 @@ import SuperAdminCustomersTable from "./SuperAdminCustomersTable";
 import SuperAdminCustomerDetail from "./SuperAdminCustomerDetail";
 import type { CustomerStatus } from "@/lib/api/superAdminCustomers";
 import { useSuperAdminCustomersQuery } from "@/lib/superAdminCustomers/hooks";
+import { superAdminCustomersApi } from "@/lib/api/superAdminCustomers";
+import { CustomerExport } from "./CustomerShared";
 
 type StatusFilter = "All" | CustomerStatus;
 
@@ -36,21 +38,40 @@ export default function SuperAdminCustomers({
   });
 
   if (selectedCustomerId !== null) {
-    return <SuperAdminCustomerDetail customerId={selectedCustomerId} onBack={() => setSelectedCustomerId(null)} />;
+    return (
+      <SuperAdminCustomerDetail
+        key={selectedCustomerId}
+        customerId={selectedCustomerId}
+        onBack={() => setSelectedCustomerId(null)}
+      />
+    );
   }
 
   return (
     <div className="flex flex-col gap-6 w-full pb-12">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
-        <h2 className="font-sans font-semibold text-2xl text-[#111827] leading-[32px]">Customers</h2>
+        <h2 className="font-sans font-semibold text-2xl text-[#111827] leading-[32px]">
+          Customers
+        </h2>
 
-        <SuperAdminCustomersFilter
-          search={search}
-          setSearch={(v) => {
-            setSearch(v);
-            setPage(1);
-          }}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <SuperAdminCustomersFilter
+            search={search}
+            setSearch={(v) => {
+              setSearch(v);
+              setPage(1);
+            }}
+          />
+          <CustomerExport
+            scope="All customers matching current search and status"
+            load={() =>
+              superAdminCustomersApi.exportCustomers({
+                ...(activeStatusFilter !== "All" ? { status: activeStatusFilter } : {}),
+                q: search.trim() || undefined,
+              })
+            }
+          />
+        </div>
       </div>
 
       <SuperAdminCustomersTabs

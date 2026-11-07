@@ -1,10 +1,14 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import Image from "next/image";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Calendar03Icon, Clock01Icon, InformationCircleIcon } from "@hugeicons/core-free-icons";
 
+import BookingSelectionSummary, { type BookingSelection } from "./BookingSelectionSummary";
+import BookingPolicyDetails from "./BookingPolicyDetails";
+import ReturningCustomerBadge from "@/components/payments/ReturningCustomerBadge";
+import type { RetainedPurchaseQuote } from "@/lib/api/package-consent";
 import type { BookingCreationPreview } from "@/lib/api/bookings";
 import type { CatalogBusiness } from "@/lib/api/catalog";
 import { formatBookingDate, formatBookingMoney, formatBookingTimeRange } from "@/lib/bookings/format";
@@ -15,6 +19,13 @@ export type PromoInputStatus = "idle" | "applying" | "applied" | "error";
 
 interface CheckoutSummaryAsideProps {
   bookingStep: WizardStep | null;
+  selection?: BookingSelection;
+  packageQuote?: RetainedPurchaseQuote;
+  policyContent?: React.ReactNode;
+  policyTitle?: string;
+  hidePolicy?: boolean;
+  hideContinue?: boolean;
+  continueLabel?: string;
   /** True only for a Package Deal purchase (session 1) — approved rule: the deposit-now/
    * balance-at-venue mechanics are identical to a normal booking, but what unlocks and how
    * cancellation/no-show work afterwards is different enough that the generic copy below would
@@ -44,10 +55,11 @@ interface CheckoutSummaryAsideProps {
 
 export default function CheckoutSummaryAside({
   bookingStep,
+  selection, packageQuote, policyContent, policyTitle, hidePolicy, hideContinue, continueLabel,
   isPackagePurchase,
   packageSessionsTotal,
   business,
-  preview,
+  preview: incomingPreview,
   isPreviewLoading,
   previewError,
   showPolicy,
@@ -63,6 +75,7 @@ export default function CheckoutSummaryAside({
   onApplyPromo,
   onRemovePromo,
 }: CheckoutSummaryAsideProps) {
+  const preview = isPreviewLoading || previewError ? undefined : incomingPreview;
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileSummaryExpanded, setIsMobileSummaryExpanded] = useState(false);
   const [showStickyFooter, setShowStickyFooter] = useState(false);
@@ -91,9 +104,10 @@ export default function CheckoutSummaryAside({
     };
   }, [isMobile, preview]);
 
+  // A previous quote cannot describe selections currently being re-quoted.
   const financials = preview?.financials;
   const serviceLine = preview?.serviceLines[0];
-  const buttonLabel = bookingStep === "payment" ? (isSubmitting ? "Confirming…" : "Confirm") : "Continue →";
+  const buttonLabel = continueLabel ?? (bookingStep === "payment" ? (isSubmitting ? "Confirming…" : "Confirm") : "Continue →");
   const appliedPromo = preview?.promo;
   // P3 — a RETURNING purchase (normal or package) is €0 online; the server's own due-now figure
   // decides the wording, never a client-side classification or calculation.
@@ -148,8 +162,44 @@ export default function CheckoutSummaryAside({
     );
   };
 
-  const renderPriceBreakdown = () => (
+  const pending = isPreviewLoading ? "Calculating..." : "Pending quote";
+  const quoteRow = (label: string, cents: number, emphasis?: "total" | "due") => <div key={label}
+    className={`flex justify-between items-center gap-4 py-2.5 border-b border-[#E5E5E5] last:border-b-0 ${emphasis === "due" ? "text-base font-semibold" : emphasis === "total" ? "font-semibold" : ""}`}>
+    <span>{label}</span><span>{formatBookingMoney(cents)}</span>
+  </div>;
+  const renderPriceBreakdown = () => packageQuote ? (
+    <section aria-label="Quoted Package amounts" className="border-t border-[#E5E5E5] pt-4 flex flex-col w-full text-sm font-medium text-[#1C1B1C]">
+      <ReturningCustomerBadge returning={!isPreviewLoading && !previewError && packageQuote.financials.classification === "RETURNING"} upfrontCents={packageQuote.financials.requiredUpfrontCents} />
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="rounded-full bg-[#E1F5EE] px-2.5 py-0.5 text-xs font-semibold text-[#245C4A]">Authoritative quote</span>
+        <span className="rounded-full bg-[#F1EDED] px-2.5 py-0.5 text-xs font-semibold text-[#45474B]">{packageQuote.financials.classification}</span>
+      </div>
+      {quoteRow("Package total", packageQuote.financials.bundlePriceCents)}
+      {quoteRow("Add-ons", packageQuote.financials.addonsCents)}
+      {quoteRow("Travel fee", packageQuote.financials.travelCents)}
+      {quoteRow("Booking total", packageQuote.financials.normalTotalCents, "total")}
+      {quoteRow("Upfront payment", packageQuote.financials.requiredUpfrontCents)}
+      {quoteRow("Due now", packageQuote.financials.requiredUpfrontCents, "due")}
+      {quoteRow("Remaining at appointment", packageQuote.financials.manualVenueDuesCents)}
+      <section aria-label="Calculated VAT information" className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-[#45474B]">
+        <div className="flex justify-between items-start gap-3">
+          <span>Calculated VAT — informational only</span>
+          <span className="shrink-0">{packageQuote.tax?.status === "CALCULATED" ? formatBookingMoney(packageQuote.tax.taxCents) : "Unavailable"}</span>
+        </div>
+        <p className="mt-2">
+          {packageQuote.tax?.status === "CALCULATED"
+            ? packageQuote.tax.preTaxChargeCents === 0
+              ? "Nothing is charged online in this checkout, so no VAT is calculated on an online payment."
+              : `Calculated on the ${formatBookingMoney(packageQuote.tax.preTaxChargeCents)} upfront payment. Informational only — not charged in this checkout.`
+            : "VAT could not be calculated for this quote. Nothing extra is charged; the amounts above are unchanged."}
+        </p>
+      </section>
+      <p className="mt-3 text-sm text-[#45474B]">{packageQuote.financials.classification} · {packageQuote.timezone}</p>
+      <p className="text-sm text-[#45474B]">Original quote deadline: {new Intl.DateTimeFormat("en-GB", {dateStyle:"medium",timeStyle:"short",timeZone:packageQuote.timezone}).format(new Date(packageQuote.expiresAt))}. Returning to review does not renew it.</p>
+    </section>
+  ) : (
     <div className="border-t border-[#E5E5E5] pt-4 flex flex-col w-full text-sm font-medium text-[#1C1B1C]">
+      <ReturningCustomerBadge returning={preview?.isFirstBooking === false && (!business || preview.business.id === business.id)} upfrontCents={preview?.dueNowCents} />
       {/* Travel-fee transparency (info-clarity fix) — display only; the server-derived
           travelFeeCents already flows into Subtotal below exactly as before, this just breaks
           that one number out so a travel customer can see the surcharge, never double-counted. */}
@@ -168,7 +218,7 @@ export default function CheckoutSummaryAside({
         <span>
           {financials
             ? formatBookingMoney(financials.servicesSubtotalCents + financials.addonsSubtotalCents + financials.travelFeeCents)
-            : "—"}
+            : pending}
         </span>
       </div>
 
@@ -188,7 +238,7 @@ export default function CheckoutSummaryAside({
 
       <div className="flex justify-between items-center py-2.5">
         <span>Booking total</span>
-        <span>{financials ? formatBookingMoney(financials.totalCents) : "—"}</span>
+        <span>{financials ? formatBookingMoney(financials.totalCents) : pending}</span>
       </div>
 
       <div className="border-t border-[#E5E5E5] w-full" />
@@ -218,7 +268,7 @@ export default function CheckoutSummaryAside({
             </div>
           </div>
         </div>
-        <span>{preview ? formatBookingMoney(preview.preTaxChargeCents) : "—"}</span>
+        <span>{preview ? formatBookingMoney(preview.preTaxChargeCents) : pending}</span>
       </div>
 
       {renderPromoField()}
@@ -227,20 +277,20 @@ export default function CheckoutSummaryAside({
 
       <div className="flex justify-between items-center text-base font-semibold py-2.5">
         <span>Due now</span>
-        <span>{preview ? formatBookingMoney(preview.dueNowCents) : "—"}</span>
+        <span>{preview ? formatBookingMoney(preview.dueNowCents) : pending}</span>
       </div>
 
       <div className="border-t border-[#E5E5E5] w-full" />
 
       <div className="flex justify-between items-center py-2.5">
         <span>Remaining at appointment</span>
-        <span>{preview ? formatBookingMoney(preview.balanceDueCents) : "—"}</span>
+        <span>{preview ? formatBookingMoney(preview.balanceDueCents) : pending}</span>
       </div>
 
-      <section aria-label="Calculated VAT information" className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-[#4E5F78]">
+      <section aria-label="Calculated VAT information" className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-[#45474B]">
         <div className="flex justify-between items-start gap-3">
           <span>Calculated VAT — informational only</span>
-          <span className="shrink-0">{preview?.taxMode === "PRE_ACTIVATION" ? formatBookingMoney(preview.taxCents) : "—"}</span>
+          <span className="shrink-0">{preview?.taxMode === "PRE_ACTIVATION" ? formatBookingMoney(preview.taxCents) : "Not included in quote"}</span>
         </div>
         <p className="mt-2">
           {preview?.taxMode === "PRE_ACTIVATION"
@@ -251,80 +301,21 @@ export default function CheckoutSummaryAside({
     </div>
   );
 
-  const renderPolicy = () => (
+  const policyId = useId();
+  const renderPolicy = (placement: "aside" | "drawer") => (
     <div className="flex flex-col w-full">
-      <div
+      <button
+        type="button" aria-expanded={showPolicy} aria-controls={`${policyId}-${placement}`}
         onClick={() => setShowPolicy(!showPolicy)}
-        className="border-t border-b border-neutral-200 py-4 flex justify-between items-center text-xs font-semibold text-[#4E5F78] hover:bg-neutral-50 transition-colors cursor-pointer px-1 w-full"
+        className="border-t border-b border-neutral-200 min-h-12 py-3 flex justify-between items-center gap-3 text-sm font-semibold text-[#1C1B1C] hover:bg-neutral-50 transition-colors cursor-pointer px-1 w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2E9DA7]"
       >
-        <span>Payment & Cancellation Policy</span>
-        <span className="text-xs transition-transform duration-200">{showPolicy ? "▲" : "▼"}</span>
-      </div>
+        <span>{policyTitle ?? "Payment & Cancellation Policy"}</span>
+        <span aria-hidden="true" className="text-xs text-[#45474B] transition-transform duration-200">{showPolicy ? "▲" : "▼"}</span>
+      </button>
 
       {showPolicy && (
-        <div className="bg-[#FFFFFF] border border-neutral-200 rounded-xl p-5 mt-3 flex flex-col gap-3 font-inter text-[#757575] text-[13.9px] leading-relaxed w-full">
-          {isPackagePurchase ? (
-            <>
-              {nothingDueNow ? (
-                <p>
-                  Nothing is charged online now. You will pay the full{" "}
-                  {preview ? formatBookingMoney(preview.balanceDueCents) : "—"} at the appointment. Your
-                  remaining sessions cannot be booked until the Business records this balance as fully paid.
-                </p>
-              ) : (
-                <>
-                  <p>
-                    The quoted upfront payment of {preview ? formatBookingMoney(preview.preTaxChargeCents) : "—"} is due
-                    now to secure your first session and is credited against the package&apos;s total cost.
-                  </p>
-                  <p>
-                    The remaining {preview ? formatBookingMoney(preview.balanceDueCents) : "—"} is due at the
-                    appointment. Your remaining sessions cannot be booked until the Business records this
-                    balance as fully paid.
-                  </p>
-                </>
-              )}
-              <p>
-                {nothingDueNow
-                  ? "Your card is securely stored via Stripe for the Business's cancellation/no-show policy below."
-                  : "Payment is processed securely via Stripe. Your card is also stored for the Business's cancellation/no-show policy below."}
-              </p>
-              <p className="pt-2 border-t border-neutral-100 text-[12px] leading-normal italic">
-                Cancelling a scheduled session on time returns it to your package balance with no fee. A late
-                cancellation or a no-show forfeits that session — the lost session is the only penalty; no
-                additional fee is charged on top.
-              </p>
-            </>
-          ) : (
-            <>
-              {nothingDueNow ? (
-                <p>
-                  Nothing is charged online now. You will pay the full{" "}
-                  {preview ? formatBookingMoney(preview.balanceDueCents) : "—"} at the appointment.
-                </p>
-              ) : (
-                <>
-                  <p>
-                    The quoted upfront payment of {preview ? formatBookingMoney(preview.preTaxChargeCents) : "—"} is due
-                    now to secure your appointment and is credited against your booking total.
-                  </p>
-                  <p>
-                    The remaining {preview ? formatBookingMoney(preview.balanceDueCents) : "—"} is due at the
-                    appointment.
-                  </p>
-                </>
-              )}
-              <p>
-                {nothingDueNow
-                  ? "Your card is securely stored via Stripe for the Business's cancellation/no-show policy below."
-                  : "Payment is processed securely via Stripe. Your card is also stored for the Business's cancellation/no-show policy below."}
-              </p>
-              <p className="pt-2 border-t border-neutral-100 text-[12px] leading-normal italic">
-                Cancellation and no-show fees, if any, are set by {business?.name ?? "this Business"} and are calculated
-                based on the {appliedPromo ? "booking price after your promo discount" : "full service price"}, not the deposit amount.
-              </p>
-            </>
-          )}
+        <div id={`${policyId}-${placement}`} className="bg-[#FFFFFF] border border-neutral-200 rounded-xl p-4 sm:p-5 mt-3 flex flex-col gap-3 font-inter text-[#45474B] text-sm sm:text-[15px] leading-7 w-full break-words">
+          {policyContent ?? <BookingPolicyDetails business={business} preview={preview} isPackagePurchase={isPackagePurchase} />}
         </div>
       )}
     </div>
@@ -332,22 +323,23 @@ export default function CheckoutSummaryAside({
 
   return (
     <>
-      <aside id="wizard-aside" className="w-full lg:w-[537px] bg-white border border-neutral-200 rounded-xl p-4 sm:p-8 flex flex-col gap-5 lg:sticky lg:top-28 order-first lg:order-last">
+      <aside id="wizard-aside" className="min-w-0 w-full lg:w-[min(40%,537px)] lg:shrink-0 bg-white border border-neutral-200 rounded-xl p-4 sm:p-8 flex flex-col gap-5 lg:sticky lg:top-28 order-last">
         {/* Business Overview Header */}
         <div className="flex items-center gap-4 border-b border-[#E5E5E5] pb-5">
           <div className="w-16 h-16 bg-neutral-200 rounded overflow-hidden relative shrink-0">
-            <Image src="/image/imgOfService.png" alt={business?.name ?? "Business"} fill className="object-cover" />
+            {business?.media?.find((item) => item.role === "PROFILE")?.url && <Image src={business.media.find((item) => item.role === "PROFILE")!.url} alt={business.name} fill className="object-cover" />}
           </div>
           <div className="flex flex-col gap-1 min-w-0">
-            <h3 className="font-semibold text-base text-black truncate">{business?.name ?? "—"}</h3>
-            <span className="text-xs text-[#4E5F78] truncate">
+            <h3 className="font-semibold text-base text-black break-words">{business?.name ?? "—"}</h3>
+            <span className="text-xs text-[#4E5F78] break-words">
               {business ? `${business.address.streetName} ${business.address.streetNumber}, ${business.address.area}` : ""}
             </span>
           </div>
         </div>
 
+        {selection && <BookingSelectionSummary selection={selection} />}
         {/* Selected Schedule row */}
-        {(bookingStep === "time" || bookingStep === "payment") && preview?.schedule ? (
+        {!selection && (bookingStep === "time" || bookingStep === "payment") && preview?.schedule ? (
           <div className="flex flex-col gap-3 border-b border-[#E5E5E5] pb-5 font-inter">
             <div className="flex items-center gap-3">
               <HugeiconsIcon icon={Calendar03Icon} size={20} className="text-[#4E5F78]" />
@@ -363,7 +355,7 @@ export default function CheckoutSummaryAside({
         ) : null}
 
         {/* Booking Item Summary Details */}
-        <div className="flex flex-col gap-4">
+        {!selection && <div className="flex flex-col gap-4">
           <div className="flex justify-between items-start gap-4">
             <div className="flex flex-col gap-1 min-w-0">
               <h4 className="font-semibold text-sm text-[#1C1B1C] truncate">
@@ -415,10 +407,10 @@ export default function CheckoutSummaryAside({
               </span>
             </div>
           ) : null}
-        </div>
+        </div>}
 
         {renderPriceBreakdown()}
-        {renderPolicy()}
+        {!hidePolicy && renderPolicy("aside")}
 
         {previewError ? (
           <p className="text-xs text-rose-600 font-medium">
@@ -427,13 +419,14 @@ export default function CheckoutSummaryAside({
         ) : null}
         {submitError ? <p className="text-xs text-rose-600 font-medium">{submitError}</p> : null}
 
-        <button
+        {!hideContinue && <button
+          type="button"
           onClick={onContinue}
           disabled={!canContinue || isSubmitting}
           className="w-full h-12 bg-[#2E9DA7] text-white font-poppins font-semibold text-base rounded-[12px] hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity cursor-pointer flex items-center justify-center gap-2 shadow-sm"
         >
           <span>{buttonLabel}</span>
-        </button>
+        </button>}
       </aside>
 
       {/* Sticky Bottom Drawer for Mobile Summary */}
@@ -452,8 +445,9 @@ export default function CheckoutSummaryAside({
                   ✕
                 </button>
               </div>
+              {selection && <BookingSelectionSummary selection={selection} />}
               {renderPriceBreakdown()}
-              {renderPolicy()}
+              {!hidePolicy && renderPolicy("drawer")}
             </div>
           )}
 
@@ -466,7 +460,7 @@ export default function CheckoutSummaryAside({
             >
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-lg text-[#0D0D0D]">
-                  {preview ? formatBookingMoney(preview.dueNowCents) : "—"}
+                  {packageQuote ? formatBookingMoney(packageQuote.financials.requiredUpfrontCents) : preview ? formatBookingMoney(preview.dueNowCents) : pending}
                 </span>
                 <svg
                   className={`w-5 h-5 text-neutral-500 transition-transform duration-300 ${isMobileSummaryExpanded ? "rotate-180" : ""}`}
@@ -481,13 +475,13 @@ export default function CheckoutSummaryAside({
               <span className="text-xs text-[#757575] truncate">Due now</span>
             </button>
 
-            <button
+            {!hideContinue && <button
               onClick={onContinue}
               disabled={!canContinue || isSubmitting}
               className="flex-1 max-w-[200px] h-12 bg-[#2E9DA7] text-white font-poppins font-semibold text-base rounded-[12px] hover:opacity-95 disabled:opacity-50 transition-opacity cursor-pointer flex items-center justify-center gap-2 shadow-sm"
             >
               <span>{buttonLabel}</span>
-            </button>
+            </button>}
           </div>
         </div>
       )}

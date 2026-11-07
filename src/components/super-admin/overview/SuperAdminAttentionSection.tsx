@@ -5,6 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight02Icon } from "@hugeicons/core-free-icons";
 import { formatBookingMoney } from "@/lib/bookings/format";
 import { useSuperAdminDashboardSummaryQuery } from "@/lib/superAdminDashboard/hooks";
+import SuperAdminOverviewError from "./SuperAdminOverviewError";
 import { useSuperAdminPendingPayoutsQuery } from "@/lib/superAdminFinance/hooks";
 
 interface SuperAdminAttentionSectionProps {
@@ -15,10 +16,25 @@ interface SuperAdminAttentionSectionProps {
  * in this codebase (confirmed by investigation), so this card is deferred rather than showing a
  * fabricated count. Every remaining card reads a real, server-aggregated number. */
 export default function SuperAdminAttentionSection({ setActiveTab }: SuperAdminAttentionSectionProps) {
-  const { data: summary, isLoading } = useSuperAdminDashboardSummaryQuery();
+  // Current-state figures only: always the unfiltered summary.
+  const summaryQuery = useSuperAdminDashboardSummaryQuery();
+  const summary = summaryQuery.data;
   const { data: pendingPayouts } = useSuperAdminPendingPayoutsQuery();
 
-  if (isLoading || !summary) {
+  if (!summary && summaryQuery.isError) {
+    return (
+      <div className="flex flex-col gap-4 w-full">
+        <h3 className="font-sans font-semibold text-2xl text-[#111827] leading-[32px]">Needs your attention</h3>
+        <SuperAdminOverviewError
+          message="Items needing attention could not be loaded."
+          retrying={summaryQuery.isFetching}
+          onRetry={() => void summaryQuery.refetch()}
+        />
+      </div>
+    );
+  }
+
+  if (!summary) {
     return (
       <div className="flex flex-col gap-4 w-full">
         <h3 className="font-sans font-semibold text-2xl text-[#111827] leading-[32px]">Needs your attention</h3>

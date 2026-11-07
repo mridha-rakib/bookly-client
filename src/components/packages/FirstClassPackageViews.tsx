@@ -9,32 +9,38 @@ import { packagePrimaryCta, packageSecondaryCta } from "./package-cta";
 const card = "min-w-0 rounded-xl border border-[#C6C6CB] bg-white p-5 sm:p-7 font-poppins text-[#020305] break-words";
 const button = packagePrimaryCta;
 export const PACKAGE_UNAVAILABLE = "First-class Package checkout and session changes are unavailable while genuine purchase consent is being completed. No purchase, charge or booking will be made.";
-export function PackageUnavailable() {
-  return <p role="status" className="rounded-xl bg-[#F5F4EE] p-4 text-sm leading-6">{PACKAGE_UNAVAILABLE}</p>;
+export function PackageUnavailable({ reason }: { reason?: PackageOffer["checkoutUnavailableReason"] }) {
+  const message = reason === "CONSENT_HTTP_DISABLED"
+    ? "Package purchases are not enabled in this application. You can review the details, but no payment or booking will be made."
+    : reason ? "Package checkout is awaiting server readiness. No payment or booking will be made. Please try again after the application is ready."
+    : PACKAGE_UNAVAILABLE;
+  return <p role="status" className="rounded-xl bg-[#F5F4EE] p-4 text-sm leading-6">{message}</p>;
 }
-export function PackageReadError({ error }: { error: unknown }) {
+export function PackageReadError({ error, onRetry, retrying = false }: { error: unknown; onRetry?: () => void; retrying?: boolean }) {
   const status = error instanceof BooklyApiError ? error.status : undefined;
   const message = status === 401 ? "Sign in again to view your packages." : status === 403 ? "Your account cannot access this package information."
     : status === 404 ? "Package unavailable or not owned by your account." : status === 409 ? "Package information has changed. Refresh before continuing."
     : status === 429 ? "Too many requests. Wait before refreshing." : status === 503 ? "Package information is temporarily unavailable. Try again later."
     : "Package information could not be loaded. Try again later.";
-  return <p role="alert" className={`${card} text-[#BA1A1A]`}>{message}</p>;
+  return <div role="alert" className={`${card} space-y-3 text-[#BA1A1A]`}><p>{message}</p>
+    {onRetry && <button type="button" className={packageSecondaryCta} disabled={retrying} onClick={onRetry}>{retrying ? "Loading packages…" : "Retry package information"}</button>}</div>;
 }
-export function OfferCard({ offer, detail = false }: { offer: PackageOffer; detail?: boolean }) {
-  return <article className={`${card} flex flex-col gap-5`}>
+export function OfferCard({ offer, detail = false, showActions = true }: { offer: PackageOffer; detail?: boolean; showActions?: boolean }) {
+  return <article className={`${card} flex h-full flex-col gap-5`}>
     {detail ? <h1 className="font-manrope text-2xl font-bold">{offer.name}</h1> : <h3 className="font-manrope text-xl font-bold">{offer.name}</h3>}
     {offer.description && <p className="text-sm leading-6 text-[#5F5E5A]">{offer.description}</p>}
     <ul className="space-y-3">{offer.items.map((item) => <li key={item.itemId} className="flex flex-wrap justify-between gap-2 rounded-xl bg-[#F5F4EE] p-3">
       <span>{item.name}<span className="block text-xs text-[#5F5E5A]">{item.pricingMode === "PER_PERSON" ? "Group · One credit = one participant / seat" : "Fixed session"}</span></span>
-      <span className="font-semibold">{item.quantity} sessions</span>
+      <span className="font-semibold">{item.quantity} {item.quantity === 1 ? "session" : "sessions"}</span>
     </li>)}</ul>
     <p>{offer.items.reduce((n, item) => n + item.quantity, 0)} total sessions · {formatBookingMoney(offer.bundlePriceCents)}</p>
-    <p className="text-sm">{offer.validity.mode === "FOREVER" ? "FOREVER · No expiry" : `FINITE${offer.validity.months} · ${offer.validity.months} calendar months from purchase`}</p>
+    <p className="text-sm">{offer.validity.mode === "FOREVER" ? "No expiry" : `Valid for ${offer.validity.months} calendar months from purchase`}</p>
     <p className="text-sm text-[#5F5E5A]">{offer.fulfilmentMode === "TRAVEL_TO_CUSTOMER" ? "Travel appointments. Purchased travel rights require exact server terms; current settings are not purchased rights." : "Appointments at the business location."}</p>
-    {detail ? <><PackageUnavailable /><button type="button" className={button} disabled>Checkout unavailable</button>
-      <InitialAppointmentReview />
+    {showActions && (detail ? <>{offer.checkoutAvailable === true
+      ? <Link className={button} href={`/customer/package-consent/${offer.businessId}/${offer.id}`}>Choose initial appointments</Link>
+      : <><PackageUnavailable reason={offer.checkoutUnavailableReason} /><button type="button" className={button} disabled>Checkout unavailable</button><InitialAppointmentReview /></>}
       <p className="text-sm">A package purchase requires at least one real initial appointment. Remaining credits do not create placeholder bookings. Final FIRST / RETURNING classification, upfront amount and penalty disclosures require an authoritative server quote.</p></>
-      : <Link className="font-semibold text-[#240183] underline" href={`/customer/package-consent/${offer.businessId}/${offer.id}`}>View package details</Link>}
+      : <Link className="mt-auto inline-flex min-h-12 items-center font-semibold text-[#240183] underline" href={`/customer/package-consent/${offer.businessId}/${offer.id}`}>View package details</Link>)}
   </article>;
 }
 function Counter({ label, value }: { label: string; value: number }) {

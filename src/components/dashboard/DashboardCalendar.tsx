@@ -5,7 +5,7 @@ import WaiveChargeModal from "./WaiveChargeModal";
 import { NoShowModal, CancelBookingModal } from "./CalendarActionModals";
 import CalendarBookingCompletion from "./CalendarBookingCompletion";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Calendar03Icon,
@@ -29,6 +29,10 @@ import { BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingMoney, formatB
 import { formatClockTime12Hour, formatTime12Hour } from "@/lib/staff/format";
 import { toast } from "@/components/ui/sonner";
 import { toUserMessage } from "@/lib/auth/messages";
+import { bookingDayInterval, calendarDayHours, calendarDayLanes } from "@/lib/bookings/calendar-hours";
+import { useCalendarBlocksQuery, useChangeCalendarBlocksMutation } from "@/lib/business/availability-hooks";
+import { calendarRange, createCalendarRangeState } from "@/lib/bookings/calendar-blocks";
+import type { LocalCalendarRange } from "@/lib/api/business-availability";
 
 interface DashboardCalendarProps {
   /** Undefined means this actor has no manageable business right now (e.g. STAFF — no product
@@ -41,17 +45,9 @@ interface DashboardCalendarProps {
   staffName?: string;
 }
 
-const GRID_START_HOUR = 8;
-const GRID_END_HOUR = 18; // exclusive
 const PX_PER_MINUTE = 160 / 60;
 
-// Gutter row labels, one per grid hour — derived from GRID_START_HOUR/GRID_END_HOUR so the
-// labels can never drift out of sync with the grid, and rendered via the app's canonical
-// 12-hour formatter (never a hand-picked AM/PM string) so "5:00" can't be misread as either
-// 5am or 5pm.
-const GRID_HOUR_LABELS = Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, idx) =>
-  formatTime12Hour(`${String(GRID_START_HOUR + idx).padStart(2, "0")}:00`),
-);
+// Grid bounds and labels share the same Business-hours/Staff/Booking-derived range.
 
 const TONE_CARD_CLASSNAMES: Record<string, { bg: string; border: string }> = {
   info: { bg: "bg-[#BBEBFF]", border: "border-[#0CC0DF]" },
@@ -81,15 +77,6 @@ const bookingLocalDateKey = (booking: BookingCalendarEntry): string => {
   }).formatToParts(new Date(booking.schedule.startAt));
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")}`;
-};
-
-const bookingLocalMinutes = (isoInstant: string, timezone: string): number => {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit", minute: "2-digit", hour12: false, timeZone: timezone,
-  }).formatToParts(new Date(isoInstant));
-  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
-  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
-  return hour * 60 + minute;
 };
 
 export default function DashboardCalendar({
@@ -127,7 +114,7 @@ export default function DashboardCalendar({
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [datePickerSelectedMonth, setDatePickerSelectedMonth] = useState(currentDate.getMonth());
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
-  const [disabledSlots, setDisabledSlots] = useState<string[]>([]);
+  const [blockScope, setBlockScope] = useState<"STAFF" | "BUSINESS">("STAFF");
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isDragActive, setIsDragActive] = useState(false);
   const [dragStartX, setDragStartX] = useState(0);
@@ -149,6 +136,8 @@ export default function DashboardCalendar({
   const queryToDate = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate() + 1, 23, 59, 59, 999).toISOString();
   const calendarQuery = useBusinessCalendarQuery(businessId, queryFromDate, queryToDate);
   const staffListQuery = useStaffListQuery(businessId);
+  const blocksQuery = useCalendarBlocksQuery(isStaffDashboard ? undefined : businessId);
+  const changeBlocksMutation = useChangeCalendarBlocksMutation();
   const bookings = calendarQuery.data?.bookings ?? [];
 
   const cancelByBusinessMutation = useCancelByBusinessMutation();
@@ -328,8 +317,41 @@ export default function DashboardCalendar({
         .filter((m) => m.membershipId)
         .map((m, i) => ({ name: m.name, hasBorder: i === 0, membershipId: m.membershipId as string }));
 
+  // A persisted appointment stays visible after its Staff member is removed from the
+  // current directory. Use its canonical membership identity and snapshotted name.
+  if (!isStaffDashboard) for (const booking of bookings) {
+    booking.staffMembershipIds.forEach((membershipId, index) => {
+      if (!staffColumns.some(column => column.membershipId === membershipId)) {
+        staffColumns.push({ membershipId, name: booking.staffNames[index] ?? "Staff", hasBorder: staffColumns.length === 0 });
+      }
+    });
+  }
+
   const bookingsForStaff = (staffMembershipId: string | undefined) =>
     bookings.filter((b) => !staffMembershipId || b.staffMembershipIds.includes(staffMembershipId));
+
+  const calendarTimezone = blocksQuery.data?.timezone ?? calendarQuery.data?.timezone;
+  const savedRangeState = useMemo(() => createCalendarRangeState(blocksQuery.data?.blocks ?? [], blocksQuery.data?.closedPeriods ?? [], calendarTimezone ?? "Europe/Nicosia"), [blocksQuery.data, calendarTimezone]);
+  const rangeState = (key: string) => savedRangeState(JSON.parse(key) as LocalCalendarRange);
+  const canChangeBlocks = Boolean(businessId && !isStaffDashboard && blocksQuery.data && !blocksQuery.isError && !changeBlocksMutation.isPending);
+  const saveBlocks = async (action: "BLOCK" | "UNBLOCK") => {
+    if (!businessId || !canChangeBlocks) return;
+    try {
+      const saved = await changeBlocksMutation.mutateAsync({ businessId, action, intervals: selectedSlots.map(key => JSON.parse(key) as LocalCalendarRange) });
+      setSelectedSlots([]);
+      toast.success(action === "BLOCK" ? "Calendar blocks saved" : "Calendar slots reopened");
+      if (saved.overlappingBookings) toast.warning(`${saved.overlappingBookings} existing appointment(s) overlap this block and remain booked. Review them using the existing booking actions.`);
+    } catch (error) { toast.error(toUserMessage(error)); }
+  };
+  const visibleDateKey = isoDateOnly(currentDate);
+  const relevantStaff = (staffListQuery.data?.members ?? []).filter(member => selectedStaffFilter === "All Staff" || member.name === selectedStaffFilter);
+  const relevantMembershipIds = staffColumns.filter(member => selectedStaffFilter === "All Staff" || member.name === selectedStaffFilter).map(member => member.membershipId);
+  const relevantBookings = bookings.filter(booking => selectedStaffFilter === "All Staff" || booking.staffMembershipIds.some(id => relevantMembershipIds.includes(id)));
+  const { startHour: gridStartHour, endHour: gridEndHour } = calendarDayHours(
+    visibleDateKey, relevantBookings, calendarQuery.data?.openingHours ?? [], relevantStaff.map(member => member.schedule ?? []), calendarTimezone,
+  );
+  const gridHourCount = gridEndHour - gridStartHour;
+  const gridHourLabels = Array.from({ length: gridHourCount }, (_, index) => formatTime12Hour(`${String(gridStartHour + index).padStart(2, "0")}:00`));
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] relative">
@@ -445,6 +467,13 @@ export default function DashboardCalendar({
         </div>
       </div>
 
+      {businessId && !isStaffDashboard && <div className="flex flex-wrap items-center gap-3 px-6 py-2 text-xs border-b border-neutral-200">
+        <label>Block scope <select aria-label="Calendar block scope" value={blockScope} disabled={!canChangeBlocks} onChange={event => { setBlockScope(event.target.value as "STAFF" | "BUSINESS"); setSelectedSlots([]); }} className="ml-2 rounded border bg-white px-2 py-1"><option value="STAFF">Selected Staff</option><option value="BUSINESS">Business-wide</option></select></label>
+        <span className="text-neutral-500">Select Day time slots or Weekly dates. Reopen Business-wide blocks in Business-wide scope. Closed periods are managed in Business Settings.</span>
+        {blocksQuery.isLoading && <span role="status">Loading saved blocks…</span>}
+        {blocksQuery.isError && <span role="alert">Could not load saved blocks. <button className="underline" onClick={() => void blocksQuery.refetch()}>Retry</button></span>}
+        {changeBlocksMutation.isPending && <span role="status">Saving calendar blocks…</span>}
+      </div>}
       {!businessId ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
           <span className="font-poppins text-sm font-semibold text-[#5F5E5A]">Booking management isn&apos;t available for your account</span>
@@ -653,9 +682,10 @@ export default function DashboardCalendar({
                             const d = new Date(rangeStart);
                             d.setDate(rangeStart.getDate() + dayIdx);
                             const dateKey = isoDateOnly(d);
-                            const slotKey = `${staff.name}-${dateKey}`;
+                            const slotKey = JSON.stringify(calendarRange(blockScope === "BUSINESS" ? undefined : staff.membershipId, dateKey));
                             const isSelected = selectedSlots.includes(slotKey);
-                            const isDisabled = disabledSlots.includes(slotKey);
+                            const state = rangeState(slotKey);
+                            const isDisabled = state.blocked || state.closed;
                             const dayBookings = staffBookings.filter((b) => bookingLocalDateKey(b) === dateKey);
                             const hasBooking = dayBookings.length > 0;
 
@@ -663,7 +693,7 @@ export default function DashboardCalendar({
                               <div
                                 key={dayIdx}
                                 onClick={() => {
-                                  if (hasBooking) return;
+                                  if (!canChangeBlocks || state.closed || (blockScope === "STAFF" && state.global)) return;
 
                                   const isDeselect = selectedSlots.includes(slotKey);
                                   if (isDeselect) {
@@ -673,7 +703,7 @@ export default function DashboardCalendar({
 
                                   if (selectedSlots.length > 0) {
                                     const firstKey = selectedSlots[0];
-                                    const firstIsDisabled = disabledSlots.includes(firstKey);
+                                    const firstIsDisabled = rangeState(firstKey).blocked;
                                     if (isDisabled !== firstIsDisabled) {
                                       return;
                                     }
@@ -691,7 +721,7 @@ export default function DashboardCalendar({
                               >
                                 {isDisabled && !isSelected && (
                                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
-                                    <span className="text-[10px] font-bold tracking-wider text-[#94A3B8] uppercase">Disabled</span>
+                                    <span className="text-[10px] font-bold tracking-wider text-[#94A3B8] uppercase">{state.closed ? "Closed" : state.fullyBlocked ? "Disabled" : "Partially blocked"}</span>
                                   </div>
                                 )}
                                 {dayBookings.map((b) => {
@@ -742,10 +772,8 @@ export default function DashboardCalendar({
                   })}
               </div>
             ) : (
-              /* DAILY / TODAY VIEW — real top/height from real schedule.startAt/endAt, clipped
-                 to the visible 8:00-18:00 grid (unchanged grid bounds — see the Batch 6 report's
-                 note on this simplification). */
-              <div className="flex w-full h-[1600px] relative">
+              /* Calendar bounds include configured shifts and actual persisted appointments. */
+              <div className="flex w-full relative shrink-0" style={{ height: gridHourCount * 160 }}>
                 {openDropdownCardId && (
                   <div
                     className="fixed inset-0 z-30 bg-transparent cursor-default"
@@ -754,7 +782,7 @@ export default function DashboardCalendar({
                 )}
                 {/* Background Horizontal Grid Lines */}
                 <div className="absolute left-[65px] right-0 top-0 bottom-0 pointer-events-none flex flex-col z-0">
-                  {Array.from({ length: 10 }).map((_, idx) => (
+                  {Array.from({ length: gridHourCount }).map((_, idx) => (
                     <div key={idx} className="h-40 w-full flex flex-col">
                       <div className="h-20 border-b border-dashed border-[#C6C6CB]/20"></div>
                       <div className="h-20 border-b border-[#C6C6CB]/40"></div>
@@ -764,7 +792,7 @@ export default function DashboardCalendar({
 
                 {/* Time Column (Left Side Axis) */}
                 <div className="border-r border-[#C6C6CB] bg-[#FCF8F8] flex flex-col shrink-0 relative z-10" style={{ width: "64px" }}>
-                  {GRID_HOUR_LABELS.map((time, idx) => (
+                  {gridHourLabels.map((time, idx) => (
                     <div key={idx} className="h-40 flex justify-center items-start pt-2">
                       <span className="font-poppins text-[11px] font-semibold text-[#45474B]">{time}</span>
                     </div>
@@ -777,21 +805,24 @@ export default function DashboardCalendar({
                   return (
                     <div className="flex-1 grid divide-x divide-[#C6C6CB] relative w-full" style={{ gridTemplateColumns: `repeat(${Math.max(activeStaffList.length, 1)}, minmax(0, 1fr))` }}>
                       {activeStaffList.map((staff) => {
-                        const dayBookings = bookingsForStaff(staff.membershipId).filter((b) => bookingLocalDateKey(b) === dateKey);
+                        const dayBookings = bookingsForStaff(staff.membershipId).filter((b) => bookingDayInterval(b, dateKey, calendarTimezone));
+                        const lanes = calendarDayLanes(dayBookings, dateKey, calendarTimezone);
                         return (
                         <div key={staff.name} className="relative h-full">
                           {/* Render click-capturable empty slots behind the bookings */}
                           <div className="absolute inset-0 z-0 flex flex-col">
-                            {Array.from({ length: 10 }).map((_, hourIdx) => (
+                            {Array.from({ length: gridHourCount }).map((_, hourIdx) => (
                               <div key={hourIdx} className="h-40 flex flex-col border-b border-[#C6C6CB]/20">
                                 {[0, 1].map((halfIdx) => {
-                                  const slotKey = `${staff.name}-today-${hourIdx}-${halfIdx}`;
+                                  const slotKey = JSON.stringify(calendarRange(blockScope === "BUSINESS" ? undefined : staff.membershipId, dateKey, (gridStartHour + hourIdx) * 60 + halfIdx * 30, (gridStartHour + hourIdx) * 60 + halfIdx * 30 + 30));
                                   const isSelected = selectedSlots.includes(slotKey);
-                                  const isDisabled = disabledSlots.includes(slotKey);
+                                  const state = rangeState(slotKey);
+                                  const isDisabled = state.blocked || state.closed;
                                   return (
                                     <div
                                       key={halfIdx}
                                       onClick={() => {
+                                        if (!canChangeBlocks || state.closed || (blockScope === "STAFF" && state.global)) return;
                                         const isDeselect = selectedSlots.includes(slotKey);
                                         if (isDeselect) {
                                           setSelectedSlots(prev => prev.filter(k => k !== slotKey));
@@ -800,7 +831,7 @@ export default function DashboardCalendar({
 
                                         if (selectedSlots.length > 0) {
                                           const firstKey = selectedSlots[0];
-                                          const firstIsDisabled = disabledSlots.includes(firstKey);
+                                          const firstIsDisabled = rangeState(firstKey).blocked;
                                           if (isDisabled !== firstIsDisabled) {
                                             return;
                                           }
@@ -832,10 +863,12 @@ export default function DashboardCalendar({
                           </div>
 
                           {dayBookings.map(b => {
-                            const startMin = bookingLocalMinutes(b.schedule.startAt, b.schedule.timezone);
-                            const endMin = bookingLocalMinutes(b.schedule.endAt, b.schedule.timezone);
-                            const gridStartMin = GRID_START_HOUR * 60;
-                            const gridEndMin = GRID_END_HOUR * 60;
+                            const interval = bookingDayInterval(b, dateKey, calendarTimezone);
+                            if (!interval) return null;
+                            const startMin = interval.from;
+                            const endMin = interval.to;
+                            const gridStartMin = gridStartHour * 60;
+                            const gridEndMin = gridEndHour * 60;
                             if (endMin <= gridStartMin || startMin >= gridEndMin) return null; // outside the visible grid
                             const clippedStart = Math.max(startMin, gridStartMin);
                             const clippedEnd = Math.min(endMin, gridEndMin);
@@ -843,6 +876,7 @@ export default function DashboardCalendar({
                             const height = Math.max(24, (clippedEnd - clippedStart) * PX_PER_MINUTE);
                             const tone = BOOKING_STATUS_TONE[b.status];
                             const cardColors = TONE_CARD_CLASSNAMES[tone];
+                            const placement = lanes.get(b.id) ?? { lane: 0, count: 1 };
 
                             return (
                               <div
@@ -852,7 +886,7 @@ export default function DashboardCalendar({
                                   setOpenDropdownCardId(openDropdownCardId === b.id ? null : b.id);
                                 }}
                                 className={`absolute left-[3%] right-[3%] ${cardColors.bg} border-l-4 ${cardColors.border} rounded-md p-2 shadow-sm flex flex-col justify-between cursor-pointer hover:scale-[1.01] transition-transform ${openDropdownCardId === b.id ? "z-40" : "z-20"}`}
-                                style={{ top: `${top}px`, height: `${height}px` }}
+                                style={{ top: `${top}px`, height: `${height}px`, left: `${3 + placement.lane * 94 / placement.count}%`, right: "auto", width: `${94 / placement.count}%` }}
                               >
                                 <button className="absolute right-2 top-2 text-neutral-500 hover:text-neutral-900 select-none cursor-pointer">
                                   <svg className="w-1 h-3" fill="currentColor" viewBox="0 0 4 16">
@@ -910,21 +944,19 @@ export default function DashboardCalendar({
             <div className="flex flex-col">
               <span className="font-poppins text-sm font-semibold text-[#020305]">{selectedSlots.length} {selectedSlots.length === 1 ? "slot" : "slots"} selected</span>
               <span className="text-xs text-[#45474B] font-poppins">
-                {Array.from(new Set(selectedSlots.map(k => k.split("-")[0]))).join(", ")}&apos;s schedule
+                {blockScope === "BUSINESS" ? "Business-wide schedule" : "Selected Staff schedules"}
               </span>
             </div>
           </div>
           <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto">
             {(() => {
-              const hasDisabledSelected = selectedSlots.some(key => disabledSlots.includes(key));
+              const hasDisabledSelected = selectedSlots.some(key => rangeState(key).blocked);
 
               if (hasDisabledSelected) {
                 return (
                   <button
-                    onClick={() => {
-                      setDisabledSlots(prev => prev.filter(k => !selectedSlots.includes(k)));
-                      setSelectedSlots([]);
-                    }}
+                    disabled={!canChangeBlocks}
+                    onClick={() => void saveBlocks("UNBLOCK")}
                     className="bg-[#2E9DA7] text-white text-xs sm:text-sm font-medium px-4 sm:px-[36.2px] h-[44px] sm:h-[50px] rounded-lg hover:bg-[#20848f] transition-colors shadow-md flex-1 sm:flex-initial cursor-pointer"
                   >
                     Activate Selected Slots ({selectedSlots.length})
@@ -934,10 +966,8 @@ export default function DashboardCalendar({
 
               return (
                 <button
-                  onClick={() => {
-                    setDisabledSlots(prev => [...prev, ...selectedSlots]);
-                    setSelectedSlots([]);
-                  }}
+                  disabled={!canChangeBlocks}
+                  onClick={() => void saveBlocks("BLOCK")}
                   className="bg-[#020305] text-white text-xs sm:text-sm font-medium px-4 sm:px-[36.2px] h-[44px] sm:h-[50px] rounded-lg hover:bg-neutral-800 transition-colors shadow-md flex-1 sm:flex-initial cursor-pointer"
                 >
                   Disable Selected Slots ({selectedSlots.length})
@@ -962,7 +992,13 @@ export default function DashboardCalendar({
         onClose={() => setWaiveBookingId(null)}
         onConfirm={(reason, internalNote) => {
           if (businessId && waiveBookingId) {
-            waiveFeeMutation.mutate({ businessId, bookingId: waiveBookingId, reason, internalNote });
+            waiveFeeMutation.mutate(
+              { businessId, bookingId: waiveBookingId, reason, internalNote },
+              {
+                onSuccess: () => toast.success("No-show charge waived."),
+                onError: (error) => toast.error(toUserMessage(error)),
+              },
+            );
           }
           setWaiveBookingId(null);
         }}
@@ -1006,7 +1042,13 @@ export default function DashboardCalendar({
         onClose={() => setCancelBookingId(null)}
         onConfirm={(reason) => {
           if (businessId && cancelBookingId) {
-            cancelByBusinessMutation.mutate({ businessId, bookingId: cancelBookingId, reason });
+            cancelByBusinessMutation.mutate(
+              { businessId, bookingId: cancelBookingId, reason },
+              {
+                onSuccess: () => toast.success("Booking cancelled."),
+                onError: (error) => toast.error(toUserMessage(error)),
+              },
+            );
           }
           setCancelBookingId(null);
         }}

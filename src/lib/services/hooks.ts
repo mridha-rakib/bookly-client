@@ -2,13 +2,19 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { bookingSettingsApi } from "@/lib/api/bookingSettings";
+import {
+  bookingSettingsApi,
+  taxSettingsApi,
+  type UpdateBusinessTaxSettingsInput,
+} from "@/lib/api/bookingSettings";
 import {
   servicesApi,
   type ListServicesParams,
   type ServiceInput,
 } from "@/lib/api/services";
 import { availabilityKeys } from "@/lib/availability/hooks";
+import { catalogKeys } from "@/lib/catalog/hooks";
+import { bookingKeys } from "@/lib/bookings/hooks";
 
 export const serviceKeys = {
   all: ["services"] as const,
@@ -195,8 +201,43 @@ export const useUpdateBookingSettingsMutation = () => {
       businessId: string;
       gapEliminationEnabled: boolean;
     }) => bookingSettingsApi.updateBookingSettings(businessId, gapEliminationEnabled),
-    onSuccess: (settings) => {
+    onSuccess: async (settings) => {
       queryClient.setQueryData(bookingSettingsKeys.detail(settings.businessId), settings);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [...availabilityKeys.all, settings.businessId] }),
+        queryClient.invalidateQueries({ queryKey: [...catalogKeys.all, "availability", settings.businessId] }),
+        queryClient.invalidateQueries({ queryKey: bookingKeys.rescheduleAvailability,
+          predicate: (query) => query.queryKey[2] === settings.businessId }),
+      ]);
+    },
+  });
+};
+
+export const taxSettingsKeys = {
+  all: ["tax-settings"] as const,
+  detail: (businessId: string) => [...taxSettingsKeys.all, businessId] as const,
+};
+
+export const useTaxSettingsQuery = (businessId: string | undefined) =>
+  useQuery({
+    queryKey: taxSettingsKeys.detail(businessId ?? ""),
+    queryFn: () => taxSettingsApi.getTaxSettings(businessId as string),
+    enabled: Boolean(businessId),
+  });
+
+export const useUpdateTaxSettingsMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      businessId,
+      input,
+    }: {
+      businessId: string;
+      input: UpdateBusinessTaxSettingsInput;
+    }) => taxSettingsApi.updateTaxSettings(businessId, input),
+    onSuccess: (settings) => {
+      queryClient.setQueryData(taxSettingsKeys.detail(settings.businessId), settings);
     },
   });
 };

@@ -11,7 +11,9 @@ import { CategoryTileIcon } from "@/components/landing-page/categoryIcons";
 import { useDiscoveryCategoriesQuery, useHomeSectionsQuery } from "@/lib/discovery/hooks";
 import { discoveryCardToRecommendation } from "@/lib/discovery/card";
 import { useLocationStore } from "@/lib/location/store";
+import { useBusinessFavorites } from "@/lib/favorite/use-business-favorites";
 import { useAuthStore } from "@/lib/auth/store";
+import { useHomeNoDepositEligibility } from "@/lib/discovery/no-deposit-hooks";
 
 const CARD_WRAP = "w-[calc(50%-7.5px)] sm:w-[360px] md:w-[406px] shrink-0 snap-start";
 
@@ -117,13 +119,7 @@ function DiscoveryRow({
 export default function CategoryServicesSection() {
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState("all");
-  const [favorites, setFavorites] = useState<string[]>([]);
-
-  const toggleFavorite = (id: string) => {
-    setFavorites((prev) =>
-      prev.includes(id) ? prev.filter((favId) => favId !== id) : [...prev, id]
-    );
-  };
+  const { businessIds: favorites, toggle: toggleFavorite } = useBusinessFavorites();
 
   // Real discovery data. `selectedCity` (hero search bar) drives "Services near you"; the
   // logged-in Customer's session personalizes "Recommended" server-side.
@@ -145,9 +141,11 @@ export default function CategoryServicesSection() {
 
   const rowsLoading = !authReady || homeSections.isLoading;
   const rowsError = homeSections.isError;
-  const recommended = (homeSections.data?.recommended ?? []).map(discoveryCardToRecommendation);
-  const nearYou = (homeSections.data?.nearYou ?? []).map(discoveryCardToRecommendation);
-  const popular = (homeSections.data?.popular ?? []).map(discoveryCardToRecommendation);
+  const eligibility = useHomeNoDepositEligibility(rowsError || rowsLoading ? [] : [...(homeSections.data?.recommended ?? []), ...(homeSections.data?.nearYou ?? []), ...(homeSections.data?.popular ?? [])].map(card => ({ businessId: card.id })));
+  const cardWithEligibility = (card: Parameters<typeof discoveryCardToRecommendation>[0]) => ({ ...discoveryCardToRecommendation(card), noDeposit: eligibility.isEligible(card.id) });
+  const recommended = (homeSections.data?.recommended ?? []).map(cardWithEligibility);
+  const nearYou = (homeSections.data?.nearYou ?? []).map(cardWithEligibility);
+  const popular = (homeSections.data?.popular ?? []).map(cardWithEligibility);
 
   const handleBookNow = (id: string) => router.push(`/venue?id=${id}`);
 

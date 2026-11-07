@@ -29,13 +29,17 @@ import BookingReviewCard from "../BookingReviewCard";
 import RescheduleModal from "../RescheduleModal";
 import BookingLocationMap from "../BookingLocationMap";
 import CustomerFinancialRows from "@/components/bookings/CustomerFinancialRows";
+import { BookingStatusBadge, BookingVisitBadge } from "@/components/bookings/BookingBadges";
 import CustomerFinancialOutcome from "@/components/bookings/CustomerFinancialOutcome";
 import { presentCancellation, presentOnlineSnapshot, presentVenuePayment } from "@/lib/bookings/customer-financial";
 import { FirstClassBookingContext } from "@/components/packages/FirstClassPackageIntegration";
 
-function BookingViewContent() {
+function BookingViewRoute() {
   const searchParams = useSearchParams();
   const bookingId = searchParams.get("id") ?? undefined;
+  return <BookingViewContent key={bookingId ?? "missing"} bookingId={bookingId} />;
+}
+function BookingViewContent({ bookingId }: { bookingId?: string }) {
 
   const logout = useAuthStore((state) => state.logout);
   const isLoggedIn = true;
@@ -55,8 +59,12 @@ function BookingViewContent() {
   const cancelMutation = useCancelByCustomerMutation();
 
   const isUpcoming = !firstClassLine && (booking?.status === "UPCOMING" || booking?.status === "PENDING");
-  const location = booking?.fulfilment.mode === "AT_BUSINESS_LOCATION" ? booking.fulfilment.businessLocation : booking?.fulfilment.travelAddress;
-  const mapQuery = location ? `${location.streetName} ${location.streetNumber}, ${location.area}, ${location.city}` : "";
+  const visitMode = booking?.fulfilment?.mode;
+  const location = visitMode === "AT_BUSINESS_LOCATION" ? booking?.fulfilment.businessLocation
+    : visitMode === "TRAVEL_TO_CUSTOMER" ? booking?.fulfilment.travelAddress : undefined;
+  const completeAddress = location && [location.streetName, location.streetNumber, location.area, location.city].every((value) => typeof value === "string" && value.trim().length > 0);
+  const mapQuery = completeAddress ? `${location.streetName} ${location.streetNumber}, ${location.area}, ${location.city}` : "";
+  const isTravel = visitMode === "TRAVEL_TO_CUSTOMER";
 
   const handleConfirmCancel = async () => {
     if (!bookingId) return;
@@ -91,22 +99,26 @@ function BookingViewContent() {
       <main className="flex-1 w-full px-4 md:px-8 py-8 flex justify-center items-start">
         {detailQuery.isLoading ? (
           <p className="text-sm text-[#4E5F78] py-20">Loading your booking…</p>
+        ) : detailQuery.isError && !booking ? (
+          <section role="alert" className="space-y-4 py-20 text-sm text-[#4E5F78]"><p>Booking details could not be loaded. This booking may be unavailable to your account, or the connection may need retrying.</p>
+            <button type="button" className="rounded-lg border border-[#C6C6CB] px-5 py-3 disabled:opacity-50" disabled={detailQuery.isFetching} onClick={() => void detailQuery.refetch()}>Retry booking details</button>
+            <Link className="block text-[#2E9DA7] underline" href="/customer/bookings">My Bookings</Link></section>
         ) : !booking ? (
           <p className="text-sm text-[#4E5F78] py-20">
             This booking could not be found. It may not exist, or it may not belong to your account.
           </p>
         ) : (
-          <div className="w-full max-w-[1005px] flex flex-col gap-6 pb-20 font-poppins">
-            {firstClassLine?.packageProgressId && <FirstClassBookingContext progressId={firstClassLine.packageProgressId} />}
+          <div className="min-w-0 w-full max-w-[1005px] flex flex-col gap-6 pb-20 font-poppins break-words">
+            <div className="flex flex-wrap items-center justify-between gap-4"><h1 className="text-2xl font-semibold">Booking {booking.reference}</h1><BookingStatusBadge status={booking.status} /></div>
+            <nav aria-label="Booking navigation" className="flex flex-wrap gap-4 text-sm font-semibold text-[#2E9DA7]"><Link href="/customer/bookings" className="hover:underline">My Bookings</Link><Link href="/customer/packages" className="hover:underline">My Packages</Link></nav>
+            {detailQuery.isError && <div role="alert" className="space-y-2 rounded-lg bg-[#F5F4EE] p-4 text-sm"><p>The latest booking details could not be refreshed. Showing the last recorded information.</p><button type="button" disabled={detailQuery.isFetching} className="underline" onClick={() => void detailQuery.refetch()}>Retry booking details</button></div>}
+            {firstClassLine?.packageProgressId && <FirstClassBookingContext progressId={firstClassLine.packageProgressId} currentBookingId={booking.id} />}
             {/* CLIENT card */}
             <div className="w-full bg-[#FFFFFF] border border-[#ACAAB4] rounded-xl p-6 flex flex-col gap-4">
               <span className="text-xs font-semibold tracking-wider text-[#888780] uppercase">Client</span>
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full overflow-hidden border border-[#C6C6CB] relative flex-shrink-0 bg-neutral-100">
-                  <Image src="/image/profile1.png" alt="Client Profile" fill className="object-cover" />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-3">
+                <div className="min-w-0 flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-3">
                     <span className="font-semibold text-lg text-[#111111]">
                       {[booking.customer.firstName, booking.customer.lastName].filter(Boolean).join(" ")}
                     </span>
@@ -131,22 +143,20 @@ function BookingViewContent() {
             {/* Salon Details card */}
             <div className="w-full bg-[#FFFFFF] border border-[#ACAAB4] rounded-xl p-6 flex flex-col gap-6">
               <div className="flex flex-col md:flex-row items-start gap-4 w-full">
-                <div className="w-[106px] h-[106px] rounded-lg overflow-hidden border border-[#C6C6CB] flex-shrink-0 relative bg-neutral-100">
-                  <Image src="/image/imgOfService.png" alt={business?.name ?? "Business"} fill className="object-cover" />
-                </div>
-                <div className="flex-1 flex flex-col gap-1.5">
-                  <h2 className="font-semibold text-2xl text-black">{business?.name ?? "—"}</h2>
-                  {location && (
+                <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+                  <h2 className="font-semibold text-2xl text-black">{business?.name ?? (catalogQuery.isLoading ? "Loading business…" : "Business information unavailable")}</h2>
+                  {completeAddress && (
                     <div className="flex items-center gap-1.5 text-sm text-[#4E5F78] font-medium">
                       <HugeiconsIcon icon={Location05Icon} className="w-4 h-4 text-[#4E5F78]" />
                       <span>
-                        {location.streetName} {location.streetNumber}, {location.area}, {location.city}
+                        {isTravel ? "Your service address" : "Booked business address"}: {location.streetName} {location.streetNumber}, {location.area}, {location.city}
                       </span>
                     </div>
                   )}
                   <div className="text-sm text-[#4E5F78] font-medium mt-1">Booking ID: {booking.reference}</div>
                 </div>
               </div>
+              {booking.customerRescheduleCount > 0 && <p className="text-sm text-[#4E5F78]">Rescheduled {booking.customerRescheduleCount} {booking.customerRescheduleCount === 1 ? "time" : "times"}. The current appointment time is shown here.</p>}
 
               <hr className="border-t border-[rgba(17,17,17,0.2)] w-full" />
 
@@ -166,18 +176,11 @@ function BookingViewContent() {
                   <div className="flex flex-col">
                     <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Time</span>
                     <span className="text-base font-semibold text-[#111111]">{formatBookingTimeRange(booking.schedule)}</span>
+                    <span className="text-sm text-[#4E5F78]">{booking.schedule.timezone}</span>
                   </div>
                 </div>
               </div>
 
-              {booking.serviceLines[0]?.staffName && (
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full overflow-hidden border border-[#C6C6CB] relative flex-shrink-0 bg-neutral-100">
-                    <Image src="/image/profile.jpg" alt={booking.serviceLines[0].staffName} fill className="object-cover" />
-                  </div>
-                  <span className="text-sm font-semibold text-gray-500">with {booking.serviceLines[0].staffName}</span>
-                </div>
-              )}
             </div>
 
             {/* BOOKING SUMMARY card */}
@@ -191,6 +194,10 @@ function BookingViewContent() {
                       <div className="flex flex-col gap-1">
                         <span className="font-semibold text-base text-[#1C1B1C]">{line.name}</span>
                         <span className="text-sm text-[#4E5F78]">{line.durationMin} min</span>
+                        <span className="text-sm text-[#4E5F78]">Professional: {line.staffName ?? "Information unavailable"}</span>
+                        {line.packageName && <span className="text-sm text-[#3760B7]">Package: {line.packageName}</span>}
+                        {line.hours !== undefined && <span className="text-sm text-[#4E5F78]">{line.hours} hours</span>}
+                        {line.personCount !== undefined && <span className="text-sm text-[#4E5F78]">{line.personCount} participants</span>}
                       </div>
                       <span className="shrink-0 font-semibold text-base text-[#1C1B1C]">
                         {formatBookingMoney(line.amountCents)}
@@ -264,7 +271,7 @@ function BookingViewContent() {
 
                 <div className="flex items-center justify-between gap-4">
                   <span className="font-semibold text-base text-[#1C1B1C]">
-                    {firstClassLine?.packageRole === "REDEMPTION" ? "Independent session amount" : packageLine ? "Total purchase amount" : "Total appointment amount"}
+                    {firstClassLine?.packageRole === "REDEMPTION" ? "Independent session amount" : firstClassLine ? "Total appointment amount" : packageLine ? "Total purchase amount" : "Total appointment amount"}
                   </span>
                   <span className="shrink-0 font-bold text-lg text-[#1C1B1C]">
                     {formatBookingMoney(booking.financials.totalCents)}
@@ -274,17 +281,16 @@ function BookingViewContent() {
                 <CustomerFinancialRows rows={[presentOnlineSnapshot(booking), ...presentVenuePayment(booking)]}
                   rowClassName="w-full bg-[#F5F4EE] rounded-lg p-4 flex justify-between items-center gap-3 text-sm font-medium" />
                 <p className="text-xs text-[#4E5F78]">Historical booking amounts are not a current net provider balance.</p>
-                {detailQuery.isError && <p role="status">The latest financial details could not be refreshed. Showing the last recorded information.</p>}
                 <CustomerFinancialOutcome booking={booking} />
               </div>
             </div>
 
             {/* WHERE TO GO card */}
-            {location && (
               <div className="w-full bg-[#FFFFFF] border border-[#ACAAB4] rounded-xl p-6 flex flex-col gap-4">
-                <span className="text-xs font-semibold tracking-wider text-[#888780] uppercase">Where to go</span>
+                <h2 className="font-semibold text-lg text-[#111111]">{isTravel ? "Professional visits your location" : visitMode === "AT_BUSINESS_LOCATION" ? "Visit the business" : "Appointment location unavailable"}</h2>
+                {(visitMode === "AT_BUSINESS_LOCATION" || isTravel) && <><BookingVisitBadge mode={visitMode} /><p className="text-sm text-[#4E5F78]">{isTravel ? "Your appointment will take place at your selected address." : "Your appointment will take place at the business location."}</p></>}
 
-                <div className="flex flex-col gap-4">
+                {completeAddress && location ? <div className="flex flex-col gap-4">
                   <div className="flex items-start gap-2.5">
                     <HugeiconsIcon icon={Location05Icon} className="w-5 h-5 text-[#111111] mt-0.5" />
                     <div className="flex flex-col gap-0.5">
@@ -294,6 +300,10 @@ function BookingViewContent() {
                       <span className="text-sm text-gray-500">
                         {location.area}, {location.city}
                       </span>
+                      {location.floorUnit && <span className="text-sm text-gray-500">Floor / unit: {location.floorUnit}</span>}
+                      {location.aptRoom && <span className="text-sm text-gray-500">Apartment / room: {location.aptRoom}</span>}
+                      {isTravel && booking.fulfilment.travelAddress?.propertyType && <span className="text-sm text-gray-500">Property type: {booking.fulfilment.travelAddress.propertyType}</span>}
+                      {isTravel && booking.fulfilment.travelAddress?.additionalDirections && <p className="text-sm text-gray-500">Additional directions: {booking.fulfilment.travelAddress.additionalDirections}</p>}
                     </div>
                   </div>
 
@@ -310,17 +320,16 @@ function BookingViewContent() {
                   {showMap ? (
                     <BookingLocationMap coordinates={location?.location} address={mapQuery} />
                   ) : (
-                    <div
+                    <button type="button"
                       onClick={() => setShowMap(true)}
                       className="w-full h-44 bg-[#F5F4EE] rounded-lg flex flex-col justify-center items-center gap-2 border border-[#ACAAB4] cursor-pointer hover:bg-neutral-100 transition-colors"
                     >
                       <HugeiconsIcon icon={MapsIcon} className="w-8 h-8 text-gray-400" />
                       <span className="text-sm text-gray-400 font-semibold uppercase tracking-wider">Map preview</span>
-                    </div>
+                    </button>
                   )}
-                </div>
+                </div> : <p role="status" className="text-sm text-[#4E5F78]">The booked service address is unavailable. Contact the business to confirm the appointment location.</p>}
               </div>
-            )}
 
             {/* CANCELLATION OUTCOME card — real result only, never a pre-action estimate */}
             {booking.cancellationOutcome && (
@@ -420,7 +429,7 @@ export default function BookingViewPage() {
   return (
     <RequireCustomer>
       <Suspense fallback={<div>Loading...</div>}>
-        <BookingViewContent />
+          <BookingViewRoute />
       </Suspense>
     </RequireCustomer>
   );

@@ -9,6 +9,7 @@ import {
   ReceiptTextIcon,
 } from "@hugeicons/core-free-icons";
 import type { BookAgainCandidate } from "@/lib/api/bookings";
+import NoDepositImageBadge from "@/components/payments/NoDepositImageBadge";
 
 function formatLastVisited(startAt?: string): string {
   if (!startAt) return "Last visited recently";
@@ -44,8 +45,10 @@ export default function BookAgainCard({
   isFav,
   onToggleFavorite,
   onRebook,
+  noDeposit = false,
 }: {
   item: BookAgainCandidate;
+  noDeposit?: boolean;
   isFav: boolean;
   onToggleFavorite: (businessId: string) => void;
   onRebook: (businessId: string, serviceId: string) => void;
@@ -74,7 +77,11 @@ export default function BookAgainCard({
         )}
 
         {/* Favorite Heart Icon Overlay */}
+        {noDeposit && <NoDepositImageBadge />}
         <button
+          type="button"
+          aria-label={`${isFav ? "Remove" : "Save"} ${item.businessName} ${isFav ? "from" : "to"} favorites`}
+          aria-pressed={isFav}
           className="absolute top-[10px] sm:top-[14px] right-[10px] sm:right-[14px] rounded-full backdrop-blur-sm flex items-center justify-center text-[#E49D12] hover:bg-white active:scale-90 transition-all cursor-pointer z-10"
           onClick={(e) => {
             e.stopPropagation();

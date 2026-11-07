@@ -1,4 +1,5 @@
 "use client";
+import { invalidateBusinessBookingViews } from "@/lib/bookings/dashboard-cache";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -34,7 +35,7 @@ export default function PackageActionControls({
     onSuccess: () => {
       setAction(null);
       void cache.invalidateQueries({ queryKey: ["packages"] });
-      void cache.invalidateQueries({ queryKey: ["bookings"] });
+      void invalidateBusinessBookingViews(cache, businessId);
       void cache.invalidateQueries({ queryKey: ["customerBookings"] });
     },
   });

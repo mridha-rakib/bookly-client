@@ -6,7 +6,7 @@ import type { BookingListItem } from "@/lib/api/bookings";
  * Matches api/src/modules/super-admin/super-admin-customer.service.ts's DTOs exactly. */
 
 // Matches api/src/modules/user/user.types.ts.
-export type CustomerStatus = "ACTIVE" | "DORMANT" | "SUSPENDED";
+export type CustomerStatus = "ACTIVE" | "DORMANT" | "SUSPENDED" | "DELETED";
 
 export interface SuperAdminCustomerListItem {
   id: string;
@@ -16,16 +16,31 @@ export interface SuperAdminCustomerListItem {
   lastName?: string;
   phone?: { countryCode: string; nationalNumber: string; e164: string };
   createdAt: string;
+  businessCount: number;
+  hasSavedCard: boolean;
+  savedCard: { brand: string; last4: string } | null;
+  marketingConsent: boolean;
+  avatarUrl?: string;
+  address?: string;
 }
 
 export interface SuperAdminCustomerDetail extends SuperAdminCustomerListItem {
-  /** Bounded, most-recent-first (50) — never the customer's full unbounded history. First-vs-
-   * returning is intentionally NOT summarized into one global label: `source` +
-   * `platformFeeCents` on each row is the same real, business-scoped data the customer's own
-   * booking history already renders correctly per row (see lib/bookings/format.ts's
-   * bookingClientBadge). */
-  bookings: BookingListItem[];
+  /** Server-paginated canonical Bookings; relationship classifications remain Business-specific. */
+  bookings: (BookingListItem & { businessName: string; actualOnlinePaidCents: number })[];
   bookingsTotal: number;
+  bookingPagination: { page: number; limit: number; total: number };
+  statistics: { total: number; completed: number; noShows: number; upcoming: number };
+  relationships: {
+    id: string;
+    businessId: string;
+    businessName: string;
+    classification: "FIRST" | "RETURNING";
+    financialState: string | null;
+    archived: boolean;
+    lastBooking: { startAt: string; timezone: string } | null;
+    notes: string | null;
+  }[];
+  relationshipPagination: { page: number; limit: number; total: number };
 }
 
 export interface SuperAdminCustomerListResult {
@@ -53,6 +68,21 @@ export const superAdminCustomersApi = {
       },
     }),
 
-  getById: (userId: string) =>
-    apiRequest<SuperAdminCustomerDetail>({ method: "GET", url: `/super-admin/customers/${userId}` }),
+  getById: (userId: string, page = 1, relationshipsPage = 1) =>
+    apiRequest<SuperAdminCustomerDetail>({
+      method: "GET",
+      url: `/super-admin/customers/${userId}`,
+      params: { page, relationshipsPage },
+    }),
+  exportCustomers: (params: ListSuperAdminCustomersParams = {}) =>
+    apiRequest<{ csv: string; filename: string }>({
+      method: "GET",
+      url: "/super-admin/customers/export",
+      params: { status: params.status, q: params.q },
+    }),
+  exportBookings: (userId: string) =>
+    apiRequest<{ csv: string; filename: string }>({
+      method: "GET",
+      url: `/super-admin/customers/${userId}/bookings/export`,
+    }),
 };

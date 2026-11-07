@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, Suspense } from "react";
+import React, { useState, Suspense, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import Link from "next/link";
@@ -27,6 +27,23 @@ import {
   saveRegistrationSession,
 } from "@/lib/auth/registration-session";
 
+// Completing phone verification signs the Customer in, and the auth-boundary remount (Providers'
+// cacheEpoch key) discards local state. Remember the completion for this page lifetime (memory
+// only) so the success dialog survives instead of an empty, unsubmittable signup form. The old
+// instance's await continuation can run after the new instance mounted, so it is subscribable.
+let signupCompletedInThisPage = false;
+const signupCompletionListeners = new Set<() => void>();
+const subscribeSignupCompletion = (listener: () => void) => {
+  signupCompletionListeners.add(listener);
+  return () => {
+    signupCompletionListeners.delete(listener);
+  };
+};
+const setSignupCompleted = (value: boolean) => {
+  signupCompletedInThisPage = value;
+  for (const listener of signupCompletionListeners) listener();
+};
+
 function SignupFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -42,7 +59,11 @@ function SignupFormContent() {
   const [password, setPassword] = useState("");
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [passwordError, setPasswordError] = useState("");
-  const [isSuccessOpen, setIsSuccessOpen] = useState(false);
+  const isSuccessOpen = useSyncExternalStore(
+    subscribeSignupCompletion,
+    () => signupCompletedInThisPage,
+    () => false,
+  );
   const submitProfile = useSubmitCustomerProfileMutation();
   const sendPhoneOtp = useSendCustomerPhoneOtpMutation();
   const resendPhoneOtp = useResendCustomerPhoneOtpMutation();
@@ -106,7 +127,7 @@ function SignupFormContent() {
     try {
       await completePhoneOtp.mutateAsync({ sessionId, code });
       clearRegistrationSession();
-      setIsSuccessOpen(true);
+      setSignupCompleted(true);
     } catch (error) {
       toast.error(toUserMessage(error));
     }
@@ -250,9 +271,9 @@ function SignupFormContent() {
       {/* Successfully Created Modal */}
       <SuccessModal
         isOpen={isSuccessOpen}
-        onClose={() => setIsSuccessOpen(false)}
+        onClose={() => setSignupCompleted(false)}
         onContinue={() => {
-          setIsSuccessOpen(false);
+          setSignupCompleted(false);
           router.push(`/customer/password?email=${encodeURIComponent(emailParam)}`);
         }}
       />

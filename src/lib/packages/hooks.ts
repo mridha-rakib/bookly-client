@@ -1,4 +1,5 @@
 "use client";
+import { invalidateBusinessBookingViews } from "@/lib/bookings/dashboard-cache";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -68,7 +69,8 @@ export const usePurchasePackageMutation = () => {
   return useMutation({
     mutationFn: ({ businessId, input }: { businessId: string; input: PackagePurchaseInput }) =>
       packagesApi.purchase(businessId, input),
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      void invalidateBusinessBookingViews(queryClient, variables.businessId);
       void queryClient.invalidateQueries({ queryKey: packageKeys.list() });
       // Session 1 is a real Booking; refresh the cross-business customer list explicitly.
       void queryClient.invalidateQueries({ queryKey: customerBookingListsKey });
@@ -94,6 +96,7 @@ export const useRedeemPackageSessionMutation = () => {
       input: RedeemPackageSessionInput;
     }) => packagesApi.redeemSession(businessId, packageProgressId, input),
     onSuccess: (_result, variables) => {
+      void invalidateBusinessBookingViews(queryClient, variables.businessId);
       void queryClient.invalidateQueries({ queryKey: packageKeys.list() });
       void queryClient.invalidateQueries({
         queryKey: packageKeys.detail(variables.packageProgressId),
@@ -132,6 +135,7 @@ export const useVoidPackageMutation = () => {
       reason?: string;
     }) => packagesApi.voidPackage(businessId, packageProgressId, reason),
     onSuccess: (_result, variables) => {
+      void invalidateBusinessBookingViews(queryClient, variables.businessId);
       void queryClient.invalidateQueries({ queryKey: packageKeys.list() });
       void queryClient.invalidateQueries({
         queryKey: packageKeys.detail(variables.packageProgressId),

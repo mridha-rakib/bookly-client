@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { toast } from "@/components/ui/sonner";
-import type { BusinessClientDto, CreateClientInput } from "@/lib/api/clients";
+import type { BusinessClientDto, CreateClientInput, UpdateClientInput, ClientTag } from "@/lib/api/clients";
 import { getFieldErrors, toUserMessage } from "@/lib/auth/messages";
 import {
   useArchiveClientMutation,
@@ -12,12 +12,13 @@ import {
   useCreateClientMutation,
   useUpdateClientMutation,
 } from "@/lib/clients/hooks";
-import { flattenClientErrors, clientInputSchema } from "@/lib/clients/schema";
+import { flattenClientErrors, clientInputSchema, clientUpdateSchema } from "@/lib/clients/schema";
 import { useStaffListQuery } from "@/lib/staff/hooks";
 import ArchivedClientsList from "./ArchivedClientsList";
 import ClientDetails from "./ClientDetails";
 import ClientForm from "./ClientForm";
 import ClientsList from "./ClientsList";
+import { downloadCsv } from "@/lib/api/csv-download";
 
 const phoneCountries = [
   { name: "Cyprus", code: "+357", flag: "cy" },
@@ -73,6 +74,10 @@ interface ClientsPageProps {
 
 export default function ClientsPage({ businessId }: ClientsPageProps) {
   const [mode, setMode] = useState<ViewMode>("list");
+  const [page, setPage] = useState(1);
+  const [isExporting, setIsExporting] = useState(false);
+  const [search, setSearch] = useState("");
+  const [tag, setTag] = useState<ClientTag | undefined>();
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [openActionIdx, setOpenActionIdx] = useState<number | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -99,7 +104,7 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
   const [clientPhoneFlag, setClientPhoneFlag] = useState("cy");
   const [isClientPhoneDropdownOpen, setIsClientPhoneDropdownOpen] = useState(false);
 
-  const listQuery = useClientsQuery(businessId, { limit: 100, archived: false }, mode !== "archived");
+  const listQuery = useClientsQuery(businessId, { page, limit: 20, q: search.trim() || undefined, tag, archived: false }, mode !== "archived");
   const selectedClientQuery = useClientQuery(businessId, selectedClientId ?? undefined);
   const staffListQuery = useStaffListQuery(businessId);
 
@@ -144,13 +149,14 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
     setClientEmail(dto.email);
     setClientDob(dto.dateOfBirth ?? "");
     setClientGender(dto.gender ? dto.gender[0]!.toUpperCase() + dto.gender.slice(1) : "Male");
-    setClientCity(dto.address.city);
-    setClientPropertyType(dto.address.propertyType);
-    setClientArea(dto.address.area);
-    setClientStreetName(dto.address.streetName);
-    setClientStreetNumber(dto.address.streetNumber);
-    setClientFloor(dto.address.floorUnit ?? "");
-    setClientAptNo(dto.address.aptRoom ?? "");
+    setClientCity(dto.address?.city ?? "");
+    setClientPropertyType(dto.address?.propertyType ?? "");
+    setClientArea(dto.address?.area ?? "");
+    setClientStreetName(dto.address?.streetName ?? "");
+    setClientStreetNumber(dto.address?.streetNumber ?? "");
+    setClientFloor(dto.address?.floorUnit ?? "");
+    setClientAptNo(dto.address?.aptRoom ?? "");
+    setClientDirections(dto.address?.additionalDirections ?? "");
     setClientNotes(dto.notes ?? "");
     setClientTagState(dto.tag ?? "VIP");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -211,10 +217,17 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
   };
 
   const handleSaveClient = () => {
-    if (!businessId || !selectedClientId) return;
+    if (!businessId || !selectedClientId || !selectedClientQuery.data) return;
     const isLinked = selectedClientQuery.data?.linkState === "LINKED";
-    const input = buildInput();
-    const validation = clientInputSchema.safeParse(input);
+    const input: UpdateClientInput = buildInput();
+    const hasAddress = [clientCity, clientPropertyType, clientArea, clientStreetName, clientStreetNumber, clientFloor, clientAptNo, clientDirections].some(value => value.trim());
+    // No address on file and no address entered: omit it rather than invent one or
+    // prevent an unrelated notes/tag edit. Existing saved addresses remain hydrated.
+    if (!hasAddress) delete input.address;
+    const body = isLinked
+      ? { ...(input.address ? { address: input.address } : {}), notes: input.notes, tag: input.tag, dateOfBirth: input.dateOfBirth }
+      : input;
+    const validation = clientUpdateSchema.safeParse(body);
     if (!validation.success) {
       setFormErrors(flattenClientErrors(validation.error));
       return;
@@ -222,9 +235,6 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
     setFormErrors({});
     // Linked identity fields are already disabled in the form, but strip them defensively too
     // (matches the server's own rejection — see client.service.ts CLIENT_IDENTITY_LOCKED).
-    const body = isLinked
-      ? { address: input.address, notes: input.notes, tag: input.tag, dateOfBirth: input.dateOfBirth }
-      : input;
     updateMutation.mutate(
       { businessId, clientId: selectedClientId, input: body },
       {
@@ -246,6 +256,12 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
     return <ArchivedClientsList businessId={businessId} onBack={goToList} />;
   }
 
+  if ((mode === "view" || mode === "edit") && selectedClientQuery.isError) {
+    return <div role="alert" className="p-8">Could not load client. <button onClick={() => void selectedClientQuery.refetch()}>Retry</button> <button onClick={goToList}>Back to clients</button></div>;
+  }
+  if ((mode === "view" || mode === "edit") && !selectedClientQuery.data) {
+    return <p role="status" className="p-8">Loading client…</p>;
+  }
   if (mode === "view") {
     const dto = selectedClientQuery.data;
     if (!dto) {
@@ -257,6 +273,7 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
     }
     return (
       <ClientDetails
+        key={selectedClientId}
         businessId={businessId}
         clientId={selectedClientId ?? undefined}
         clientFirstName={dto.firstName}
@@ -265,13 +282,13 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
         clientGender={dto.gender ? dto.gender[0]!.toUpperCase() + dto.gender.slice(1) : ""}
         clientDob={dto.dateOfBirth ?? ""}
         clientPhone={`${dto.phone.countryCode} ${dto.phone.nationalNumber}`}
-        clientCity={dto.address.city}
-        clientPropertyType={dto.address.propertyType}
-        clientArea={dto.address.area}
-        clientStreetName={dto.address.streetName}
-        clientStreetNumber={dto.address.streetNumber}
-        clientFloor={dto.address.floorUnit ?? ""}
-        clientAptNo={dto.address.aptRoom ?? ""}
+        clientCity={dto.address?.city ?? ""}
+        clientPropertyType={dto.address?.propertyType ?? ""}
+        clientArea={dto.address?.area ?? ""}
+        clientStreetName={dto.address?.streetName ?? ""}
+        clientStreetNumber={dto.address?.streetNumber ?? ""}
+        clientFloor={dto.address?.floorUnit ?? ""}
+        clientAptNo={dto.address?.aptRoom ?? ""}
         isLinked={dto.linkState === "LINKED"}
         setIsViewingClient={(val) => {
           if (!val) setMode("edit");
@@ -354,6 +371,22 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
 
   return (
     <ClientsList
+      isExporting={isExporting}
+      onExport={() => {
+        if (!businessId || isExporting) return;
+        setIsExporting(true);
+        void downloadCsv(`/businesses/${businessId}/clients/export.csv`, { archived: "false", q: search.trim() || undefined, tag }, "business-clients.csv")
+          .catch(error => toast.error(toUserMessage(error))).finally(() => setIsExporting(false));
+      }}
+      search={search}
+      onSearchChange={(value) => { setSearch(value); setPage(1); setOpenActionIdx(null); }}
+      tagFilter={tag}
+      onTagChange={(value) => { setTag(value); setPage(1); setOpenActionIdx(null); }}
+      pagination={listQuery.data?.pagination ?? { page, limit: 20, total: 0 }}
+      onPageChange={(value) => { setPage(value); setOpenActionIdx(null); }}
+      isLoading={listQuery.isLoading}
+      loadError={listQuery.isError ? toUserMessage(listQuery.error) : undefined}
+      onRetry={() => void listQuery.refetch()}
       clientsData={rows}
       setClientsData={() => {}}
       setIsAddingClient={(val) => {
@@ -369,7 +402,7 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
       metrics={
         listQuery.data
           ? { totalClients: listQuery.data.stats.totalClients, newThisMonth: listQuery.data.stats.newThisMonth }
-          : undefined
+          : { totalClients: 0, newThisMonth: 0 }
       }
       staffOptions={staffListQuery.data?.members.map((member) => member.name)}
       disableStaffFilter
@@ -388,7 +421,7 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
         archiveMutation.mutate(
           { businessId, clientId: client.id },
           {
-            onSuccess: () => toast.success(`${client.name} archived`),
+            onSuccess: () => { toast.success(`${client.name} archived`); if (page > 1 && rows.length === 1) setPage(page - 1); },
             onError: (error) => toast.error(toUserMessage(error)),
           },
         );

@@ -48,6 +48,7 @@ import {
   useUploadBusinessMediaMutation,
 } from "@/lib/business/hooks";
 import { useBusinessHoursQuery, useUpdateBusinessHoursMutation } from "@/lib/business/hours-hooks";
+import { useBusinessAvailabilityRulesQuery, useUpdateBusinessAvailabilityMutation } from "@/lib/business/availability-hooks";
 import { toUserMessage } from "@/lib/auth/messages";
 import { BUSINESS_CITIES } from "@/lib/constants/cities";
 import {
@@ -96,7 +97,7 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
   const isReadOnly = mode === "view";
 
   // Business Active Toggle
-  const [isActive, setIsActive] = useState(true);
+  const [isActive, setIsActive] = useState(false);
 
   // Form Fields
   const [businessName, setBusinessName] = useState("");
@@ -315,15 +316,13 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
   };
 
   // Closed Periods
-  const [closedPeriods, setClosedPeriods] = useState([
-    { id: 1, start: "", end: "", note: "e.g. Public holiday (internal note)" }
-  ]);
+  const [closedPeriods, setClosedPeriods] = useState<{ id: string; start: string; end: string; note: string }[]>([]);
 
   const addClosedPeriod = () => {
-    setClosedPeriods([...closedPeriods, { id: Date.now(), start: "", end: "", note: "" }]);
+    setClosedPeriods([...closedPeriods, { id: crypto.randomUUID(), start: "", end: "", note: "" }]);
   };
 
-  const removeClosedPeriod = (id: number) => {
+  const removeClosedPeriod = (id: string) => {
     setClosedPeriods(closedPeriods.filter((p) => p.id !== id));
   };
 
@@ -336,8 +335,21 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
   };
 
   // Online Availability Lead Times
-  const [allowBookingLead, setAllowBookingLead] = useState("Up to 15 minutes before start time");
-  const [maxAdvanceBooking, setMaxAdvanceBooking] = useState("12 months in the future");
+  const [allowBookingLead, setAllowBookingLead] = useState("");
+  const [maxAdvanceBooking, setMaxAdvanceBooking] = useState("");
+  const availabilityRulesQuery = useBusinessAvailabilityRulesQuery(mode !== "create" && !isReadOnly ? businessId : undefined);
+  const updateAvailabilityMutation = useUpdateBusinessAvailabilityMutation();
+  // Hydrate once for this saved snapshot, matching the existing settings hydration pattern.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const saved = availabilityRulesQuery.data;
+    if (!saved) return;
+    setIsActive(saved.publicVisible);
+    setAllowBookingLead(saved.minimumNoticeMinutes == null ? "" : String(saved.minimumNoticeMinutes));
+    setMaxAdvanceBooking(saved.maximumAdvanceMonths == null ? "" : String(saved.maximumAdvanceMonths));
+    setClosedPeriods(saved.closedPeriods.map((period, index) => ({ id: String(index), start: period.startDate, end: period.endDate, note: period.note ?? "" })));
+  }, [availabilityRulesQuery.data]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Additional Information states
   const [additionalInfo, setAdditionalInfo] = useState<string[]>(["", ""]);
@@ -528,6 +540,8 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     setFloorUnit(business.address.floorUnit ?? "");
     setRoomNo(business.address.aptRoom ?? "");
     setBusinessDescription(business.briefDescription);
+    setRegNumber(business.registrationNumber ?? "");
+    setAdditionalInfo(business.additionalInformation?.length ? business.additionalInformation : [""]);
     setTimezone(business.timezone);
     const matchedCategoryLabel = matchCategoryOption(business.category);
     setSelectedCategory(matchedCategoryLabel);
@@ -652,6 +666,11 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleSaveChanges = async () => {
+    if (mode === "edit" && (!availabilityRulesQuery.data || availabilityRulesQuery.isError || updateAvailabilityMutation.isPending)) return;
+    if (closedPeriods.some(period => !/^\d{4}-\d{2}-\d{2}$/.test(period.start) || !/^\d{4}-\d{2}-\d{2}$/.test(period.end) || period.end < period.start)) {
+      toast.error("Each closed period needs valid start and end dates, with the end on or after the start.");
+      return;
+    }
     if (
       mode !== "edit" ||
       !businessId ||
@@ -672,6 +691,8 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
       category: selectedCategory,
       subcategories: selectedSubcategories,
       briefDescription: businessDescription,
+      registrationNumber: regNumber.trim(),
+      additionalInformation: additionalInfo.map(value => value.trim()).filter(Boolean),
       timezone,
     };
 
@@ -743,10 +764,19 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
 
     try {
       await updateBusinessHoursMutation.mutateAsync({ businessId, days: businessHoursDays });
+      const saved = await updateAvailabilityMutation.mutateAsync({ businessId, input: {
+        publicVisible: isActive,
+        minimumNoticeMinutes: allowBookingLead === "" ? null : Number(allowBookingLead),
+        maximumAdvanceMonths: maxAdvanceBooking === "" ? null : Number(maxAdvanceBooking),
+        closedPeriods: closedPeriods.map(period => ({ startDate: period.start, endDate: period.end, note: period.note })),
+      } });
+      if (saved.overlappingBookings) {
+        toast.warning(`${saved.overlappingBookings} existing appointment(s) overlap closed periods. They remain booked; review them in Calendar.`);
+      }
       toast.success("Business updated");
       onBack();
     } catch (error) {
-      toast.error(`Business details saved, but opening hours could not be saved. ${toUserMessage(error)}`);
+      toast.error(`Some Business details were saved, but availability settings could not be fully saved. ${toUserMessage(error)}`);
     }
   };
 
@@ -979,15 +1009,20 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
         <div className="flex flex-row justify-between items-center w-full h-[41px] border-b border-[#E8E8E4]/60 pb-4">
           <div className="flex flex-col items-start gap-0.5">
             <span className="font-poppins font-medium text-sm text-[#111111] leading-[21px] flex items-center">
-              Business active
+              Public visibility
             </span>
             <span className="font-poppins font-normal text-[11px] text-[#111111]/60 leading-[18px]">
-              Show on your public profile. Turn off to hide without deleting.
+              Show in public search and discovery. Turning off keeps direct links and existing bookings available. Save changes to apply.
             </span>
           </div>
 
           {/* Toggle Switch */}
           <button
+            type="button"
+            role="switch"
+            aria-label="Business public visibility"
+            aria-checked={isActive}
+            disabled={mode !== "edit" || !availabilityRulesQuery.data || availabilityRulesQuery.isError || updateAvailabilityMutation.isPending}
             onClick={() => setIsActive(!isActive)}
             className={`w-[38px] h-[21px] rounded-full p-[3px] transition-colors duration-200 focus:outline-none flex items-center ${isActive ? "bg-[#0F6E56]" : "bg-neutral-300"
               }`}
@@ -1081,7 +1116,10 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
         isUploading={uploadBusinessMediaMutation.isPending}
       />
 
-      <fieldset disabled={isReadOnly} className="contents">
+      {mode === "edit" && availabilityRulesQuery.isLoading && <p role="status" className="text-xs text-neutral-500">Loading saved availability settings…</p>}
+      {mode === "edit" && availabilityRulesQuery.isError && <p role="alert" className="text-xs text-red-700">Could not load availability settings. <button className="underline" onClick={() => void availabilityRulesQuery.refetch()}>Retry</button></p>}
+      {isReadOnly && <p className="text-xs text-neutral-500">Private availability settings are managed by the Business owner.</p>}
+      <fieldset disabled={isReadOnly || mode !== "edit" || !availabilityRulesQuery.data || availabilityRulesQuery.isError || updateAvailabilityMutation.isPending} className="contents">
 
         {/* 9. Opening Hours Section */}
         <OpeningHoursSection
@@ -1112,6 +1150,7 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
 
         {/* 11. Add Closed Period Section */}
         <ClosedPeriodsSection
+          timezone={timezone}
           closedPeriods={closedPeriods}
           updateClosedPeriod={updateClosedPeriod}
           addClosedPeriod={addClosedPeriod}
@@ -1185,6 +1224,11 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
             onClick={handleSaveChanges}
             disabled={
               isReadOnly ||
+              mode !== "edit" ||
+              !availabilityRulesQuery.data ||
+              availabilityRulesQuery.isError ||
+              updateAvailabilityMutation.isPending ||
+              updateBusinessHoursMutation.isPending ||
               updateBusinessMutation.isPending ||
               updateBusinessTravelSettingsMutation.isPending
             }

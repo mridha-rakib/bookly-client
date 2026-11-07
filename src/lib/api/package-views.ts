@@ -5,6 +5,7 @@ export interface PackageOffer {
   currency: "EUR"; bundlePriceCents: number;
   validity: { mode: "FINITE" | "FOREVER"; months?: number };
   fulfilmentMode: string; checkoutAvailable: boolean;
+  checkoutUnavailableReason?: "CONSENT_HTTP_DISABLED" | "CONSENT_LIFETIME_NOT_CONFIGURED" | "CONSENT_LIFETIME_UNAPPROVED" | "CONSENT_HOST_UNQUALIFIED" | "BATCH_AUTHORITY_UNAVAILABLE" | null;
   items: Array<{ itemId: string; serviceId: string; name: string; quantity: number;
     pricingMode: string; group?: { credits: number; partySize: number } }>;
 }

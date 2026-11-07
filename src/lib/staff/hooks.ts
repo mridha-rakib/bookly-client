@@ -1,4 +1,5 @@
 "use client";
+import { invalidateStaffSchedulingViews } from "@/lib/bookings/dashboard-cache";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -51,7 +52,7 @@ export const useCreateStaffMutation = () => {
     mutationFn: ({ businessId, input }: { businessId: string; input: CreateStaffInput }) =>
       staffApi.createStaff(businessId, input),
     onSuccess: (_invitation, variables) => {
-      void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
+      void invalidateStaffSchedulingViews(queryClient, variables.businessId);
     },
   });
 };
@@ -64,7 +65,7 @@ export const useResendStaffInvitationMutation = () => {
     mutationFn: ({ businessId, invitationId }: { businessId: string; invitationId: string }) =>
       staffApi.resendInvitation(businessId, invitationId),
     onSuccess: (_invitation, variables) => {
-      void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
+      void invalidateStaffSchedulingViews(queryClient, variables.businessId);
     },
   });
 };
@@ -77,7 +78,7 @@ export const useRevokeStaffInvitationMutation = () => {
     mutationFn: ({ businessId, invitationId }: { businessId: string; invitationId: string }) =>
       staffApi.revokeInvitation(businessId, invitationId),
     onSuccess: (_void, variables) => {
-      void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
+      void invalidateStaffSchedulingViews(queryClient, variables.businessId);
     },
   });
 };
@@ -96,7 +97,7 @@ export const useUpdateStaffMutation = () => {
       input: UpdateStaffInput;
     }) => staffApi.updateStaff(businessId, staffId, input),
     onSuccess: (_member, variables) => {
-      void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
+      void invalidateStaffSchedulingViews(queryClient, variables.businessId);
     },
   });
 };
@@ -115,7 +116,7 @@ export const useUploadStaffAvatarMutation = () => {
       file: File;
     }) => staffApi.uploadStaffAvatar(businessId, staffId, file),
     onSuccess: (_result, variables) => {
-      void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
+      void invalidateStaffSchedulingViews(queryClient, variables.businessId);
     },
   });
 };
@@ -131,7 +132,7 @@ export const useUploadOwnerAvatarMutation = () => {
     mutationFn: ({ businessId, file }: { businessId: string; file: File }) =>
       staffApi.uploadOwnerAvatar(businessId, file),
     onSuccess: (_result, variables) => {
-      void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
+      void invalidateStaffSchedulingViews(queryClient, variables.businessId);
     },
   });
 };
@@ -143,7 +144,7 @@ export const useRemoveStaffMutation = () => {
     mutationFn: ({ businessId, staffId }: { businessId: string; staffId: string }) =>
       staffApi.removeStaff(businessId, staffId),
     onSuccess: (_result, variables) => {
-      void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
+      void invalidateStaffSchedulingViews(queryClient, variables.businessId);
     },
   });
 };
@@ -162,7 +163,7 @@ export const usePutStaffScheduleMutation = () => {
       input: PutScheduleInput;
     }) => staffApi.putSchedule(businessId, staffId, input),
     onSuccess: (_schedule, variables) => {
-      void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
+      return invalidateStaffSchedulingViews(queryClient, variables.businessId);
     },
   });
 };
@@ -181,7 +182,7 @@ export const useCreateStaffTimeOffMutation = () => {
       input: CreateTimeOffInput;
     }) => staffApi.createTimeOff(businessId, staffId, input),
     onSuccess: (_entry, variables) => {
-      void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
+      void invalidateStaffSchedulingViews(queryClient, variables.businessId);
     },
   });
 };
@@ -200,7 +201,7 @@ export const useRemoveStaffTimeOffMutation = () => {
       timeOffId: string;
     }) => staffApi.removeTimeOff(businessId, staffId, timeOffId),
     onSuccess: (_result, variables) => {
-      void queryClient.invalidateQueries({ queryKey: staffKeys.list(variables.businessId) });
+      void invalidateStaffSchedulingViews(queryClient, variables.businessId);
     },
   });
 };

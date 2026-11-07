@@ -10,12 +10,13 @@ import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 interface NoShowModalProps {
   isOpen: boolean;
   onClose: () => void;
+  mode?: "start" | "cancel";
   /** `reason` / `internalNote` are optional, internal-only mark-no-show audit metadata
    * (SEPARATE from the waive-fee reason taxonomy). Empty strings are normalised to undefined. */
   onConfirm: (payload?: { reason?: string; internalNote?: string }) => void;
 }
 
-export function NoShowModal({ isOpen, onClose, onConfirm }: NoShowModalProps) {
+export function NoShowModal({ isOpen, onClose, onConfirm, mode = "start" }: NoShowModalProps) {
   const [reason, setReason] = useState("Customer did not attend");
   const [showReasonDropdown, setShowReasonDropdown] = useState(false);
   const [internalNote, setInternalNote] = useState("");
@@ -51,17 +52,19 @@ export function NoShowModal({ isOpen, onClose, onConfirm }: NoShowModalProps) {
 
           {/* Title */}
           <h3 className="w-[483px] h-9 font-poppins font-medium text-[28px] leading-[36px] text-[#09090B] text-left">
-            Start No-show timer?
+            {mode === "cancel" ? "Cancel this no-show?" : "Start No-show timer?"}
           </h3>
 
           {/* Subtext */}
           <p className="w-[483px] h-10 font-poppins font-normal text-[14px] leading-[20px] tracking-[0.0025em] text-[#525252] text-left">
-            A 90 min timer will start after you confirm. The customer&apos;s card will be charged after the timer expires — giving you time to reverse
+            {mode === "cancel"
+              ? "This will reverse the no-show and cancel any outstanding fee. The appointment will return to its normal booking status."
+              : "A 90 min timer will start after you confirm. The customer's card will be charged after the timer expires — giving you time to reverse"}
           </p>
         </div>
 
         {/* Frame 2147240028 (Inputs wrapper) */}
-        <div className="flex flex-col items-center p-0 gap-5 w-[483px] h-[306px] shrink-0 relative">
+        {mode === "start" && <div className="flex flex-col items-center p-0 gap-5 w-[483px] h-[306px] shrink-0 relative">
           {/* Reason Frame */}
           <div className="flex flex-col items-start p-0 gap-2 w-[483px] h-[76px] shrink-0 relative">
             <label className="w-[483px] h-[22px] font-poppins font-normal text-xs leading-[22px] text-[#111111] text-left">
@@ -112,7 +115,7 @@ export function NoShowModal({ isOpen, onClose, onConfirm }: NoShowModalProps) {
               className="box-border w-[483px] h-[180px] border border-[#111111]/60 rounded-[12px] p-3 font-poppins font-normal text-sm text-[#111111] placeholder:text-[#111111]/40 focus:outline-none focus:border-[#26C08F] resize-none"
             />
           </div>
-        </div>
+        </div>}
 
         {/* Buttons footer */}
         <div className="flex flex-row justify-end items-center p-0 gap-3 w-[483px] h-11 shrink-0 mt-auto">
@@ -163,7 +166,13 @@ interface CompleteModalProps {
   isPending?: boolean;
 }
 
-export function CompleteModal({
+export function CompleteModal(props: CompleteModalProps) {
+  // Closed dashboard overlays exist before detail data loads. Mount a fresh answer only
+  // when opened, so neither missing initial money nor a prior booking supplies its state.
+  return props.isOpen ? <OpenedCompleteModal {...props} /> : null;
+}
+
+function OpenedCompleteModal({
   isOpen,
   onClose,
   onConfirm,

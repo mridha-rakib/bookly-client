@@ -153,7 +153,7 @@ export default function RescheduleModal({ bookingId, onClose, onSaved }: Resched
               <div className="flex flex-col gap-2 mt-1">
                 <div className="flex justify-between items-center text-sm font-medium">
                   <span className="text-[#111111]">Deposit already paid</span>
-                  <span className="text-gray-500">{formatBookingMoney(detail.financials.depositCents)}</span>
+                  <span className="text-gray-500">{formatBookingMoney(detail.paymentSummary.actualOnlinePaidCents)}</span>
                 </div>
                 <div className="flex justify-between items-center text-sm font-medium">
                   <span className="text-[#111111]">Balance due at venue</span>

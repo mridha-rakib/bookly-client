@@ -2,7 +2,7 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { OwnedFirstClassPackages, ManagementPackageSettlement } from "@/components/packages/FirstClassPackageIntegration";
+import { OwnedFirstClassPackages, ManagementPackageSettlement, FirstClassBookingContext } from "@/components/packages/FirstClassPackageIntegration";
 import { useAuthStore } from "@/lib/auth/store";
 import type { AuthUser } from "@/lib/api/auth";
 import { BooklyApiError } from "@/lib/api/client";
@@ -25,6 +25,35 @@ it("C09: backend empty list is honest and one request is deduplicated across rer
   await render(<OwnedFirstClassPackages />);
   expect(host.textContent).toContain("no purchased first-class");
   await render(<OwnedFirstClassPackages />); expect(fx.request).toHaveBeenCalledTimes(1);
+});
+it("the common Booking destination links every verified initial appointment using actual owned Booking IDs", async () => {
+  const sessions = owned.sessions.map((session, index) => ({ ...session, bookingId: `real-initial-${index}`, booking: { ...session.booking!, role: "PURCHASE" as const } }));
+  fx.request.mockResolvedValue({ packages: [{ ...owned, sessions, actionsAvailable: true, purchaseCompletion: "VERIFIED" }], hasMore: false });
+  await render(<FirstClassBookingContext progressId={owned.id} currentBookingId="real-initial-0" />);
+  const navigation = host.querySelector('[aria-label="Initial Package appointments"]')!;
+  expect(navigation.textContent).toContain("2 initial appointments");
+  expect([...navigation.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual(["/customer/bookings/view?id=real-initial-0", "/customer/bookings/view?id=real-initial-1"]);
+  expect(navigation.querySelector('[aria-current="page"]')?.getAttribute("href")).toBe("/customer/bookings/view?id=real-initial-0");
+});
+it("a failed owned-package read retries the same identity-scoped query when requested", async () => {
+  fx.request.mockRejectedValueOnce(new BooklyApiError({ message: "offline", status: 503 })).mockResolvedValueOnce({ packages: [], hasMore: false });
+  await render(<OwnedFirstClassPackages />);
+  await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "Retry package information")!.click());
+  await render(<OwnedFirstClassPackages />);
+  expect(fx.request).toHaveBeenCalledTimes(2);
+  expect(fx.request.mock.calls[1]).toEqual(fx.request.mock.calls[0]);
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(host.textContent).toContain("no purchased first-class");
+});
+it("booking context displays loading instead of declaring actions unavailable before readback", async () => {
+  let finish: (value: unknown) => void;
+  fx.request.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  await render(<FirstClassBookingContext progressId={owned.id} />);
+  expect(host.textContent).toContain("Loading Package booking information");
+  expect(host.textContent).not.toContain("unavailable");
+  await act(async () => finish!({ packages: [{ ...owned, actionsAvailable: true }], hasMore: false }));
+  await render(<FirstClassBookingContext progressId={owned.id} />);
+  expect(host.textContent).not.toContain("Loading Package booking information");
 });
 it.each([429, 503])("C21/C23: %s is displayed once with no automatic retry or polling", async (status) => {
   fx.request.mockRejectedValue(new BooklyApiError({ message: "private", status }));

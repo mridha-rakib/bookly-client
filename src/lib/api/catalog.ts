@@ -68,6 +68,12 @@ export interface CatalogBusiness {
   openStatus: CatalogOpenStatus;
   hours: CatalogBusinessHoursDay[];
   media: CatalogMedia[];
+  /** The Business's current cancellation/no-show rates; `null` when none is configured, absent
+   * when the server did not read it. A quote's own `cancellationPolicy` supersedes it. */
+  cancellationPolicy?: {
+    tiers: Array<{ tier: "MORE_THAN_72_HOURS" | "BETWEEN_24_AND_72_HOURS" | "BETWEEN_12_AND_24_HOURS" | "BETWEEN_2_AND_12_HOURS" | "UNDER_2_HOURS"; mode: "FREE" | "PERCENTAGE"; percentage?: number }>;
+    noShowPercentage: number;
+  } | null;
 }
 
 // Matches api/src/modules/services/service.types.ts ServicePricingMode exactly — a Package

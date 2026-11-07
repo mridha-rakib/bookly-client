@@ -44,6 +44,25 @@ export interface SupportMessageListResult {
   pagination: { page: number; limit: number; total: number };
 }
 
+/** P1.8 latest-first conversation page (`history=latest`, optional `before` cursor). Messages are
+ * chronological within the page; `olderCursor` requests the next older bounded page. */
+export interface SupportMessageHistoryResult {
+  messages: SupportMessage[];
+  pagination: { limit: number; total: number };
+  history: { hasOlder: boolean; olderCursor: string | null };
+}
+
+export interface SupportMessageHistoryParams {
+  before?: string | null;
+  limit?: number;
+}
+
+export const supportMessageHistoryParams = (params: SupportMessageHistoryParams) => ({
+  history: "latest",
+  ...(params.before ? { before: params.before } : {}),
+  ...(params.limit ? { limit: String(params.limit) } : {}),
+});
+
 export interface CreateSupportTicketInput {
   subject: string;
   message: string;
@@ -75,6 +94,13 @@ export const supportApi = {
         ...(pagination.page ? { page: String(pagination.page) } : {}),
         ...(pagination.limit ? { limit: String(pagination.limit) } : {}),
       },
+    }),
+
+  listMessageHistory: (ticketId: string, params: SupportMessageHistoryParams = {}) =>
+    apiRequest<SupportMessageHistoryResult>({
+      method: "GET",
+      url: `/me/support/tickets/${ticketId}/messages`,
+      params: supportMessageHistoryParams(params),
     }),
 
   reply: (ticketId: string, message: string) =>

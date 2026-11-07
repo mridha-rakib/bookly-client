@@ -263,6 +263,7 @@ export default function SupervisorDashboard() {
       {/* Cancel No-show */}
       <NoShowModal
         isOpen={showNoShowModal}
+        mode="cancel"
         onClose={() => setShowNoShowModal(false)}
         onConfirm={() => {
           if (bookingsBusinessId && viewingBookingId) {

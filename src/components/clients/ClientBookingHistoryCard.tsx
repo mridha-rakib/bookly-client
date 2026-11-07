@@ -488,6 +488,9 @@ export default function ClientBookingHistoryCard({
         <StatusNote>
           This booking was cancelled by the customer within the free cancellation window. No
           additional cancellation fee was charged.
+          {booking.cancellationOutcome?.refundOwedCents
+            ? ` ${settlementOutcomeText("refund", booking.cancellationOutcome.refundOwedCents, booking.cancellationOutcome.settlementStatus)}`
+            : ""}
         </StatusNote>
       ) : status === "NO_SHOW_CANCELLED" ? (
         <StatusNote>

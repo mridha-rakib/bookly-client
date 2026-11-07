@@ -32,6 +32,9 @@ export const clientInputSchema = z.object({
   tag: z.enum(CLIENT_TAGS).optional(),
 });
 
+// PATCH permits omission of an address; a supplied address must still be complete.
+export const clientUpdateSchema = clientInputSchema.partial();
+
 export type ClientFormErrors = Record<string, string>;
 
 /** Flattens a ZodError into `{ "address.city": "message" }` for simple field lookup. */

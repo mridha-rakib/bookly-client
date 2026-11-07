@@ -6,6 +6,7 @@ import { Download01Icon, ArrowDown01Icon, ArrowUp01Icon } from "@hugeicons/core-
 
 import { formatBookingMoney } from "@/lib/bookings/format";
 import type { PlatformTransactionRow, PlatformTransactionType } from "@/lib/api/superAdminFinance";
+import { superAdminFinanceApi } from "@/lib/api/superAdminFinance";
 import {
   useSuperAdminPlatformPayoutHistoryQuery,
   useSuperAdminPlatformTransactionsQuery,
@@ -102,47 +103,29 @@ export default function SuperAdminFinanceLog() {
     setPage(1);
   };
 
-  const handleExportCSV = () => {
-    if (isPayoutsTab) {
-      const headers = ["Business", "Period start", "Period end", "Gross", "Processing fees", "Net", "Status"];
-      const csvRows = payoutRows.map((p) => [
-        `"${p.businessName}"`,
-        `"${formatDate(p.periodStart)}"`,
-        `"${formatDate(p.periodEnd)}"`,
-        `"${formatBookingMoney(p.grossBusinessOwnedCents)}"`,
-        `"-${formatBookingMoney(p.processingFeesCents)}"`,
-        `"${formatBookingMoney(p.netPayoutCents)}"`,
-        `"${p.status}"`,
-      ]);
-      downloadCSV(headers, csvRows, `payout_history_${new Date().toISOString().slice(0, 10)}.csv`);
-      return;
+  // P1.9 — complete server-side export of the active tab's filtered records (every page, not
+  // the 20 loaded rows), via the shared quoting/formula-safe encoder.
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const handleExportCSV = async () => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    setExporting(true);
+    setExportError(null);
+    try {
+      if (isPayoutsTab) {
+        await superAdminFinanceApi.exportPlatformPayouts(`payout_history_${stamp}.csv`);
+      } else {
+        await superAdminFinanceApi.exportPlatformTransactions(
+          period,
+          TAB_TYPES[activeTab],
+          `transaction_log_${activeTab.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_${stamp}.csv`,
+        );
+      }
+    } catch {
+      setExportError("Export failed. Please try again.");
+    } finally {
+      setExporting(false);
     }
-
-    const headers = ["Date", "Business", "Fee Type", "Booking", "Customer", "Badge", "Gross", "Net", "Status"];
-    const csvRows = rows.map((t) => [
-      `"${formatDate(t.date)}"`,
-      `"${t.businessName}"`,
-      `"${feeTypeLabel[t.type]}"`,
-      `"${t.bookingReference}"`,
-      `"${t.customerName}"`,
-      `"${badgeLabel[t.owner]}"`,
-      `"${formatBookingMoney(t.grossCents)}"`,
-      `"${formatBookingMoney(t.netCents)}"`,
-      `"${rowStatusLabel(t)}"`,
-    ]);
-    downloadCSV(headers, csvRows, `transaction_log_${activeTab.toLowerCase().replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.csv`);
-  };
-
-  const downloadCSV = (headers: string[], csvRows: string[][], filename: string) => {
-    const csvContent = [headers.join(","), ...csvRows.map((r) => r.join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   return (
@@ -154,12 +137,15 @@ export default function SuperAdminFinanceLog() {
         </h3>
 
         <div className="flex items-center gap-3">
+          {exportError && <span role="alert" className="text-xs text-rose-600">{exportError}</span>}
           <button
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 bg-[#111111] hover:bg-black text-white px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors"
+            onClick={() => void handleExportCSV()}
+            disabled={exporting || total === 0}
+            title={isPayoutsTab ? "All payout records" : "All records matching this tab and date range"}
+            className="flex items-center gap-2 bg-[#111111] hover:bg-black disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors"
           >
             <HugeiconsIcon icon={Download01Icon} className="w-4 h-4 text-white" />
-            <span>Export CSV</span>
+            <span>{exporting ? "Exporting…" : `Export all ${total} (CSV)`}</span>
           </button>
 
           <button
