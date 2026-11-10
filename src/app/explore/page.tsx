@@ -12,7 +12,9 @@ import { useAuthStore } from "@/lib/auth/store";
 import { useDiscoveryCategoriesQuery, useDiscoverySearchQuery } from "@/lib/discovery/hooks";
 import { discoveryCardToRecommendation } from "@/lib/discovery/card";
 import { useBusinessFavorites } from "@/lib/favorite/use-business-favorites";
-import type { DiscoverySortOption } from "@/lib/api/discovery";
+import type { DiscoveryListMeta, DiscoverySortOption } from "@/lib/api/discovery";
+import type { ExploreAvailability, ExploreQuickAction } from "@/components/explore/DiscoveryControls";
+import { useVisitorLocation } from "@/lib/discovery/location";
 import type { BusinessCity } from "@/lib/constants/cities";
 
 const ExploreMap = dynamic(() => import("@/components/explore/ExploreMap"), {
@@ -29,6 +31,57 @@ const SORT_LABEL_TO_OPTION: Record<string, DiscoverySortOption> = {
   "Rating (High to Low)": "ratingHighToLow",
   "Price (Low to High)": "priceLowToHigh",
   "Price (High to Low)": "priceHighToLow",
+  // P2.2.3 — server-ranked quick actions / nearest first.
+  Recommended: "recommended",
+  Trending: "trending",
+  Nearest: "distance",
+};
+
+// Quick actions are shortcuts for these sort modes, so the sort menu always shows the truth.
+const QUICK_ACTION_SORT: Record<ExploreQuickAction, string> = {
+  RECOMMENDED: "Recommended",
+  TRENDING: "Trending",
+  NEAR_YOU: "Nearest",
+};
+
+const AVAILABILITY_WINDOW_TEXT: Record<string, string> = {
+  ANY: "any time",
+  MORNING: "the morning",
+  AFTERNOON: "the afternoon",
+  EVENING: "the evening",
+};
+
+/** One line explaining how the current results were produced, from the server's own metadata. */
+const describeResults = (meta: DiscoveryListMeta | undefined, nearYouWaiting: boolean): string | undefined => {
+  if (nearYouWaiting) return "Share your location (Distance) to see businesses nearest to you.";
+  if (!meta) return undefined;
+  const parts: string[] = [];
+  if (meta.sort === "recommended") {
+    parts.push(
+      meta.personalized
+        ? "Recommended for you, based on the categories and cities you have booked."
+        : "Recommended: best-rated businesses first. Book to personalise this list.",
+    );
+  }
+  if (meta.sort === "trending") {
+    parts.push("Trending: most confirmed bookings made in the last 30 days (Cyprus time).");
+  }
+  if (meta.distance) {
+    parts.push(
+      `Straight-line distance from your location to each business${meta.distance.radiusKm ? `, within ${meta.distance.radiusKm} km` : ""}.`,
+    );
+  }
+  if (meta.availability) {
+    const a = meta.availability;
+    parts.push(
+      `With a bookable slot on ${a.date} in ${AVAILABILITY_WINDOW_TEXT[a.window] ?? "the selected window"}${a.serviceQuery ? ` for "${a.serviceQuery}"` : ""}, among the top ${a.candidatesChecked} matches.`,
+    );
+    if (a.candidateLimitReached) parts.push("More businesses matched; narrow the filters to check them all.");
+    if (a.travelBusinessesNeedCity > 0) {
+      parts.push(`${a.travelBusinessesNeedCity} mobile business(es) were not checked: select exactly one city.`);
+    }
+  }
+  return parts.length > 0 ? parts.join(" ") : undefined;
 };
 
 const PAGE_SIZE = 12;
@@ -43,7 +96,7 @@ export default function ExplorePage() {
   const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
 
-  // Only supported server filters have selectable state. Unsupported controls are disabled.
+  // Every Explore control drives a server-side discovery parameter (P2.2.3).
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [travelsToYou, setTravelsToYou] = useState(false);
@@ -55,6 +108,23 @@ export default function ExplorePage() {
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [page, setPage] = useState(1);
+  // P2.2.3 — location (explicit, memory-only), radius and availability context.
+  const visitorLocation = useVisitorLocation();
+  const [radiusKm, setRadiusKm] = useState<number | null>(null);
+  const [availability, setAvailability] = useState<ExploreAvailability | null>(null);
+  const origin = visitorLocation.origin;
+  const quickAction =
+    (Object.entries(QUICK_ACTION_SORT).find(([, label]) => label === sortBy)?.[0] as ExploreQuickAction | undefined) ?? null;
+  const nearYouWaiting = sortBy === "Nearest" && !origin;
+  const handleQuickAction = (action: ExploreQuickAction | null) => {
+    setSortBy(action ? QUICK_ACTION_SORT[action] : "Most relevant");
+    if (action === "NEAR_YOU" && !origin) visitorLocation.request();
+  };
+  const clearLocation = () => {
+    visitorLocation.clear();
+    setRadiusKm(null);
+    if (sortBy === "Nearest") setSortBy("Most relevant");
+  };
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedQuery(searchQuery.trim()), 300);
@@ -75,6 +145,9 @@ export default function ExplorePage() {
     selectedLocations,
     selectedRatings,
     sortBy,
+    origin,
+    radiusKm,
+    availability,
   ]);
   const [prevFilterSignature, setPrevFilterSignature] = useState(filterSignature);
   if (filterSignature !== prevFilterSignature) {
@@ -89,11 +162,15 @@ export default function ExplorePage() {
       visitType: travelsToYou ? ("TRAVEL_TO_CUSTOMER" as const) : undefined,
       category: selectedCategories.length > 0 ? selectedCategories : undefined,
       minRating: selectedRatings.length > 0 ? Math.min(...selectedRatings) : undefined,
-      sort: SORT_LABEL_TO_OPTION[sortBy] ?? "mostRelevant",
+      // "Nearest" needs a shared location; until then the list stays on Most relevant.
+      sort: nearYouWaiting ? "mostRelevant" : (SORT_LABEL_TO_OPTION[sortBy] ?? "mostRelevant"),
       page,
       limit: PAGE_SIZE,
+      ...(origin ? { origin } : {}),
+      ...(origin && radiusKm ? { radiusKm } : {}),
+      ...(availability ? { availability } : {}),
     }),
-    [debouncedQuery, selectedLocations, travelsToYou, selectedCategories, selectedRatings, sortBy, page],
+    [debouncedQuery, selectedLocations, travelsToYou, selectedCategories, selectedRatings, sortBy, page, nearYouWaiting, origin, radiusKm, availability],
   );
 
   const searchQueryResult = useDiscoverySearchQuery(searchParams);
@@ -118,7 +195,23 @@ export default function ExplorePage() {
     setSelectedLocations([]);
     setSelectedRatings([]);
     setSortBy("Most relevant");
+    setRadiusKm(null);
+    setAvailability(null);
+    visitorLocation.clear();
     setPage(1);
+  };
+
+  const discoveryControls = {
+    quickAction,
+    onQuickAction: handleQuickAction,
+    locationStatus: visitorLocation.status,
+    hasOrigin: Boolean(origin),
+    onRequestLocation: visitorLocation.request,
+    onClearLocation: clearLocation,
+    radiusKm,
+    setRadiusKm,
+    availability,
+    setAvailability,
   };
 
   const toggleCategory = (cat: string) => {
@@ -174,6 +267,7 @@ export default function ExplorePage() {
               showMap={showMap}
               setShowMap={setShowMap}
               onApplyFilters={applyFiltersNow}
+              discovery={discoveryControls}
             />
           )}
     <div className="flex-1 w-full">
@@ -197,6 +291,9 @@ export default function ExplorePage() {
             setShowMap={setShowMap}
             setShowMobileFilters={setShowMobileFilters}
             onResetFilters={handleClearAll}
+            onRetry={() => void searchQueryResult.refetch()}
+            resultNote={searchPending ? undefined : describeResults(searchQueryResult.data?.meta, nearYouWaiting)}
+            canSortByDistance={Boolean(origin)}
           />
 
  {/* Footer Business Banner Section */}
@@ -239,6 +336,7 @@ export default function ExplorePage() {
         toggleRating={toggleRating}
         handleClearAll={handleClearAll}
         onApplyFilters={applyFiltersNow}
+        discovery={discoveryControls}
       />
 
       {/* MOBILE MAP OVERLAY MODAL (Full screen on mobile) */}

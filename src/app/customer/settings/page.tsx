@@ -88,10 +88,7 @@ function SettingsPageContent() {
   const [showBanner, setShowBanner] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
 
-  // General Preferences — neither control here is a configurable customer preference. Language is
-  // English-only (no localization layer). Timezone is not a customer-owned setting at all: every
-  // appointment is shown in its venue's local timezone (the authoritative Booking.schedule
-  // timezone), so this row only explains that rule — it is not persisted anywhere.
+  // Account language is persisted; appointment timezone is venue-owned.
 
   // Modals
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -149,6 +146,27 @@ function SettingsPageContent() {
   const [notificationError, setNotificationError] = useState("");
   const notificationSavePending = useRef(false);
   const reminderPrefs = meQuery.data?.profile?.notifications;
+  const [languageError, setLanguageError] = useState("");
+  const languageSavePending = useRef(false);
+  const handleLanguageChange = (value: string) => {
+    if (value !== "EN" && value !== "GR") {
+      setLanguageError("Choose English or Greek.");
+      return;
+    }
+    if (!meQuery.isSuccess || updateProfileMutation.isPending || languageSavePending.current || value === (meQuery.data?.profile?.defaultLanguage ?? "EN")) return;
+    languageSavePending.current = true;
+    setLanguageError("");
+    setShowToast(false);
+    updateProfileMutation.mutate({ defaultLanguage: value }, {
+      onSuccess: (data) => {
+        if (data.profile?.defaultLanguage === value) showSuccessToast("Your language preference has been updated.");
+        else setLanguageError("Your language preference was not saved. Please try again.");
+      },
+      onError: (error) => setLanguageError(toUserMessage(error)),
+      onSettled: () => { languageSavePending.current = false; },
+    });
+  };
+
 
   const googleAccount: LinkedAccountSummary | undefined = meQuery.data?.linkedAccounts?.find(
     (account) => account.provider === "GOOGLE",
@@ -544,9 +562,7 @@ function SettingsPageContent() {
             </div>
           </section>
 
-          {/* General Preferences Section — both rows are disabled, read-only explanatory fields,
-              not configurable customer preferences: Language (English-only) and Timezone
-              (appointments always shown in the venue's local timezone). Nothing here persists. */}
+          {/* Account preference and venue-owned appointment timezone. */}
           <section className="bg-white border border-[#C6C6CB] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-xl flex flex-col items-start relative z-20">
             <div className="w-full box-border border-b border-[#C6C6CB] px-6 py-4 flex flex-row items-center gap-2">
               <div className="w-5 h-5 flex items-center justify-center">
@@ -559,24 +575,24 @@ function SettingsPageContent() {
 
             <div className="w-full p-6 flex flex-col sm:flex-row gap-6">
 
-              {/* Language — not a configurable control: the customer experience is English-only
-                  and nothing consumes a stored language preference, so this is a read-only,
-                  disabled field rather than a picker (mirrors the Notification Preferences
-                  "not configurable yet" treatment). */}
               <div className="flex-1 flex flex-col gap-2">
-                <span className="font-manrope font-bold text-sm text-[#020305]">Language</span>
-                <input
-                  type="text"
-                  value="English"
-                  readOnly
-                  disabled
-                  aria-label="Language"
-                  title="Not configurable yet"
-                  className="w-full box-border p-3 bg-neutral-50 border border-[#C6C6CB] rounded-lg font-manrope font-normal text-base text-[#4E5F78] cursor-not-allowed"
-                />
-                <span className="font-manrope font-normal text-xs text-[#4E5F78]">
-                  Language selection isn&apos;t available yet — the customer experience is currently in English.
+                <label htmlFor="account-language" className="font-manrope font-bold text-sm text-[#020305]">Language preference</label>
+                <select
+                  id="account-language"
+                  value={meQuery.data?.profile?.defaultLanguage ?? "EN"}
+                  disabled={!meQuery.isSuccess || updateProfileMutation.isPending}
+                  onChange={(event) => handleLanguageChange(event.target.value)}
+                  aria-describedby="language-coverage"
+                  className="w-full p-3 border border-[#C6C6CB] rounded-lg disabled:opacity-50"
+                >
+                  <option value="EN">English (EN)</option>
+                  <option value="GR">Greek (GR)</option>
+                </select>
+                <span id="language-coverage" className="text-xs text-[#4E5F78]">
+                  Saves your account preference. The Bookly interface is currently available in English only.
                 </span>
+                {meQuery.isError && <p role="alert">Could not load your language preference. Please reload to try again.</p>}
+                {languageError && <p role="alert" className="text-sm text-red-600">{languageError}</p>}
               </div>
 
               {/* Timezone — not a configurable control: appointment times are always shown in the

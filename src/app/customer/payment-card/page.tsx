@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Elements } from "@stripe/react-stripe-js";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -12,9 +12,21 @@ import EdgeSoftOrbsTop from "@/components/EdgeSoftOrbsTop";
 
 import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
-import { paymentsApi, type SavedCardStatus } from "@/lib/api/payments";
+import { BooklyApiError } from "@/lib/api/client";
+import { toUserMessage } from "@/lib/auth/messages";
+import { useRemoveSavedCardMutation, useSavedCardStatusQuery } from "@/lib/payments/saved-card-hooks";
 import { getStripe } from "@/lib/payments/stripe-client";
 import { CardCollectionForm } from "@/components/payments/CardCollectionForm";
+
+/** P2.2.5 — the server's reason, never raw provider details. */
+const removalErrorMessage = (error: unknown): string => {
+  if (error instanceof BooklyApiError) {
+    const detail = error.errors[0]?.message;
+    if (error.status === 404) return "This card was already removed.";
+    if ((error.status === 409 || error.status === 503) && detail) return detail;
+  }
+  return toUserMessage(error);
+};
 
 export default function PaymentCardPage() {
   return (
@@ -31,27 +43,48 @@ function PaymentCardPageContent() {
   const isLoggedIn = true;
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
 
-  const [cardStatus, setCardStatus] = useState<SavedCardStatus | undefined>(undefined);
-  const [loadError, setLoadError] = useState(false);
+  const statusQuery = useSavedCardStatusQuery();
+  const cardStatus = statusQuery.data;
+  const loadError = statusQuery.isError && !cardStatus;
+  const removeMutation = useRemoveSavedCardMutation();
   const [isReplacing, setIsReplacing] = useState(false);
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
+  const [removalError, setRemovalError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState("");
   const [showSuccessToast, setShowSuccessToast] = useState(false);
 
-  useEffect(() => {
-    paymentsApi
-      .getSavedCardStatus()
-      .then(setCardStatus)
-      .catch(() => setLoadError(true));
-  }, []);
-
   const hasSavedCard = Boolean(cardStatus?.hasSavedCard);
+  const paymentMethodId = cardStatus?.card?.paymentMethodId;
 
-  const handleSaved = (card: { brand: string; last4: string }) => {
-    setCardStatus({ hasSavedCard: true, card: { ...card, expMonth: 0, expYear: 0 } });
-    setIsReplacing(false);
-    setToastMessage(hasSavedCard ? "Card replaced successfully." : "Card added successfully.");
+  const showToast = (message: string) => {
+    setToastMessage(message);
     setShowSuccessToast(true);
     setTimeout(() => setShowSuccessToast(false), 3000);
+  };
+
+  const handleSaved = () => {
+    // The server's saved card is the truth: re-read it rather than inventing local state.
+    void statusQuery.refetch();
+    setIsReplacing(false);
+    showToast(hasSavedCard ? "Card replaced successfully." : "Card added successfully.");
+  };
+
+  const handleConfirmRemoval = async () => {
+    if (!paymentMethodId || removeMutation.isPending) return;
+    setRemovalError(null);
+    try {
+      await removeMutation.mutateAsync(paymentMethodId);
+      setConfirmingRemoval(false);
+      showToast("Card removed.");
+    } catch (error) {
+      if (error instanceof BooklyApiError && error.status === 404) {
+        // Already gone (e.g. removed in another tab): the refreshed state is the outcome.
+        setConfirmingRemoval(false);
+        showToast("This card was already removed.");
+        return;
+      }
+      setRemovalError(removalErrorMessage(error));
+    }
   };
 
   return (
@@ -93,16 +126,23 @@ function PaymentCardPageContent() {
               {hasSavedCard ? "Your saved card" : "Add payment card information"}
             </h2>
 
+            {statusQuery.isPending && <p className="text-sm text-[#45474B]">Loading your saved card…</p>}
+
             {loadError && (
-              <p className="text-sm text-red-600">Your saved card could not be loaded right now. Please try again shortly.</p>
+              <p role="alert" className="text-sm text-red-600">
+                Your saved card could not be loaded right now.{" "}
+                <button type="button" onClick={() => void statusQuery.refetch()} className="underline font-semibold">
+                  Retry
+                </button>
+              </p>
             )}
 
             {hasSavedCard && (
               <div className="w-full flex flex-row items-start gap-3 bg-[#FDF4E6] border border-[#F5E6D3]/60 rounded-xl p-4 text-sm text-[#111111]/80 select-none">
                 <HugeiconsIcon icon={InformationCircleIcon} className="w-5 h-5 text-[#4F80E1] shrink-0 mt-0.5" />
                 <span className="font-poppins font-normal text-xs sm:text-[13px] text-[#111111] leading-relaxed">
-                  This card secures your bookings for deposit, no-show, and late-cancellation charges. Removing a
-                  saved card isn&apos;t supported yet — to use a different card, replace it below.
+                  This card secures your bookings for deposit, no-show, and late-cancellation charges. You can
+                  replace it, or remove it when you have no upcoming bookings or payments in progress.
                 </span>
               </div>
             )}
@@ -132,8 +172,57 @@ function PaymentCardPageContent() {
                   <HugeiconsIcon icon={SquareLock01Icon} size={24} className="text-[#0C0C0C]" />
                 </div>
 
-                {!isReplacing && (
-                  <div className="w-full flex justify-end mt-1">
+                {removalError && (
+                  <p role="alert" className="w-full text-sm text-red-600" data-testid="card-removal-error">
+                    {removalError}
+                  </p>
+                )}
+
+                {confirmingRemoval && (
+                  <div
+                    role="alertdialog"
+                    aria-label="Remove saved card"
+                    className="w-full bg-white border border-[#E5484D]/40 rounded-xl p-4 flex flex-col gap-3"
+                  >
+                    <p className="text-sm text-[#111111]">
+                      Remove the card ending {cardStatus.card.last4}? It will no longer be available for future
+                      Bookly payments, and you&apos;ll need to add a card again before your next booking.
+                    </p>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingRemoval(false)}
+                        disabled={removeMutation.isPending}
+                        className="h-10 px-4 rounded-lg text-sm font-semibold border border-[#111111]/30 text-[#111111] disabled:opacity-50"
+                      >
+                        Keep card
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleConfirmRemoval()}
+                        disabled={removeMutation.isPending}
+                        className="h-10 px-4 rounded-lg text-sm font-semibold bg-[#E5484D] hover:bg-[#CC3D42] text-white disabled:opacity-50"
+                      >
+                        {removeMutation.isPending ? "Removing…" : "Remove card"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {!isReplacing && !confirmingRemoval && (
+                  <div className="w-full flex justify-end gap-2 mt-1">
+                    {paymentMethodId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRemovalError(null);
+                          setConfirmingRemoval(true);
+                        }}
+                        className="h-11 px-5 flex items-center justify-center rounded-lg text-sm font-semibold border border-[#E5484D] text-[#E5484D] hover:bg-[#FFF5F5] cursor-pointer transition-colors"
+                      >
+                        Remove card
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setIsReplacing(true)}
@@ -146,7 +235,7 @@ function PaymentCardPageContent() {
               </div>
             )}
 
-            {(!hasSavedCard || isReplacing) && (
+            {cardStatus && (!hasSavedCard || isReplacing) && (
               <div className="w-full flex flex-col gap-5 mt-4">
                 <div className="w-full bg-white border border-[#F1F5F9] rounded-2xl p-6 shadow-sm flex flex-col gap-6">
                   <p className="text-sm sm:text-base font-normal text-[#111111] font-poppins leading-relaxed">

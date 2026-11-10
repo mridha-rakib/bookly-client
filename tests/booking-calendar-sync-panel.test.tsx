@@ -156,3 +156,20 @@ it("shows a retryable error state when the status cannot be loaded", async () =>
   expect(getStatus).toHaveBeenCalledTimes(2);
   expect(host.textContent).toContain("Synced");
 });
+
+it("P2.2.9.1 — retry limit reached: explains it and offers the existing exact recovery (no generic resend)", async () => {
+  vi.spyOn(bookingCalendarSyncApi, "getStatus").mockResolvedValue(status({ status: "RECOVERY_REQUIRED",
+    incident: "PROVIDER_RETRY_LIMIT_REACHED", recoveryRequired: true, state: "BLOCKED_AUTHORITY", reason: "RETRY_LIMIT_REACHED" }));
+  const recover = vi.spyOn(bookingCalendarSyncApi, "recover").mockResolvedValue({ sync: status({ status: "SYNC_PENDING" }) });
+  await mount();
+  expect(host.textContent).toContain("Needs your attention");
+  expect(host.textContent).toContain("stopped retrying this booking automatically");
+  expect(host.textContent).not.toContain("Synced");
+  expect(Array.from(host.querySelectorAll("button")).some((b) => /resend|retry now/i.test(b.textContent ?? ""))).toBe(false);
+  expect(button()?.disabled).toBe(true);
+  await type(input("Your reference"), "INC-9");
+  await act(async () => input("checked this booking").click());
+  await act(async () => button()!.click()); await flush();
+  expect(recover).toHaveBeenCalledTimes(1);
+  expect(recover).toHaveBeenCalledWith(businessId, bookingId, { incidentReference: "INC-9", assertion: "NO_UNRESOLVED_REQUEST" });
+});

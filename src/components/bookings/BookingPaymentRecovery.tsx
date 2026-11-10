@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -49,6 +50,7 @@ function RecoveryRequest({ record, operation, initialStatus, session, onResolved
     const action = {}; current.current = action; setBusy(true); setError(undefined);
     const active = () => live() && current.current === action;
     const display = (value: BookingPaymentStatus) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { clientSecret: _secret, ...publicStatus } = value;
       if (active()) {
         setStatus(publicStatus); if (value.state === "COMMITTED") setError(undefined);
@@ -92,25 +94,123 @@ function RecoveryRequest({ record, operation, initialStatus, session, onResolved
   }, [session, operationKey, Boolean(record)]);
   const terminal = status?.state === "COMMITTED" || status?.state === "REFUNDED" || status?.canDismiss === true;
   const canResume = record && status && status.canResume !== false && !terminal && !["REFUND_PENDING", "RECONCILIATION_REQUIRED"].includes(status.state);
-  return <article className="rounded-xl border border-[#E8E8E4] bg-white p-5 space-y-3">
-    {operation?.businessName && <h3 className="font-semibold">{operation.businessName}</h3>}
-    <p role="status" className="text-sm text-[#1C1B1C]">{status ? bookingRecoveryMessage(status.state) : "Checking the original Booking request…"}</p>
-    <p className="text-xs break-all text-neutral-600">Original request: {operationKey}</p>
-    {record ? <p className="text-xs text-neutral-600">Requested appointment: {record.input.startAt}</p> :
-      !terminal && <p className="text-sm">The original checkout details are not retained on this device. Check status or contact support using this reference. A new payment or Booking will not be started here.</p>}
-    {status?.resumeBlockedReason === "BUSINESS_UNAVAILABLE" && <p className="text-sm">This venue is not currently accepting bookings. You can still check this request. Contact the venue or support before continuing payment.</p>}
-    {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-    <div className="flex flex-wrap gap-3 text-sm">
-      <button type="button" disabled={busy} onClick={() => void run(false)} className="rounded-lg border px-4 py-2 disabled:opacity-50">{busy ? "Checking…" : "Check original Booking status"}</button>
-      {canResume && status && <button type="button" disabled={busy} onClick={() => void run(true)} className="rounded-lg bg-[#2E9DA7] text-white px-4 py-2 disabled:opacity-50">{status.state === "AUTHENTICATION_REQUIRED" ? "Complete bank authentication" : status.state === "PAYMENT_FAILED" ? "Retry original payment" : "Continue original Booking"}</button>}
-      {status?.state === "PAYMENT_FAILED" && <Link href="/customer/payment-card" className="underline py-2">Review saved card</Link>}
-      {status?.state === "COMMITTED" && status.bookingId && <Link href={`/customer/bookings/view?id=${encodeURIComponent(status.bookingId)}`} className="underline py-2">View confirmed Booking</Link>}
-      {terminal && showDismiss && <button type="button" disabled={busy} onClick={() => {
-        const customerId = useAuthStore.getState().user?.id;
-        if (live() && customerId && !dismissBookingRecoveryPointer(customerId, businessId, operationKey)) setError("This saved request could not be removed from this browser. Its server status is unchanged.");
-      }} className="underline py-2">Dismiss saved request</button>}
-    </div>
-  </article>;
+
+  const statusTone = (state?: BookingPaymentStatus["state"]) => {
+    switch (state) {
+      case "COMMITTED":
+      case "REFUNDED":
+        return { badge: "bg-[#CFFED6] text-[#093213] border-[#A8F2B5]", label: state === "COMMITTED" ? "Confirmed" : "Refunded" };
+      case "AUTHENTICATION_REQUIRED":
+        return { badge: "bg-[#FEF8CF] text-[#7A4B00] border-[#F4E185]", label: "Action Required" };
+      case "PAYMENT_FAILED":
+        return { badge: "bg-red-50 text-red-700 border-red-200", label: "Payment Failed" };
+      case "PAYMENT_PROCESSING":
+      case "FINALIZATION_PENDING":
+        return { badge: "bg-[#CFE1FE] text-[#091C32] border-[#ADCFFE]", label: "Processing" };
+      default:
+        return { badge: "bg-[#F1EDED] text-[#45474B] border-[#E2E1E6]", label: "Attention" };
+    }
+  };
+
+  const tone = statusTone(status?.state);
+
+  return (
+    <article className="rounded-xl border border-[#E2E1E6] bg-white p-5 space-y-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:border-[#D0CED6] transition-colors">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {operation?.businessName ? (
+          <h3 className="font-manrope font-bold text-base text-[#020305]">{operation.businessName}</h3>
+        ) : (
+          <h3 className="font-manrope font-bold text-sm text-[#111827]">Booking Request</h3>
+        )}
+        {status?.state && (
+          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${tone.badge}`}>
+            {tone.label}
+          </span>
+        )}
+      </div>
+
+      <p role="status" className="text-sm font-bold text-[#020305] leading-relaxed">
+        {status ? bookingRecoveryMessage(status.state) : "Checking the original Booking request…"}
+      </p>
+
+      <p className="text-xs break-all font-mono font-medium text-[#111827] bg-[#F3F4F6] px-2.5 py-1.5 rounded border border-[#D1D5DB]">
+        Original request: {operationKey}
+      </p>
+
+      {record ? (
+        <p className="text-xs font-semibold text-[#111827]">Requested appointment: {record.input.startAt}</p>
+      ) : !terminal ? (
+        <p className="text-xs font-medium text-[#111827] bg-[#F3F4F6] p-2.5 rounded-lg border border-[#D1D5DB]">
+          The original checkout details are not retained on this device. Check status or contact support using this reference. A new payment or Booking will not be started here.
+        </p>
+      ) : null}
+
+      {status?.resumeBlockedReason === "BUSINESS_UNAVAILABLE" && (
+        <p className="text-xs sm:text-sm text-amber-800 bg-amber-50 p-2.5 rounded-lg border border-amber-200">
+          This venue is not currently accepting bookings. You can still check this request. Contact the venue or support before continuing payment.
+        </p>
+      )}
+
+      {error && <p role="alert" className="text-sm text-red-700 font-medium bg-red-50 p-2.5 rounded-lg border border-red-200">{error}</p>}
+
+      <div className="flex flex-wrap items-center gap-2.5 pt-1 text-sm font-manrope">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void run(false)}
+          className="rounded-lg border border-[#9CA3AF] bg-white hover:bg-neutral-100 text-[#020305] font-bold text-xs sm:text-sm px-4 py-2 transition-colors disabled:opacity-50 cursor-pointer shadow-sm"
+        >
+          {busy ? "Checking…" : "Check original Booking status"}
+        </button>
+
+        {canResume && status && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void run(true)}
+            className="rounded-lg bg-[#2E9DA7] hover:bg-[#25838B] text-white font-semibold text-xs sm:text-sm px-4 py-2 transition-colors disabled:opacity-50 cursor-pointer shadow-sm"
+          >
+            {status.state === "AUTHENTICATION_REQUIRED"
+              ? "Complete bank authentication"
+              : status.state === "PAYMENT_FAILED"
+              ? "Retry original payment"
+              : "Continue original Booking"}
+          </button>
+        )}
+
+        {status?.state === "PAYMENT_FAILED" && (
+          <Link href="/customer/payment-card" className="text-[#2E9DA7] font-semibold text-xs sm:text-sm hover:underline py-2 px-1">
+            Review saved card
+          </Link>
+        )}
+
+        {status?.state === "COMMITTED" && status.bookingId && (
+          <Link
+            href={`/customer/bookings/view?id=${encodeURIComponent(status.bookingId)}`}
+            className="text-[#0D7A82] font-bold text-xs sm:text-sm hover:underline py-2 px-1 flex items-center gap-1"
+          >
+            <span>View confirmed Booking</span>
+            <span>→</span>
+          </Link>
+        )}
+
+        {terminal && showDismiss && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              const customerId = useAuthStore.getState().user?.id;
+              if (live() && customerId && !dismissBookingRecoveryPointer(customerId, businessId, operationKey))
+                setError("This saved request could not be removed from this browser. Its server status is unchanged.");
+            }}
+            className="text-[#111827] font-semibold hover:text-[#020305] underline text-xs py-2 px-1 cursor-pointer transition-colors"
+          >
+            Dismiss saved request
+          </button>
+        )}
+      </div>
+    </article>
+  );
 }
 
 const operationIdentity = (r: { businessId: string; idempotencyKey: string }) => JSON.stringify([r.businessId, r.idempotencyKey]);
@@ -118,6 +218,7 @@ const uniqueItems = (items: BookingRecoveryInboxItem[]) => [...new Map(items.map
 function ServerRecoveryInbox({ session, records, pointers }: { session: string; records: BookingContinuation[]; pointers: BookingRecoveryPointer[] }) {
   const [page, setPage] = useState<BookingRecoveryInboxPage>();
   const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
+  const [isResolvedOpen, setIsResolvedOpen] = useState(false);
   const action = useRef<object | null>(null), mounted = useRef(true);
   const live = () => mounted.current && session === customerPaymentSession(useAuthStore.getState());
   const load = async (cursor?: string) => {
@@ -150,25 +251,123 @@ function ServerRecoveryInbox({ session, records, pointers }: { session: string; 
   const seen = new Set([...(page?.requests ?? []), ...(page?.resolved ?? [])].map(operationIdentity));
   const local = pointers.filter((p) => !seen.has(operationIdentity(p)));
   const bodyFor = (r: { businessId: string; idempotencyKey: string }) => records.find((b) => b.businessId === r.businessId && b.input.idempotencyKey === r.idempotencyKey);
-  return <section aria-label="Booking requests needing attention" className="w-full space-y-3">
-    <h2 className="font-poppins font-semibold text-xl">Booking Requests Needing Attention</h2>
-    <p className="text-sm text-neutral-600">Original requests from your account, including requests started on another device. Checking status does not charge your card.</p>
-    <button type="button" disabled={busy} onClick={() => void load()} className="rounded-lg border px-4 py-2">{busy ? "Loading requests…" : "Refresh requests"}</button>
-    {error && <p role="alert" className="text-sm text-red-700">{error} Your original requests have not been changed.</p>}
-    {page && !page.requests.length && <p role="status" className="text-sm">{page.hasMore ? "No requests needing attention in this page. You can load older requests." : "No requests needing attention in the history checked."}</p>}
-    {(page?.requests ?? []).map((item) => <RecoveryRequest key={operationIdentity(item)} operation={item}
-      initialStatus={item.status} record={bodyFor(item)} session={session} onResolved={(status) => moveResolved(item, status)} />)}
-    {page?.hasMore && <button type="button" disabled={busy} onClick={() => void load(page.nextCursor)} className="rounded-lg border px-4 py-2">Load older requests</button>}
-    {Boolean(page?.resolved.length) && <section aria-label="Resolved Booking requests" className="space-y-3">
-      <h3 className="font-semibold">Resolved requests</h3>
-      {page!.resolved.map((item) => <RecoveryRequest key={operationIdentity(item)} operation={item} initialStatus={item.status}
-        session={session} showDismiss={pointers.some((p) => operationIdentity(p) === operationIdentity(item))} />)}
-    </section>}
-    {local.length > 0 && <section aria-label="Saved requests in this browser" className="space-y-3">
-      <h3 className="font-semibold">Saved requests in this browser</h3>
-      {local.map((pointer) => <RecoveryRequest key={operationIdentity(pointer)} operation={pointer} record={bodyFor(pointer)} session={session} />)}
-    </section>}
-  </section>;
+  return (
+    <section aria-label="Booking requests needing attention" className="w-full bg-[#FFFFFF] border border-[#E2E1E6] rounded-2xl p-5 sm:p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-4 font-manrope">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-[#F1EFEC]">
+        <div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h2 className="font-manrope font-bold text-lg text-[#020305]">Booking Requests Needing Attention</h2>
+            {Boolean(page?.requests?.length) && (
+              <span className="bg-[#FEF8CF] text-[#7A4B00] text-xs font-bold px-2.5 py-0.5 rounded-full border border-[#F4E185]">
+                {page!.requests.length} action required
+              </span>
+            )}
+          </div>
+          <p className="text-xs sm:text-sm text-[#1F2937] font-medium mt-1 leading-relaxed">
+            Original requests from your account, including requests started on another device. Checking status does not charge your card.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void load()}
+          className="self-start sm:self-auto rounded-lg border border-[#9CA3AF] bg-white hover:bg-neutral-100 text-[#020305] font-bold text-xs sm:text-sm px-4 py-2 transition-colors disabled:opacity-50 shrink-0 cursor-pointer shadow-sm"
+        >
+          {busy ? "Loading requests…" : "Refresh requests"}
+        </button>
+      </div>
+
+      {error && <p role="alert" className="text-sm text-red-700 font-medium bg-red-50 p-3 rounded-lg border border-red-200">{error} Your original requests have not been changed.</p>}
+
+      {page && !page.requests.length && (
+        <div className="flex items-center gap-2.5 text-xs sm:text-sm text-[#111827] font-semibold bg-[#F9FAFB] px-4 py-3 rounded-xl border border-[#D1D5DB]">
+          <svg className="w-4 h-4 text-[#30AE5A] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+          </svg>
+          <span role="status">{page.hasMore ? "No requests needing attention in this page. You can load older requests." : "No requests needing attention in the history checked."}</span>
+        </div>
+      )}
+
+      {(page?.requests ?? []).map((item) => (
+        <RecoveryRequest
+          key={operationIdentity(item)}
+          operation={item}
+          initialStatus={item.status}
+          record={bodyFor(item)}
+          session={session}
+          onResolved={(status) => {
+            moveResolved(item, status);
+            setIsResolvedOpen(true);
+          }}
+        />
+      ))}
+
+      {page?.hasMore && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void load(page.nextCursor)}
+          className="rounded-lg border border-[#9CA3AF] bg-white hover:bg-neutral-50 px-4 py-2 text-sm font-bold text-[#020305] transition-colors cursor-pointer"
+        >
+          Load older requests
+        </button>
+      )}
+
+      {Boolean(page?.resolved.length) && (
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={() => setIsResolvedOpen((v) => !v)}
+            className="flex items-center justify-between w-full py-2.5 px-3.5 rounded-xl bg-[#F8F7F4] hover:bg-[#EFECE8] text-[#020305] font-bold text-xs sm:text-sm transition-colors cursor-pointer border border-[#D1D5DB]"
+            aria-expanded={isResolvedOpen}
+          >
+            <span className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-[#30AE5A]" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              <span>Resolved requests ({page!.resolved.length})</span>
+            </span>
+            <span className="text-xs font-bold text-[#111827] flex items-center gap-1.5">
+              <span>{isResolvedOpen ? "Hide history" : "Show history"}</span>
+              <svg className={`w-3.5 h-3.5 transform transition-transform duration-200 ${isResolvedOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </span>
+          </button>
+
+          <section
+            aria-label="Resolved Booking requests"
+            className={`space-y-3 mt-3 ${isResolvedOpen ? "block" : "hidden"}`}
+          >
+            <h3 className="sr-only font-semibold">Resolved requests</h3>
+            {page!.resolved.map((item) => (
+              <RecoveryRequest
+                key={operationIdentity(item)}
+                operation={item}
+                initialStatus={item.status}
+                session={session}
+                showDismiss={pointers.some((p) => operationIdentity(p) === operationIdentity(item))}
+              />
+            ))}
+          </section>
+        </div>
+      )}
+
+      {local.length > 0 && (
+        <section aria-label="Saved requests in this browser" className="space-y-3 pt-3 border-t border-[#F1EFEC]">
+          <h3 className="font-semibold text-sm text-[#020305]">Saved requests in this browser</h3>
+          {local.map((pointer) => (
+            <RecoveryRequest
+              key={operationIdentity(pointer)}
+              operation={pointer}
+              record={bodyFor(pointer)}
+              session={session}
+            />
+          ))}
+        </section>
+      )}
+    </section>
+  );
 }
 
 /** A local request list is advisory; authenticated server facts decide every displayed result. */
@@ -201,10 +400,24 @@ export default function BookingPaymentRecovery({ businessId, serverInbox = false
   const ownedRecords = records.filter((r) => r.customerId === customerId), ownedPointers = pointers.filter((r) => r.customerId === customerId);
   if (serverInbox) return <ServerRecoveryInbox key={session} session={session} records={ownedRecords} pointers={ownedPointers} />;
   if (!ownedPointers.length) return null;
-  return <section aria-label="Booking payment recovery" className="w-full space-y-3">
-    <h2 className="font-poppins font-semibold text-xl">Continue your Booking</h2>
-    <p className="text-sm text-neutral-600">These are saved original requests. Checking status does not charge your card. If your selected time is no longer available, resolve any payment or refund before choosing a new time.</p>
-    {ownedPointers.map((pointer) => <RecoveryRequest key={`${session}:${operationIdentity(pointer)}`} operation={pointer}
-      record={ownedRecords.find((r) => r.businessId === pointer.businessId && r.input.idempotencyKey === pointer.idempotencyKey)} session={session} />)}
-  </section>;
+  return (
+    <section aria-label="Booking payment recovery" className="w-full bg-[#FFFFFF] border border-[#E2E1E6] rounded-2xl p-5 sm:p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-4 font-manrope">
+      <div>
+        <h2 className="font-manrope font-bold text-lg text-[#020305]">Continue your Booking</h2>
+        <p className="text-xs sm:text-sm text-[#45474B] mt-1 leading-relaxed">
+          These are saved original requests. Checking status does not charge your card. If your selected time is no longer available, resolve any payment or refund before choosing a new time.
+        </p>
+      </div>
+      <div className="space-y-3">
+        {ownedPointers.map((pointer) => (
+          <RecoveryRequest
+            key={`${session}:${operationIdentity(pointer)}`}
+            operation={pointer}
+            record={ownedRecords.find((r) => r.businessId === pointer.businessId && r.input.idempotencyKey === pointer.idempotencyKey)}
+            session={session}
+          />
+        ))}
+      </div>
+    </section>
+  );
 }

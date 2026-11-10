@@ -47,6 +47,12 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   LATE_CANCELLATION: "Late cancellation",
 };
 
+/** Management screens describe the cancelling actor; "you" is reserved for Customer views. */
+export const BUSINESS_BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
+  ...BOOKING_STATUS_LABELS,
+  CANCELLED_BY_CUSTOMER: "Cancelled by customer",
+};
+
 export type BookingStatusTone = "info" | "success" | "warning" | "danger" | "neutral";
 
 /** ONE badge/state map — tone only (no colors/classNames baked in here, so each screen's own

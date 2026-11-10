@@ -1,8 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  type CustomerStatusAction,
   type ListSuperAdminCustomersParams,
   superAdminCustomersApi,
 } from "@/lib/api/superAdminCustomers";
@@ -31,3 +32,20 @@ export const useSuperAdminCustomerDetailQuery = (
     queryFn: () => superAdminCustomersApi.getById(userId as string, page, relationshipsPage),
     enabled: Boolean(userId),
   });
+
+/** P2.2.6 — suspend / reactivate. On success or a status conflict, only the Super Admin
+ * Customer directory and detail reads are refreshed (the server state is the outcome). */
+export const useChangeCustomerStatusMutation = () => {
+  const queryClient = useQueryClient();
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: superAdminCustomersKeys.all });
+  return useMutation({
+    mutationFn: (input: { userId: string; action: CustomerStatusAction; reason?: string }) =>
+      superAdminCustomersApi.changeStatus(input.userId, input.action, input.reason),
+    onSuccess: refresh,
+    onError: (error: unknown) => {
+      const status = (error as { status?: number } | null)?.status;
+      if (status === 404 || status === 409) void refresh();
+    },
+  });
+};

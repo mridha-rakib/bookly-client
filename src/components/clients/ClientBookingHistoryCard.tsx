@@ -26,7 +26,7 @@ import BusinessPackageAppointmentHistory from "@/components/packages/BusinessPac
 import { ManagementPackageSettlement } from "@/components/packages/FirstClassPackageIntegration";
 import type { BookingDetail } from "@/lib/api/bookings";
 import {
-  BOOKING_STATUS_LABELS,
+  BUSINESS_BOOKING_STATUS_LABELS as BOOKING_STATUS_LABELS,
   BOOKING_STATUS_TONE,
   bookingClientBadge,
   formatBookingDate,

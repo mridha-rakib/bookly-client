@@ -15,6 +15,7 @@ import {
   useSupportTicketQuery,
 } from "@/lib/support/hooks";
 import SupportOlderMessages from "@/components/support/SupportOlderMessages";
+import { customerTicketsHref, parseCustomerTicketFilters } from "@/lib/support/customer-ticket-filters";
 import { toUserMessage } from "@/lib/auth/messages";
 import type { SupportTicketStatus } from "@/lib/api/support";
 import { formatClockTime12Hour } from "@/lib/staff/format";
@@ -41,6 +42,8 @@ const statusBadge = (status: SupportTicketStatus) => {
 function TicketViewContent() {
   const searchParams = useSearchParams();
   const ticketId = searchParams.get("id") ?? undefined;
+  const listFilters = parseCustomerTicketFilters(searchParams);
+  const backHref = customerTicketsHref(listFilters.valid ? { q: listFilters.q, ...(listFilters.status ? { status: listFilters.status } : {}), page: listFilters.page } : {});
 
   const logout = useAuthStore((state) => state.logout);
   const isLoggedIn = true;
@@ -94,7 +97,7 @@ function TicketViewContent() {
 
       <main className="flex-1 w-full px-4 md:px-8 xl:px-[65px] flex flex-col z-10 relative items-center py-12">
         <div className="max-w-[760px] w-full flex flex-col items-start gap-6 pb-20">
-          <Link href="/customer/tickets" className="text-sm text-[#767676] hover:text-black">
+          <Link href={backHref} className="text-sm text-[#767676] hover:text-black">
             ← Back to My Tickets
           </Link>
 

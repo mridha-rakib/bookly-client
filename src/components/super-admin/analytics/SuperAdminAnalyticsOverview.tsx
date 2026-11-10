@@ -62,7 +62,7 @@ export default function SuperAdminAnalyticsOverview({ period }: SuperAdminAnalyt
   const statsRow1 = [
     { label: "Total Bookings", value: bookingAnalytics.totalCount.toLocaleString(), sub: "In selected period" },
     { label: "Bookly Revenue", value: formatBookingMoney(bookingAnalytics.platformRevenueCents), sub: "Platform fees, net" },
-    { label: "Customers Registered", value: customerAnalytics ? customerAnalytics.registeredTotal.toLocaleString() : "—", sub: "All time" },
+    { label: "Customers Registered", value: customerAnalytics ? customerAnalytics.registeredTotal.toLocaleString() : "—", sub: period.city || period.day ? "All time · platform-wide (not city/day filtered)" : "All time" },
     {
       label: "Active Businesses",
       value: businessAnalytics ? businessAnalytics.statusCounts.APPROVED.toLocaleString() : "—",

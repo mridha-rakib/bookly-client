@@ -22,7 +22,9 @@ export type BookingCalendarSyncStatus = {
     | "CONNECTION_OR_DESTINATION_MISMATCH"
     | "CALENDAR_NOT_CONNECTED"
     | "BOOKING_AUTHORITY_CHECK_FAILED"
-    | "PROVIDER_PERMANENT_FAILURE";
+    | "PROVIDER_PERMANENT_FAILURE"
+    // P2.2.9 — Google kept failing; automatic retries stopped after the retry limit.
+    | "PROVIDER_RETRY_LIMIT_REACHED";
   recoveryRequired: boolean;
   /** The exact provider request a recovery must name when its settlement is attested. */
   unresolvedRequestId?: string;

@@ -36,7 +36,7 @@ export default function SuperAdminCityCoverage() {
             <tbody className="text-gray-700">
               {data.cities.map((city) => (
                 <tr key={city.city} className="border-b border-gray-50 hover:bg-gray-50/50">
-                  <td className="py-2.5 font-medium">{city.city}</td>
+                  <td className="py-2.5 font-medium">{city.city || "Unassigned"}</td>
                   <td className="py-2.5 text-right">{city.premisesCount}</td>
                   <td className="py-2.5 text-right">{city.mobileCount}</td>
                 </tr>

@@ -7,7 +7,9 @@ import Footer from "@/components/Footer";
 
 import RequireCustomer from "@/components/auth/RequireCustomer";
 import { useAuthStore } from "@/lib/auth/store";
-import { useCreateSupportTicketMutation, useSupportTicketsPage } from "@/lib/support/hooks";
+import { useCreateSupportTicketMutation } from "@/lib/support/hooks";
+import { useCustomerTicketsPage } from "@/lib/support/customer-ticket-filters";
+import CustomerTicketFilters from "@/components/support/CustomerTicketFilters";
 import { toUserMessage } from "@/lib/auth/messages";
 import type { SupportTicketStatus } from "@/lib/api/support";
 
@@ -47,7 +49,8 @@ function CustomerTicketsPageContent() {
   const [errorMsg, setErrorMsg] = useState("");
 
   // P1.8 — server-paginated (newest first); every page of the Customer's tickets is reachable.
-  const { page, setPage, totalPages, total, ticketsQuery } = useSupportTicketsPage(PAGE_SIZE);
+  const list = useCustomerTicketsPage();
+  const { page, setPage, totalPages, total, ticketsQuery } = list;
   const tickets = ticketsQuery.data?.tickets ?? [];
   const createMutation = useCreateSupportTicketMutation();
 
@@ -143,8 +146,9 @@ function CustomerTicketsPageContent() {
             </form>
           )}
 
-          <div className="flex flex-col items-start gap-4 w-full">
-            {ticketsQuery.isLoading ? (
+          <CustomerTicketFilters search={list.draft} status={list.status} onSearch={list.setSearch} onStatus={list.setStatus} onClearSearch={list.clearSearch} onClear={list.clearFilters} />
+          <div className="flex flex-col items-start gap-4 w-full" aria-busy={ticketsQuery.isFetching}>
+            {list.error ? <div role="alert" className="w-full rounded-xl border bg-white p-6"><p>{list.error}</p><button type="button" className="mt-3 underline" onClick={list.clearFilters}>Reset ticket filters</button></div> : ticketsQuery.isLoading ? (
               <div className="w-full text-center py-20 bg-white border border-[#C6C6CB] rounded-xl">
                 <p className="text-[#45474B] text-lg font-medium">Loading your tickets…</p>
               </div>
@@ -165,7 +169,7 @@ function CustomerTicketsPageContent() {
               tickets.map((ticket) => (
                 <Link
                   key={ticket.id}
-                  href={`/customer/tickets/view?id=${ticket.id}`}
+                  href={list.href(ticket.id)}
                   className="w-full flex items-center justify-between bg-white border border-[#C6C6CB] rounded-xl p-5 hover:border-black transition-colors"
                 >
                   <div className="flex flex-col gap-1">
@@ -191,12 +195,12 @@ function CustomerTicketsPageContent() {
             ) : (
               <div className="w-full text-center py-20 bg-white border border-[#C6C6CB] rounded-xl">
                 <p className="text-[#45474B] text-lg font-medium">
-                  You have no support tickets yet.
+                  {list.q || list.status ? "No tickets match your search or filters." : "You have no support tickets yet."}
                 </p>
               </div>
             )}
 
-            {!ticketsQuery.isLoading && !ticketsQuery.isError && total > PAGE_SIZE && (
+            {!list.error && !ticketsQuery.isLoading && !ticketsQuery.isError && total > PAGE_SIZE && (
               <nav
                 aria-label="My Tickets pages"
                 className="w-full flex items-center justify-between gap-4 pt-2"

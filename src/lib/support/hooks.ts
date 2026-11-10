@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { type CreateSupportTicketInput, type SupportMessage, supportApi } from "@/lib/api/support";
+import { type CreateSupportTicketInput, type SupportMessage, type SupportTicketListParams, normalizeSupportTicketListParams, supportApi } from "@/lib/api/support";
 import {
   applyConfirmedSupportReply,
   currentSupportScope,
@@ -18,8 +18,8 @@ import {
 export const supportKeys = {
   all: ["support"] as const,
   lists: (scope: string | null) => [...supportKeys.all, "list", scope] as const,
-  list: (pagination: { page?: number; limit?: number }, scope: string | null) =>
-    [...supportKeys.lists(scope), pagination] as const,
+  list: (pagination: SupportTicketListParams, scope: string | null) =>
+    [...supportKeys.lists(scope), normalizeSupportTicketListParams(pagination)] as const,
   detail: (ticketId: string, scope: string | null) =>
     [...supportKeys.all, "detail", scope, ticketId] as const,
 };
@@ -32,12 +32,13 @@ export const supportConversationConfig: SupportConversationConfig = {
 
 const useRequesterScope = () => useSupportScope(SUPPORT_REQUESTER_ROLES);
 
-export const useSupportTicketsQuery = (pagination: { page?: number; limit?: number } = {}) => {
+export const useSupportTicketsQuery = (pagination: SupportTicketListParams = {}, enabled = true) => {
+  const params = normalizeSupportTicketListParams(pagination);
   const scope = useRequesterScope();
   const query = useQuery({
-    queryKey: supportKeys.list(pagination, scope),
-    queryFn: () => supportApi.list(pagination),
-    enabled: Boolean(scope),
+    queryKey: supportKeys.list(params, scope),
+    queryFn: () => supportApi.list(params),
+    enabled: Boolean(scope) && enabled,
   });
   return { ...query, isLoading: query.isPending && !query.isError, data: scope ? query.data : undefined };
 };

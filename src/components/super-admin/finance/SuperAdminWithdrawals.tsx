@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import PlatformBankAccount from "./PlatformBankAccount";
 import { toUserMessage } from "@/lib/auth/messages";
 import type {
   CentralBankDestination,
@@ -93,7 +94,7 @@ export default function SuperAdminWithdrawals() {
         <div className="flex flex-col gap-1">
           <h3 className="font-semibold text-lg text-[#111827]">Withdrawals</h3>
           <span className="text-sm text-[#4E5F78]">
-            Move funds from Bookly&apos;s Stripe balance to the bank account linked to that Stripe account
+            Bookly&apos;s platform bank account, Stripe balances and withdrawal status
           </span>
         </div>
         {overview?.mode && (
@@ -106,6 +107,8 @@ export default function SuperAdminWithdrawals() {
           </span>
         )}
       </div>
+
+      <PlatformBankAccount />
 
       {overviewQuery.isLoading ? (
         <Card>
@@ -141,6 +144,7 @@ export default function SuperAdminWithdrawals() {
 function BalanceCards({ overview }: { overview: CentralPayoutOverview }) {
   return (
     <div className="flex flex-col gap-4">
+      <h3 className="font-semibold text-lg text-[#111827]">Stripe balance</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {overview.balances.length === 0 && (
           <Card>
@@ -172,7 +176,7 @@ function BalanceCards({ overview }: { overview: CentralPayoutOverview }) {
                     <span className="font-medium text-[#314158]">
                       {formatMinor(inProgress?.amountCents ?? 0, balance.currency)}
                     </span>
-                    <span className="text-xs text-gray-500">Payouts pending / in transit</span>
+                    <span className="text-xs text-gray-500">Recent payouts pending / in transit (up to 100)</span>
                   </div>
                 </div>
               </div>
@@ -187,9 +191,9 @@ function BalanceCards({ overview }: { overview: CentralPayoutOverview }) {
         {overview.businessAttributedUnpaid
           ? ` (${formatMinor(overview.businessAttributedUnpaid.amountCents, overview.businessAttributedUnpaid.currency)} recorded as not yet paid out to Businesses)`
           : ""}
-        , and funds needed for refunds or disputes. Bookly has no approved withdrawable-amount
-        policy, so a withdrawal is limited only by the Stripe available balance — check outstanding
-        obligations first.
+        , and funds needed for refunds or disputes. Eligible platform funds have not been
+        determined: the reserve policy is not approved. Live withdrawals remain disabled until
+        the policy and reviewed financial controls are in place.
       </div>
     </div>
   );
@@ -207,14 +211,18 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
   const [result, setResult] = useState<CentralPayoutOperation | null>(null);
 
   const destination = useMemo(
-    () => overview.destinations.find((d) => d.eligible && d.currency === currency),
+    () => {
+      const matches = overview.destinations.filter((d) => d.eligible && d.defaultForCurrency === true && d.currency === currency);
+      return matches.length === 1 ? matches[0] : undefined;
+    },
     [overview.destinations, currency],
   );
   const available = overview.balances.find((b) => b.currency === currency)?.availableCents ?? 0;
-  const blocked = overview.restrictions.length > 0;
+  const blocked = overview.restrictions.length > 0 || (overview.mode === "LIVE" && !overview.liveExecutionEnabled);
 
   const startReview = (event: React.FormEvent) => {
     event.preventDefault();
+    if (blocked) return setError("Withdrawal authority is unavailable. Review the restrictions above.");
     setError(null);
     setResult(null);
     const amountMinor = parseMinor(amount, currency);
@@ -227,6 +235,7 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
 
   const confirm = (event: React.FormEvent) => {
     event.preventDefault();
+    if (blocked) return setError("Withdrawal authority is unavailable. Review the restrictions above.");
     if (!review || mutation.isPending) return;
     setError(null);
     mutation.mutate(
@@ -254,7 +263,7 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
     <Card>
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-1">
-          <span className="font-semibold text-sm text-[#111827]">New withdrawal</span>
+          <h3 className="font-semibold text-sm text-[#111827]">Central withdrawal eligibility</h3>
           <span className="text-xs text-gray-500">
             Destination:{" "}
             {destination ? (
@@ -262,7 +271,7 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
                 {maskedBank(destination)} ({destination.currency.toUpperCase()}, {destination.status})
               </span>
             ) : (
-              <span className="font-medium text-rose-600">setup required in Stripe</span>
+              <span className="font-medium text-rose-600">No confirmed usable default for this currency. Review the bank summary and Stripe.</span>
             )}
           </span>
         </div>
@@ -355,7 +364,7 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
             <div className="flex flex-col sm:flex-row gap-2">
               <button
                 type="submit"
-                disabled={mutation.isPending || !password}
+                disabled={blocked || mutation.isPending || !password}
                 className="h-10 bg-[#111111] hover:bg-black text-white px-4 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {mutation.isPending ? "Submitting…" : "Confirm withdrawal"}

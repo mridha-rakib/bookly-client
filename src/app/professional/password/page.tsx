@@ -13,6 +13,7 @@ import SocialButton from "@/components/auth/SocialButton";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/sonner";
 import { useProfessionalGoogleAuthMutation, useProfessionalLoginMutation } from "@/lib/auth/hooks";
+import { BooklyApiError } from "@/lib/api/client";
 import { toUserMessage } from "@/lib/auth/messages";
 import { getAuthenticatedUserHomePath } from "@/lib/auth/routes";
 
@@ -39,6 +40,11 @@ function PasswordPageContent() {
       toast.success("Welcome back! You're signed in.");
       router.push(getAuthenticatedUserHomePath(auth.user));
     } catch (error) {
+      if (error instanceof BooklyApiError && error.code === "TWO_FACTOR_REQUIRED") {
+        setPassword("");
+        router.replace("/professional/two-factor");
+        return;
+      }
       setPasswordError(toUserMessage(error));
     }
   };

@@ -14,6 +14,9 @@ vi.mock("@/components/ui/sonner", () => ({ toast: { success: fx.success, error: 
 vi.mock("@/lib/staff/hooks", () => ({
   useStaffListQuery: () => ({ data: { members: fx.members }, isLoading: false, isError: false, isFetching: fx.fetching }),
   usePutStaffScheduleMutation: () => ({ mutateAsync: fx.save, isPending: fx.pending }),
+  // P2.2 — the time-off panel's hooks; unused by these off-day scenarios.
+  useCreateStaffTimeOffMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRemoveStaffTimeOffMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 vi.mock("@/lib/api/staff", async importOriginal => ({ ...(await importOriginal<object>()), staffApi: { putSchedule: fx.apiSave } }));
 

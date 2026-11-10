@@ -9,7 +9,11 @@ import { apiRequest } from "@/lib/api/client";
 import { useSuperAdminCustomerDetailQuery, useSuperAdminCustomersQuery } from "@/lib/superAdminCustomers/hooks";
 
 vi.mock("@/lib/api/client", () => ({ apiRequest: vi.fn() }));
-vi.mock("@/lib/superAdminCustomers/hooks", () => ({ useSuperAdminCustomerDetailQuery: vi.fn(), useSuperAdminCustomersQuery: vi.fn() }));
+vi.mock("@/lib/superAdminCustomers/hooks", () => ({
+  useSuperAdminCustomerDetailQuery: vi.fn(), useSuperAdminCustomersQuery: vi.fn(),
+  // P2.2.6 — status actions are covered in customer-suspend-reactivate.test.tsx.
+  useChangeCustomerStatusMutation: () => ({ isPending: false, mutateAsync: vi.fn() }),
+}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const customer = {

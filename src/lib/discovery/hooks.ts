@@ -7,6 +7,7 @@ import {
   type HomeSectionsParams,
   discoveryApi,
 } from "@/lib/api/discovery";
+import { useAuthStore } from "@/lib/auth/store";
 
 export const discoveryKeys = {
   all: ["discovery"] as const,
@@ -17,11 +18,17 @@ export const discoveryKeys = {
   foundingPartners: () => [...discoveryKeys.all, "foundingPartners"] as const,
 };
 
-export const useDiscoverySearchQuery = (params: DiscoverySearchParams = {}) =>
-  useQuery({
-    queryKey: discoveryKeys.search(params),
+/** P2.2.3 — results can be personalized (Recommended) for the signed-in Customer, so the key
+ * carries the session identity: another account never reuses them. */
+export const useDiscoverySearchQuery = (params: DiscoverySearchParams = {}) => {
+  const userId = useAuthStore((state) => (state.status === "authenticated" ? state.user?.id : undefined));
+  const cacheEpoch = useAuthStore((state) => state.cacheEpoch);
+  const scope = userId ? `${userId}:${cacheEpoch}` : "anon";
+  return useQuery({
+    queryKey: [...discoveryKeys.search(params), scope] as const,
     queryFn: () => discoveryApi.search(params),
   });
+};
 
 /** Batch 17 — the homepage's Recommended / Services near you / Popular rows in one request.
  * `enabled` gates the fetch until the caller knows whether a session exists, so a logged-in

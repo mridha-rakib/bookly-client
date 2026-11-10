@@ -6,8 +6,10 @@ import type { BusinessStatus } from "@/lib/api/superAdminBusiness";
  * aggregation (see api/.../super-admin-dashboard.service.ts's own doc comment — no cohort
  * analysis, no forecasting, nothing invented merely because the mock UI showed it). */
 export interface SuperAdminDashboardSummary {
+  /** P2.2.4 — the City/Day actually applied (null = all). */
+  filters?: { city: string | null; day: string | null };
   /** P1.9 — window applied to the PERIOD metrics (`bookings`, `platformRevenueCents`). */
-  period: { from: string; to: string; isAllTime: boolean };
+  period: { from: string; to: string; isAllTime: boolean; timezone: string };
   /** Current state (not affected by the period). */
   businesses: Record<BusinessStatus, number> & { total: number };
   /** Current state (not affected by the period). */
@@ -26,10 +28,15 @@ export interface SuperAdminDashboardSummary {
 }
 
 export const superAdminDashboardApi = {
-  getSummary: (period?: { fromDate: string; toDate: string }) =>
+  getSummary: (period?: { fromDate: string; toDate: string }, filters: { city?: string; day?: string } = {}) =>
     apiRequest<SuperAdminDashboardSummary>({
       method: "GET",
       url: "/super-admin/dashboard/summary",
-      ...(period ? { params: { fromDate: period.fromDate, toDate: period.toDate } } : {}),
+      params: {
+        ...(period ? { fromDate: period.fromDate, toDate: period.toDate } : {}),
+        // P2.2.4 — registered Business city and Cyprus day of week.
+        ...(filters.city ? { city: filters.city } : {}),
+        ...(filters.day ? { day: filters.day } : {}),
+      },
     }),
 };

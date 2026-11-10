@@ -62,10 +62,18 @@ const INCIDENT_COPY: Partial<Record<NonNullable<BookingCalendarSyncStatus["incid
     "This booking no longer matches its calendar record. Please contact Bookly support; no action is available here.",
   PROVIDER_PERMANENT_FAILURE:
     "Google rejected the change, or the event in Google Calendar isn't one Bookly created. Fix the event in Google Calendar, then continue.",
+  PROVIDER_RETRY_LIMIT_REACHED:
+    "Google Calendar kept failing, so Bookly stopped retrying this booking automatically. Check that Google Calendar is reachable and connected, then continue to resume.",
 };
 
 /** Incidents an Owner decision can move forward. Others are shown without controls. */
-const RECOVERABLE = new Set(["PROVIDER_OUTCOME_UNKNOWN", "CONNECTION_OR_DESTINATION_MISMATCH", "PROVIDER_PERMANENT_FAILURE"]);
+const RECOVERABLE = new Set([
+  "PROVIDER_OUTCOME_UNKNOWN",
+  "CONNECTION_OR_DESTINATION_MISMATCH",
+  "PROVIDER_PERMANENT_FAILURE",
+  // P2.2.9.1 — the server's existing recovery reopens the row with a fresh retry budget.
+  "PROVIDER_RETRY_LIMIT_REACHED",
+]);
 
 const recoveryErrorMessage = (error: unknown) => {
   if (error instanceof BooklyApiError) {

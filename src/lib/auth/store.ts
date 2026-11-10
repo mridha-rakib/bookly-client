@@ -10,6 +10,8 @@ import {
   invalidateInFlightAuth,
   refreshSession,
   sendLogoutRequest,
+  isAccountRestrictedError,
+  setOnAccountRestricted,
   setOnSessionExpired,
   setOnSessionRestored,
   setOnSessionUnverified,
@@ -389,6 +391,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ status: "unverified", isInitializing: false });
       } else if (failureClass !== "STALE") {
         get().clearAuth();
+        if (isAccountRestrictedError(error)) showAccountRestricted();
       } else {
         set({ isInitializing: false });
       }
@@ -453,6 +456,19 @@ setRefreshBlocker(hasLogoutIntent);
 setOnSessionExpired(() => {
   useAuthStore.getState().clearAuth();
   postAuthLoggedOut();
+});
+
+/** P2.2.6 — Bookly suspended this account: sign out every tab and explain why, once. */
+export const ACCOUNT_RESTRICTED_PATH = "/account-restricted";
+function showAccountRestricted(): void {
+  if (typeof window === "undefined" || window.location.pathname === ACCOUNT_RESTRICTED_PATH) return;
+  window.location.assign(ACCOUNT_RESTRICTED_PATH);
+}
+
+setOnAccountRestricted(() => {
+  useAuthStore.getState().clearAuth();
+  postAuthLoggedOut();
+  showAccountRestricted();
 });
 
 setOnSessionUnverified(() => {

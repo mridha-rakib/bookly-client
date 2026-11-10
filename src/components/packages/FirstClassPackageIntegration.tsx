@@ -14,10 +14,10 @@ export function PackageCatalogue({ businessId, packageId }: { businessId: string
   if (query.isPending) return <p role="status">Loading multi-service packages…</p>;
   if (query.isError) return <PackageReadError error={query.error} onRetry={() => void query.refetch()} retrying={query.isFetching} />;
   const packages = (query.data as { packages: PackageOffer[] } | undefined)?.packages ?? [];
-  return <section className="space-y-5" aria-label="Multi-service packages"><h2 className="font-manrope text-xl font-bold">Multi-service packages</h2>
-    <p className="text-sm text-[#5F5E5A]">Explore included services, session quantities and package validity.</p>
+  return <section className="space-y-5" aria-label="Multi-service packages"><h2 className="font-manrope text-xl font-bold text-[#020305]">Multi-service packages</h2>
+    <p className="text-sm text-[#1F2937] font-medium">Explore included services, session quantities and package validity.</p>
     {packages.length ? <div className={packageId ? "space-y-5" : "grid gap-5 md:grid-cols-2"}>{packages.map((offer) => <OfferCard key={offer.id} offer={offer} detail={Boolean(packageId)} />)}</div>
-      : <p className="rounded-xl border border-[#C6C6CB] bg-white p-6">No eligible published multi-service packages are available.</p>}</section>;
+      : <p className="rounded-xl border border-[#D1D5DB] bg-white p-6 text-sm text-[#1F2937] font-medium">No eligible published multi-service packages are available.</p>}</section>;
 }
 export function OwnedFirstClassPackages() {
   const actor = useAuthStore((s) => `${s.user?.id}:${s.cacheEpoch}`);
@@ -27,12 +27,12 @@ function OwnedPackagePages() {
   const [cursors, setCursors] = useState<Array<string | undefined>>([undefined]);
   const query = usePackageView("owned", undefined, undefined, cursors[cursors.length - 1]);
   const newer = cursors.length > 1 && <button type="button" onClick={() => setCursors((current) => current.slice(0, -1))}>Newer packages</button>;
-  if (query.isPending) return <>{newer}<p role="status">Loading your multi-service packages…</p></>;
+  if (query.isPending) return <>{newer}<p role="status" className="text-sm text-[#1F2937] font-medium">Loading your multi-service packages…</p></>;
   if (query.isError) return <>{newer}<PackageReadError error={query.error} onRetry={() => void query.refetch()} retrying={query.isFetching} /></>;
   const result = query.data as { packages: OwnedPackageView[]; hasMore: boolean; nextCursor?: string | null } | undefined;
-  return <section className="mb-6 w-full space-y-5" aria-label="Owned multi-service packages"><h2 className="font-manrope text-xl font-bold">Multi-service packages</h2>
-    {result?.packages.length ? <div className="grid gap-5">{result.packages.map((pkg) => <OwnedPackageCard key={pkg.id} pkg={pkg} />)}</div>
-      : <p className="rounded-xl border border-[#C6C6CB] bg-white p-6">{cursors.length > 1 ? "No older packages on this page." : "You have no purchased first-class multi-service packages."}</p>}
+  return <section className="mb-6 w-full space-y-5" aria-label="Owned multi-service packages"><h2 className="font-manrope text-xl font-bold text-[#020305]">Multi-service packages</h2>
+    {result?.packages.length ? <div className="grid w-full grid-cols-1 md:grid-cols-2 gap-6 items-stretch">{result.packages.map((pkg) => <OwnedPackageCard key={pkg.id} pkg={pkg} />)}</div>
+      : <p className="rounded-2xl border border-[#D1D5DB] bg-white p-6 text-sm text-[#1F2937] font-medium">{cursors.length > 1 ? "No older packages on this page." : "You have no purchased first-class multi-service packages."}</p>}
     <nav aria-label="Package history pages" className="flex gap-4">
       {newer}
       {result?.hasMore && result.nextCursor && <button type="button" onClick={() => setCursors((current) => [...current, result.nextCursor!])}>Older packages</button>}
@@ -73,12 +73,19 @@ export function FirstClassBookingContext({ progressId, currentBookingId }: { pro
   const query = usePackageView("owned", undefined, progressId);
   const pkg = (query.data as { packages: OwnedPackageView[] } | undefined)?.packages[0];
   const initialAppointments = pkg?.purchaseCompletion === "VERIFIED" ? pkg.sessions.filter((session) => session.booking?.role === "PURCHASE") : [];
-  return <section className="space-y-4"><Link className="text-[#240183] underline" href={`/customer/packages/${progressId}?kind=first-class`}>View multi-service Package sessions and balances</Link>
-    {pkg && <p className="font-semibold">Package: {pkg.name}</p>}
-    {initialAppointments.length > 1 && <nav aria-label="Initial Package appointments" className="space-y-2 rounded-xl bg-[#F5F4EE] p-4 text-sm"><p>This Package has {initialAppointments.length} initial appointments.</p>
-      <ul className="space-y-2">{initialAppointments.map((session, index) => <li key={session.bookingId}><Link className="text-[#240183] underline" aria-current={session.bookingId === currentBookingId ? "page" : undefined} href={`/customer/bookings/view?id=${encodeURIComponent(session.bookingId)}`}>Initial appointment {index + 1}: {pkg!.items.find((item) => item.id === session.itemId)?.name ?? "Package session"} · {new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: session.booking!.timezone }).format(new Date(session.booking!.startAt))} ({session.booking!.timezone})</Link></li>)}</ul></nav>}
-    {query.isPending ? <p role="status">Loading Package booking information…</p> : query.isError ? <PackageReadError error={query.error} onRetry={() => void query.refetch()} retrying={query.isFetching} /> : !pkg?.actionsAvailable && <PackageUnavailable />}
-    <p className="text-sm">Rescheduling retains the same Booking and professional and does not consume a second package credit. Valid new times require server admission. Use the Package detail to manage this appointment.</p>{query.isSuccess && !pkg?.actionsAvailable && <CancellationReview />}</section>;
+  return <section className="space-y-4 font-manrope text-[#020305]">
+    <div className="rounded-2xl border border-[#D1D5DB] bg-white p-6 shadow-sm space-y-4">
+      <Link className="inline-flex items-center text-sm font-bold text-[#1E1B4B] underline hover:text-[#0F0D24]" href={`/customer/packages/${progressId}?kind=first-class`}>View multi-service Package sessions and balances</Link>
+      {pkg && <p className="font-bold text-[#020305] text-base">Package: {pkg.name}</p>}
+      {initialAppointments.length > 1 && <nav aria-label="Initial Package appointments" className="space-y-2 rounded-xl bg-[#F8F7F4] border border-[#D1D5DB] p-4 text-sm text-[#111827]">
+        <p className="font-bold text-[#020305]">This Package has {initialAppointments.length} initial appointments.</p>
+        <ul className="space-y-2">{initialAppointments.map((session, index) => <li key={session.bookingId}><Link className="text-[#1E1B4B] underline font-bold hover:text-[#0F0D24]" aria-current={session.bookingId === currentBookingId ? "page" : undefined} href={`/customer/bookings/view?id=${encodeURIComponent(session.bookingId)}`}>Initial appointment {index + 1}: {pkg!.items.find((item) => item.id === session.itemId)?.name ?? "Package session"} · {new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: session.booking!.timezone }).format(new Date(session.booking!.startAt))} ({session.booking!.timezone})</Link></li>)}</ul>
+      </nav>}
+      {query.isPending ? <p role="status" className="text-sm font-semibold text-[#1F2937]">Loading Package booking information…</p> : query.isError ? <PackageReadError error={query.error} onRetry={() => void query.refetch()} retrying={query.isFetching} /> : !pkg?.actionsAvailable && <PackageUnavailable />}
+      <p className="text-sm leading-relaxed text-[#1F2937] font-semibold">Rescheduling retains the same Booking and professional and does not consume a second package credit. Valid new times require server admission. Use the Package detail to manage this appointment.</p>
+    </div>
+    {query.isSuccess && !pkg?.actionsAvailable && <CancellationReview />}
+  </section>;
 }
 export function ManagementPackageSettlement({ businessId, bookingId }: { businessId: string; bookingId: string }) {
   const role = useAuthStore((s) => s.user?.role);

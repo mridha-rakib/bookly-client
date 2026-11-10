@@ -8,19 +8,26 @@ import { useSuperAdminDashboardSummaryQuery } from "@/lib/superAdminDashboard/ho
 import { useSuperAdminPendingPayoutsQuery } from "@/lib/superAdminFinance/hooks";
 import { describeOverviewPeriod, type OverviewPeriodParams } from "@/lib/superAdminDashboard/period";
 import SuperAdminOverviewError from "./SuperAdminOverviewError";
+import { dayLabel, type ReportingCityDay } from "../ReportingCityDayFilters";
 
 /** Batch 11 — every number here comes straight from GET /super-admin/dashboard/summary (one
  * server-side aggregation) or the existing pending-payouts primitive the Finance tab already
  * uses — never a metric requiring undefined semantics (rating, returning-customer rate,
  * no-show rate — none of those are computed anywhere in this codebase yet). */
 interface SuperAdminStatsGridProps {
+  /** P2.2.4 — City (registered Business city) / Day (Cyprus day of week). */
+  filters?: ReportingCityDay;
   /** P1.9 — applies only to the PERIOD metrics (Bookings, No-shows/Cancellations, Platform
    * Revenue); every other card is current-state or all-time and says so. */
   period?: OverviewPeriodParams;
 }
 
-export default function SuperAdminStatsGrid({ period }: SuperAdminStatsGridProps) {
-  const summaryQuery = useSuperAdminDashboardSummaryQuery(period);
+export default function SuperAdminStatsGrid({ period, filters = {} }: SuperAdminStatsGridProps) {
+  const summaryQuery = useSuperAdminDashboardSummaryQuery(period, filters);
+  // P2.2.4 — truthful per-card scope: City applies where a Business owns the figure; Day where
+  // the figure has an event timestamp; neither applies to platform-wide Customers or E16 payouts.
+  const cityText = filters.city ? ` · ${filters.city}` : "";
+  const dayText = filters.day ? ` · ${dayLabel(filters.day)}s` : "";
   const summary = summaryQuery.data;
   const { data: pendingPayouts } = useSuperAdminPendingPayoutsQuery();
   const periodLabel = describeOverviewPeriod(period);
@@ -49,25 +56,32 @@ export default function SuperAdminStatsGrid({ period }: SuperAdminStatsGridProps
     {
       title: "Total Businesses",
       value: summary.businesses.total.toLocaleString(),
-      sub: `Current · Approved: ${summary.businesses.APPROVED} · Pending: ${summary.businesses.PENDING}`,
+      sub: `Current${cityText} · Approved: ${summary.businesses.APPROVED} · Pending: ${summary.businesses.PENDING}`,
       icon: Store01Icon,
     },
     {
       title: "Total Customers",
       value: summary.customers.total.toLocaleString(),
-      sub: "Current · platform-wide, all statuses",
+      sub:
+        filters.city || filters.day
+          ? "Current · platform-wide (not filtered by city or day)"
+          : "Current · platform-wide, all statuses",
       icon: UserGroup03Icon,
     },
     {
       title: "Total Bookings",
       value: summary.bookings.total.toLocaleString(),
-      sub: `${summary.period.isAllTime ? "All time" : `Created ${periodLabel}`} · Upcoming: ${summary.bookings.UPCOMING} · Completed: ${summary.bookings.COMPLETED}`,
+      sub: `${summary.period.isAllTime ? "All time" : `Created ${periodLabel}`}${cityText}${dayText} · Upcoming: ${summary.bookings.UPCOMING} · Completed: ${summary.bookings.COMPLETED}`,
       icon: Calendar01Icon,
     },
     {
       title: "Pending Payouts",
       value: formatBookingMoney(summary.pendingBusinessPayableCents),
-      sub: pendingPayouts ? `Current balance · ${pendingPayouts.businessCount} Business awaiting payout` : "Current balance",
+      sub: filters.city
+        ? `Current balance${cityText}`
+        : pendingPayouts
+          ? `Current balance · ${pendingPayouts.businessCount} Business awaiting payout`
+          : "Current balance",
       icon: SaveMoneyDollarIcon,
     },
   ];
@@ -97,7 +111,9 @@ export default function SuperAdminStatsGrid({ period }: SuperAdminStatsGridProps
             {formatBookingMoney(summary.platformRevenueCents)}
           </span>
           <span className="font-sans font-normal text-xs text-gray-400 mt-auto leading-4">
-            {summary.period.isAllTime ? "All time" : periodLabel} · platform fees, net of processing costs
+            {summary.period.isAllTime ? "All time" : periodLabel}
+            {cityText}
+            {dayText} · platform fees, net of processing costs
           </span>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 flex flex-col gap-2 min-h-[120px]">
@@ -116,7 +132,9 @@ export default function SuperAdminStatsGrid({ period }: SuperAdminStatsGridProps
             ).toLocaleString()}
           </span>
           <span className="font-sans font-normal text-xs text-gray-400 mt-auto leading-4">
-            {summary.period.isAllTime ? "All time" : `Bookings created ${periodLabel}`} · platform-wide
+            {summary.period.isAllTime ? "All time" : `Bookings created ${periodLabel}`}
+            {cityText || " · platform-wide"}
+            {dayText}
           </span>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 flex flex-col gap-2 min-h-[120px]">
@@ -125,7 +143,7 @@ export default function SuperAdminStatsGrid({ period }: SuperAdminStatsGridProps
             {formatBookingMoney(summary.completedPayoutsAllTimeCents)}
           </span>
           <span className="font-sans font-normal text-xs text-gray-400 mt-auto leading-4">
-            All time · already sent to Businesses (not affected by the period)
+            All time · already sent to Businesses (not affected by period, city or day)
           </span>
         </div>
       </div>

@@ -51,18 +51,26 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
   const isUpcoming = booking.status === "UPCOMING" || booking.status === "PENDING";
   const isTerminal = !isUpcoming;
 
+  const businessProfileImg = business?.media?.find((m) => m.role === "PROFILE")?.url;
+
   return (
-    <div className="w-full bg-[#FFFFFF] border border-[#C6C6CB] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.05)] flex flex-col p-6 gap-6">
+    <div className="w-full bg-[#FFFFFF] border border-[#E2E1E6] rounded-2xl shadow-[0_2px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] transition-all flex flex-col p-6 gap-6 font-manrope">
       <div className="flex flex-col md:flex-row gap-6 w-full items-start">
-        <div className="w-[80px] h-[80px] border border-[#C6C6CB] rounded-lg overflow-hidden flex-shrink-0 relative bg-neutral-100">
-          <Image src="/image/imgOfService.png" alt={business?.name ?? "Business"} fill className="object-cover" sizes="80px" />
+        <div className="w-[88px] h-[88px] border border-[#E2E1E6] rounded-2xl overflow-hidden flex-shrink-0 relative bg-neutral-100 shadow-inner">
+          <Image
+            src={businessProfileImg || "/image/imgOfService.png"}
+            alt={business?.name ?? "Business"}
+            fill
+            className="object-cover"
+            sizes="88px"
+          />
         </div>
 
         <div className="flex-1 flex flex-col gap-3 min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-manrope font-bold text-lg leading-7 text-[#020305]">{booking.primaryServiceName}</h2>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h2 className="font-manrope font-bold text-lg sm:text-xl leading-snug text-[#020305]">{booking.primaryServiceName}</h2>
             {booking.serviceCount > 1 && (
-              <span className="text-xs font-medium text-[#45474B]">+{booking.serviceCount - 1} more</span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-[#F1EFEC] text-[#45474B]">+{booking.serviceCount - 1} more</span>
             )}
             <BookingStatusBadge status={booking.status} />
           </div>
@@ -70,38 +78,38 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
           {booking.packageSessions.map((session, index) => (
             <p
               key={`${session.packageProgressId}-${session.sessionIndex}-${index}`}
-              className="text-sm font-semibold text-[#3760B7] font-manrope"
+              className="text-xs sm:text-sm font-semibold text-[#2E9DA7] font-manrope"
             >
               {formatPackageSessionLabel(session)}
             </p>
           ))}
 
-          <div className="flex items-center gap-1.5 text-sm text-[#111111] font-manrope">
-            <HugeiconsIcon icon={BarCode01Icon} className="w-4 h-4 text-[#141B34]" />
-            <span>{booking.reference}</span>
+          <div className="flex items-center gap-1.5 text-xs font-mono font-semibold text-[#1F2937]">
+            <HugeiconsIcon icon={BarCode01Icon} className="w-3.5 h-3.5 text-[#1F2937]" />
+            <span>Ref: {booking.reference}</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-sm text-[#111111] font-manrope">
-            <div className="flex items-center gap-1">
-              <Image src="/Icons/salonNameIcon.svg" className="w-[13.4px] h-[12px] object-contain" alt="salon" width={24} height={24} />
-              <span className="font-normal">{business?.name ?? (catalogQuery.isLoading ? "Loading…" : "—")}</span>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-[#111111]">
+            <div className="flex items-center gap-1.5 font-bold text-[#020305]">
+              <Image src="/Icons/salonNameIcon.svg" className="w-[14px] h-[13px] object-contain" alt="salon" width={24} height={24} />
+              <span>{business?.name ?? (catalogQuery.isLoading ? "Loading…" : "—")}</span>
             </div>
             {booking.staffNames.length > 0 && (
               <>
                 <span className="text-gray-400">•</span>
-                <span className="font-normal">with {booking.staffNames.join(", ")}</span>
+                <span className="text-[#111827] font-semibold">with {booking.staffNames.join(", ")}</span>
               </>
             )}
           </div>
 
           {fulfilmentLocation && (
-            <div className="flex flex-wrap items-center gap-2 text-sm text-[#111111] font-manrope">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
               {fulfilmentLocation.mode === "TRAVEL_TO_CUSTOMER" ? (
                 <BookingVisitBadge mode={fulfilmentLocation.mode} />
               ) : (
                 <>
                   <BookingVisitBadge mode={fulfilmentLocation.mode} addressText={`${fulfilmentLocation.address.streetName} ${fulfilmentLocation.address.streetNumber}, ${fulfilmentLocation.address.area}`} />
-                  <span className="text-gray-400">•</span>
+                  <span className="text-gray-300">•</span>
                   <a
                     href={buildBookingDirectionsUrl({
                       location: fulfilmentLocation.location,
@@ -109,41 +117,40 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
                     })}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[#2E9DA7] font-normal hover:underline flex items-center gap-1"
+                    className="text-[#2E9DA7] font-semibold hover:underline flex items-center gap-1 text-xs sm:text-sm"
                   >
-                    <HugeiconsIcon icon={Directions01Icon} className="w-4 h-4 text-[#2E9DA7]" />
-                    <span className="text-[#2E9DA7]">Get Directions</span>
+                    <HugeiconsIcon icon={Directions01Icon} className="w-3.5 h-3.5 text-[#2E9DA7]" />
+                    <span>Get Directions</span>
                   </a>
                 </>
               )}
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-2 text-sm text-[#111111] font-manrope font-medium">
-            <div className="flex items-center gap-1">
-              <HugeiconsIcon icon={Calendar03Icon} className="w-4 h-4 text-[#111111]" />
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+            <div className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#020305] bg-[#F7F6F3] px-3 py-1.5 rounded-xl border border-[#EFECE8]">
+              <HugeiconsIcon icon={Calendar03Icon} className="w-4 h-4 text-[#45474B]" />
               <span>{formatBookingDate(booking.schedule.startAt, booking.schedule.timezone)}</span>
             </div>
-            <span className="text-gray-400">•</span>
-            <div className="flex items-center gap-1">
-              <HugeiconsIcon icon={Clock01Icon} className="w-4 h-4 text-[#111111]" />
+            <div className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#020305] bg-[#F7F6F3] px-3 py-1.5 rounded-xl border border-[#EFECE8]">
+              <HugeiconsIcon icon={Clock01Icon} className="w-4 h-4 text-[#45474B]" />
               <span>{formatBookingTimeRange(booking.schedule)}</span>
             </div>
           </div>
         </div>
 
-        <div className="w-full md:w-[209px] flex flex-col gap-3 flex-shrink-0">
+        <div className="w-full md:w-[200px] flex flex-col gap-2.5 flex-shrink-0 pt-1">
           <button
             onClick={() => router.push(`/customer/bookings/view?id=${booking.id}`)}
-            className="w-full py-2 bg-[#FCF8F8] border border-[#C6C6CB] rounded-lg text-sm font-medium text-[#020305] hover:bg-neutral-100 transition-colors cursor-pointer"
+            className="w-full py-2.5 bg-[#0D0D0D] hover:bg-black text-white rounded-xl text-sm font-semibold transition-colors cursor-pointer shadow-sm text-center"
           >
-            View
+            View Details
           </button>
 
           {isTerminal ? (
             <button
               onClick={() => router.push(`/venue?id=${booking.businessId}`)}
-              className="w-full py-2 border rounded-lg text-sm font-medium transition-colors bg-[#8EBAC5] bg-opacity-40 border-[#C6C6CB] text-[#020305] hover:bg-opacity-60 cursor-pointer"
+              className="w-full py-2.5 border border-[#C6C6CB] rounded-xl text-sm font-semibold transition-colors bg-[#FCF8F8] hover:bg-neutral-100 text-[#020305] cursor-pointer text-center"
             >
               Rebook
             </button>
@@ -152,7 +159,7 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
               <button
                 onClick={() => onReschedule(booking.id)}
                 disabled={booking.firstClassPackage}
-                className="w-full py-2 border rounded-lg text-sm font-medium transition-colors bg-[#FCF8F8] border-[#C6C6CB] text-[#020305] hover:bg-neutral-100 cursor-pointer"
+                className="w-full py-2.5 border border-[#C6C6CB] rounded-xl text-sm font-semibold transition-colors bg-[#FCF8F8] hover:bg-neutral-100 text-[#020305] cursor-pointer text-center disabled:opacity-50"
               >
                 Reschedule
               </button>
@@ -160,10 +167,10 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
               <button
                 onClick={() => onCancel(booking.id)}
                 disabled={!isUpcoming || booking.firstClassPackage}
-                className={`w-full py-2 border rounded-lg text-sm font-medium transition-colors ${
+                className={`w-full py-2.5 border rounded-xl text-sm font-semibold transition-colors text-center ${
                   !isUpcoming
-                    ? "bg-red-50/30 border-red-100/50 text-red-300 cursor-not-allowed"
-                    : "bg-[#FCF8F8] border-[rgba(186,26,26,0.2)] text-[#BA1A1A] hover:bg-red-50 cursor-pointer"
+                    ? "bg-red-50/20 border-red-100 text-red-300 cursor-not-allowed"
+                    : "bg-white border-red-200 text-[#BA1A1A] hover:bg-red-50 cursor-pointer"
                 }`}
               >
                 Cancel

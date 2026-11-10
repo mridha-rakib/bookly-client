@@ -25,7 +25,7 @@ import {
   useWaiveFeeMutation,
 } from "@/lib/bookings/hooks";
 import type { BookingCalendarEntry } from "@/lib/api/bookings";
-import { BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingMoney, formatBookingTime, formatCompactPackageSessionLabel, formatPackageSessionLabel } from "@/lib/bookings/format";
+import { BUSINESS_BOOKING_STATUS_LABELS as BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingMoney, formatBookingTime, formatCompactPackageSessionLabel, formatPackageSessionLabel } from "@/lib/bookings/format";
 import { formatClockTime12Hour, formatTime12Hour } from "@/lib/staff/format";
 import { toast } from "@/components/ui/sonner";
 import { toUserMessage } from "@/lib/auth/messages";

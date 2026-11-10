@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  describeOverviewPeriod,
+  platformLastMonth,
+  platformMonthToDate,
+  platformRecentDays,
+  validatePlatformRange,
+} from "@/lib/superAdminDashboard/period";
 import React, { useMemo, useState } from "react";
 import SuperAdminFinanceBanner from "./SuperAdminFinanceBanner";
 import SuperAdminFinanceStats from "./SuperAdminFinanceStats";
@@ -15,6 +22,9 @@ interface SuperAdminFinanceProps {
   setSharedViewingBusinessTab?: (tab: string) => void;
 }
 
+const DEFAULT_FINANCE_DAYS = 90;
+const FINANCE_MAX_RANGE_DAYS = 92;
+
 export default function SuperAdminFinance({
   setActiveTab,
   setSharedViewingBusinessId,
@@ -26,54 +36,45 @@ export default function SuperAdminFinance({
   const [appliedFromDate, setAppliedFromDate] = useState("");
   const [appliedToDate, setAppliedToDate] = useState("");
 
+  // P2.2.2 (E17) — inclusive Cyprus calendar dates (Europe/Nicosia), never browser-local or UTC
+  // arithmetic; the API converts them to the exact `[from, to)` window.
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  const applyDates = (fromStr: string, toStr: string) => {
+    setFromDate(fromStr);
+    setToDate(toStr);
+    setAppliedFromDate(fromStr);
+    setAppliedToDate(toStr);
+    setRangeError(null);
+  };
+
   const handleApplyRange = () => {
-    setAppliedFromDate(fromDate);
-    setAppliedToDate(toDate);
+    const problem = validatePlatformRange(fromDate, toDate, FINANCE_MAX_RANGE_DAYS);
+    setRangeError(problem);
+    if (!problem) applyDates(fromDate, toDate);
   };
 
   const handlePresetLastMonth = () => {
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
-    
-    const fromStr = firstDay.toISOString().split("T")[0];
-    const toStr = lastDay.toISOString().split("T")[0];
-    setFromDate(fromStr);
-    setToDate(toStr);
-    setAppliedFromDate(fromStr);
-    setAppliedToDate(toStr);
+    const { fromDate: fromStr, toDate: toStr } = platformLastMonth();
+    applyDates(fromStr, toStr);
   };
 
   const handlePresetThisMonth = () => {
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    const fromStr = firstDay.toISOString().split("T")[0];
-    const toStr = now.toISOString().split("T")[0];
-    setFromDate(fromStr);
-    setToDate(toStr);
-    setAppliedFromDate(fromStr);
-    setAppliedToDate(toStr);
+    const { fromDate: fromStr, toDate: toStr } = platformMonthToDate();
+    applyDates(fromStr, toStr);
   };
 
-  const handlePresetAllTime = () => {
-    setFromDate("");
-    setToDate("");
-    setAppliedFromDate("");
-    setAppliedToDate("");
-  };
+  // The ledger cannot report an unbounded period (92-day cap), so the default is the last 90
+  // Cyprus days — labelled as such, never as "All time".
+  const handlePresetDefault = () => applyDates("", "");
 
-  // Period-bound cards (Bookly revenue, Collected for businesses) require a bounded [from, to)
-  // range (backend rule: max 92 days) — defaults to the last 90 days when no explicit range is
-  // applied. The genuinely all-time figures (protected earnings, sent to businesses, pending
-  // payouts) are unaffected by this and come back all-time from the backend regardless.
+  // Period-bound cards (Bookly revenue, Collected for businesses, Discounted money) follow this
+  // range. Sent to businesses (all time, E16) and Pending payouts (current) are unaffected.
   const period = useMemo(() => {
-    const now = new Date();
-    const from = appliedFromDate
-      ? new Date(appliedFromDate)
-      : new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-    const to = appliedToDate ? new Date(new Date(appliedToDate).getTime() + 24 * 60 * 60 * 1000) : now;
-    return { from: from.toISOString(), to: to.toISOString() };
+    const fallback = platformRecentDays(DEFAULT_FINANCE_DAYS);
+    return {
+      from: appliedFromDate || fallback.fromDate,
+      to: appliedToDate || fallback.toDate,
+    };
   }, [appliedFromDate, appliedToDate]);
 
   const summaryQuery = useSuperAdminPlatformSummaryQuery(period);
@@ -179,13 +180,22 @@ export default function SuperAdminFinance({
           <div className="hidden xl:block w-px h-5 bg-gray-200" />
 
           <button
-            onClick={handlePresetAllTime}
+            onClick={handlePresetDefault}
             className="bg-[#111111] hover:bg-black text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors w-full xl:w-auto text-center"
           >
-            All time
+            Last {DEFAULT_FINANCE_DAYS} days
           </button>
         </div>
       </div>
+
+      <p className="text-xs text-gray-500 -mt-3" data-testid="finance-period-note">
+        Period: {describeOverviewPeriod({ fromDate: period.from, toDate: period.to })}. Applies to
+        Bookly revenue, Collected for businesses and Discounted money; Sent to businesses is all
+        time and Pending payouts is the current balance.
+      </p>
+      {rangeError && (
+        <p role="alert" className="text-xs text-rose-600 -mt-3">{rangeError}</p>
+      )}
 
       {/* Bookly Protection Banner */}
       <SuperAdminFinanceBanner protectedEarningsAllTimeCents={summaryQuery.data?.protectedEarningsAllTimeCents} />

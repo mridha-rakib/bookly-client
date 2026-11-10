@@ -11,9 +11,9 @@ import type { Recommendation } from "@/components/ServiceCard";
  *   - `image` is the signed cover-photo URL, or null => the card's own initials placeholder.
  *   - `travelsToYou` is the real `visitType`.
  *   - `coordinates` is the real persisted `Business.location`, or undefined — never fabricated.
- * Deliberately NOT set: `distance` (no visitor coordinates exist anywhere in the product, so a
- * distance string would be fabricated) and `hasDiamond`/`noDeposit` (no real per-business
- * backing — they were invented in the old homepage mock).
+ * `distance` is set only from the server's straight-line distance to the visitor's explicitly
+ * shared location (P2.2.3). Not set: `hasDiamond`/`noDeposit` (no real per-business backing —
+ * they were invented in the old homepage mock).
  */
 export const discoveryCardToRecommendation = (card: DiscoveryBusinessCard): Recommendation => ({
   id: card.id,
@@ -34,4 +34,12 @@ export const discoveryCardToRecommendation = (card: DiscoveryBusinessCard): Reco
   image: card.imageUrl ?? null,
   travelsToYou: card.visitType === "TRAVEL_TO_CUSTOMER",
   isAvailable: card.isAvailable,
+  // P2.2.3 — only real server values: straight-line km from the visitor's chosen location, and
+  // the earliest bookable slot the AvailabilityService found for the chosen date/window.
+  ...(card.distanceKm !== undefined ? { distance: `${card.distanceKm.toFixed(1)} km away` } : {}),
+  ...(card.availability
+    ? {
+        availabilityLabel: `${card.availability.serviceName} · from ${new Date(card.availability.firstSlotStartAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Nicosia" })}`,
+      }
+    : {}),
 });

@@ -132,8 +132,26 @@ export interface UpdateBusinessInput {
 export interface GoogleCalendarStatus {
   connected: boolean;
   googleAccountEmail?: string;
-  status?: "CONNECTED" | "ERROR";
+  /** RECONNECT_REQUIRED (P2.2.9): Google revoked/expired access; sync is paused. */
+  status?: "CONNECTED" | "ERROR" | "RECONNECT_REQUIRED";
   connectedAt?: string;
+  needsReconnection?: boolean;
+  lastSyncProblem?: "SYNC_FAILED" | "RECONNECT_REQUIRED";
+  lastSyncFailedAt?: string;
+  lastSuccessfulSyncAt?: string;
+  delivery?: {
+    /** RELIABLE: durable retry/recovery is active. BEST_EFFORT: one attempt per change. */
+    mode: "BEST_EFFORT" | "RELIABLE";
+    available: boolean;
+    pending: number;
+    retrying: number;
+    recoveryRequired: number;
+    /** Subsets of recoveryRequired (P2.2.9.1). */
+    retryLimitReached?: number;
+    permanentFailure?: number;
+    notConnected: number;
+    truncated: boolean;
+  };
 }
 
 // Response of POST /businesses/links/verification and .../:verificationId/resend.

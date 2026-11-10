@@ -160,3 +160,61 @@ describe("receiving side and security boundaries are unchanged", () => {
     expect(sessionChangedPosts()).toBe(0);
   });
 });
+
+
+describe("P2.2.6.1 administrative suspension session teardown", () => {
+  it("a suspended request retires private caches and broadcasts logout without refresh", async () => {
+    store.getState().setAuth(authAs("u1", FAMILY_A));
+    queries.queryClient.setQueryData(["customer", "private"], { secret: true });
+    const previous = queries.queryClient;
+    TestBroadcastChannel.instance.postMessage.mockClear();
+    adapter.mockImplementation((config: InternalAxiosRequestConfig) => Promise.reject(new AxiosError("Suspended", undefined, config, undefined, {
+      status: 403, statusText: "Forbidden", config, headers: {},
+      data: { success: false, message: "Suspended", errors: [{ code: "USER_SUSPENDED", message: "Suspended" }] },
+    })));
+    await expect(api.apiClient.get("/me/bookings")).rejects.toMatchObject({ code: "USER_SUSPENDED" });
+    expect(store.getState()).toMatchObject({ status: "unauthenticated", user: null });
+    expect(tokens.getAccessToken()).toBeNull();
+    expect(queries.queryClient).not.toBe(previous);
+    expect(queries.queryClient.getQueryData(["customer", "private"])).toBeUndefined();
+    expect(TestBroadcastChannel.instance.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "AUTH_LOGGED_OUT" }));
+    expect(adapter).toHaveBeenCalledTimes(1);
+  });
+
+  it("another tab receiving logout clears its session and caches without silently restoring", () => {
+    store.getState().setAuth(authAs("u1", FAMILY_A));
+    queries.queryClient.setQueryData(["customer", "private"], { secret: true });
+    TestBroadcastChannel.instance.receive("AUTH_LOGGED_OUT");
+    expect(store.getState()).toMatchObject({ status: "unauthenticated", user: null });
+    expect(tokens.getAccessToken()).toBeNull();
+    expect(queries.queryClient.getQueryData(["customer", "private"])).toBeUndefined();
+    expect(adapter).not.toHaveBeenCalled();
+  });
+});
+
+
+it("boot restoration refused as suspended routes to account-restricted and clears private state", async () => {
+  const actualWindow = window;
+  const assign = vi.fn();
+  vi.stubGlobal("window", new Proxy(actualWindow, {
+    get(target, property) {
+      if (property === "location") return { pathname: "/customer", origin: "http://localhost:3000", assign };
+      return Reflect.get(target, property, target);
+    },
+  }));
+  try {
+    store.getState().setAuth(authAs("u1", FAMILY_A));
+    queries.queryClient.setQueryData(["customer", "private"], { secret: true });
+    adapter.mockImplementation((config: InternalAxiosRequestConfig) => Promise.reject(new AxiosError("Suspended", undefined, config, undefined, {
+      status: 403, statusText: "Forbidden", config, headers: {},
+      data: { success: false, message: "Suspended", errors: [{ code: "USER_SUSPENDED", message: "Suspended" }] },
+    })));
+    await store.getState().restoreSession();
+    expect(assign).toHaveBeenCalledWith("/account-restricted");
+    expect(store.getState()).toMatchObject({ status: "unauthenticated", user: null });
+    expect(queries.queryClient.getQueryData(["customer", "private"])).toBeUndefined();
+    expect(adapter).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.stubGlobal("window", actualWindow);
+  }
+});

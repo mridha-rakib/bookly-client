@@ -139,6 +139,7 @@ export const useExecutePayoutMutation = () => {
 export const centralPayoutKeys = {
   all: [...superAdminFinanceKeys.all, "centralPayouts"] as const,
   overview: () => [...centralPayoutKeys.all, "overview"] as const,
+  bankAccount: () => [...centralPayoutKeys.all, "bankAccount"] as const,
   list: (page: number, limit: number) => [...centralPayoutKeys.all, "list", page, limit] as const,
 };
 
@@ -148,6 +149,12 @@ export const useCentralPayoutOverviewQuery = () =>
     queryFn: () => centralPayoutsApi.getOverview(),
     retry: false,
   });
+
+export const usePlatformBankAccountQuery = () => useQuery({
+  queryKey: centralPayoutKeys.bankAccount(),
+  queryFn: () => centralPayoutsApi.getBankAccount(),
+  retry: false,
+});
 
 export const useCentralPayoutsQuery = (page: number, limit: number) =>
   useQuery({

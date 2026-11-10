@@ -89,21 +89,30 @@ function BookingsPageContent() {
       />
 
       <main className="flex-1 w-full px-4 md:px-8 xl:px-[65px] flex flex-col z-10 relative items-center">
-        <div className="w-full flex justify-center mb-[72px]">
+        <div className="w-full flex justify-center mb-8 sm:mb-12">
           <SearchBar onSearch={() => {}} />
         </div>
 
         <div className="max-w-[1005px] w-full flex flex-col items-start gap-8 pb-20">
-          <BookingPaymentRecovery serverInbox />
-          <div className="w-full flex flex-col items-start gap-6">
-            <h1 className="font-manrope font-bold text-[30px] leading-[36px] tracking-[-0.75px] text-[#020305] flex items-center">
+          {/* 1. Prominent My Bookings heading & description */}
+          <div className="w-full flex flex-col items-start gap-2">
+            <h1 className="font-manrope font-bold text-3xl sm:text-4xl leading-tight tracking-tight text-[#020305]">
               My Bookings
             </h1>
+            <p className="text-sm sm:text-base text-[#5F5E5A] font-manrope">
+              Manage your upcoming appointments, review past visits, and track your package balances.
+            </p>
+          </div>
 
+          {/* 2. Compact Booking Request Updates area */}
+          <BookingPaymentRecovery serverInbox />
+
+          {/* 3. Appointments / Packages navigation */}
+          <div className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-1">
             <div
               role="tablist"
               aria-label="Booking area"
-              className="grid w-full grid-cols-2 rounded-xl bg-[#F1EFEC] p-1 sm:w-auto sm:min-w-[360px]"
+              className="grid w-full grid-cols-2 rounded-xl bg-[#F1EFEC] p-1 sm:w-auto sm:min-w-[340px] border border-[#E5E5EA]"
             >
               {(["appointments", "packages"] as const).map((view) => (
                 <button
@@ -112,9 +121,9 @@ function BookingsPageContent() {
                   role="tab"
                   aria-selected={activeView === view}
                   onClick={() => setActiveView(view)}
-                  className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors sm:px-6 ${
+                  className={`rounded-lg px-4 py-2.5 text-sm font-bold tracking-tight transition-all duration-150 sm:px-6 cursor-pointer ${
                     activeView === view
-                      ? "bg-white text-[#020305] shadow-sm"
+                      ? "bg-white text-[#020305] shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
                       : "text-[#5F5E5A] hover:text-[#020305]"
                   }`}
                 >
@@ -126,32 +135,35 @@ function BookingsPageContent() {
 
           {activeView === "appointments" ? (
             <>
-              <div className="flex w-full items-start gap-5 overflow-x-auto border-b border-[#C6C6CB] sm:gap-8">
+              {/* 4. Booking status navigation */}
+              <div className="flex w-full items-start gap-6 overflow-x-auto border-b border-[#E2E1E6] sm:gap-8 scrollbar-hide">
                 {(["upcoming", "completed", "noshow", "canceled"] as const).map((tab) => (
                   <button
                     key={tab}
+                    type="button"
                     onClick={() => setActiveTab(tab)}
-                    className={`flex w-auto cursor-pointer flex-col items-center justify-center whitespace-nowrap border-b-2 px-1 pb-3 transition-all duration-200 ${
+                    className={`flex w-auto cursor-pointer flex-col items-center justify-center whitespace-nowrap border-b-2 px-1.5 pb-3 transition-all duration-200 ${
                       activeTab === tab
                         ? "border-[#020305] text-[#020305]"
-                        : "border-transparent text-[#45474B] hover:text-[#020305]"
+                        : "border-transparent text-[#5F5E5A] hover:text-[#020305]"
                     }`}
                   >
-                    <span className={`flex items-center text-center font-manrope text-sm leading-6 sm:text-base ${activeTab === tab ? "font-bold" : "font-normal"}`}>
+                    <span className={`flex items-center text-center font-manrope text-sm leading-6 sm:text-base ${activeTab === tab ? "font-bold text-[#020305]" : "font-medium text-[#5F5E5A]"}`}>
                       {tab === "upcoming" ? "Upcoming" : tab === "completed" ? "Completed" : tab === "noshow" ? "No-show" : "Canceled"}
                     </span>
                   </button>
                 ))}
               </div>
 
+              {/* 5. Booking list / cards */}
               <div className="mt-2 flex w-full flex-col items-start gap-6">
                 {bookingsQuery.isLoading ? (
-                  <div className="w-full rounded-xl border border-[#C6C6CB] bg-white py-20 text-center shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                    <p className="text-lg font-medium text-[#45474B]">Loading your bookings…</p>
+                  <div className="w-full rounded-2xl border border-[#E2E1E6] bg-white py-20 text-center shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+                    <p className="text-base font-medium text-[#45474B]">Loading your bookings…</p>
                   </div>
                 ) : bookingsQuery.isError ? (
-                  <div className="w-full rounded-xl border border-[#C6C6CB] bg-white py-20 text-center shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                    <p className="text-lg font-medium text-[#45474B]">Your bookings could not be loaded right now.</p>
+                  <div className="w-full rounded-2xl border border-[#E2E1E6] bg-white py-20 text-center shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+                    <p className="text-base font-medium text-[#45474B]">Your bookings could not be loaded right now.</p>
                   </div>
                 ) : bookings.length > 0 ? (
                   bookings.map((booking) => (
@@ -166,8 +178,9 @@ function BookingsPageContent() {
                     />
                   ))
                 ) : (
-                  <div className="w-full rounded-xl border border-[#C6C6CB] bg-white py-20 text-center shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                    <p className="text-lg font-medium text-[#45474B]">No bookings found in this category.</p>
+                  <div className="w-full rounded-2xl border border-[#E2E1E6] bg-white py-16 px-6 text-center shadow-[0_1px_3px_rgba(0,0,0,0.03)] flex flex-col items-center justify-center gap-2">
+                    <p className="text-base font-semibold text-[#020305]">No bookings found in this category</p>
+                    <p className="text-sm text-[#5F5E5A] max-w-sm">When you book an appointment, it will appear here with live updates and actions.</p>
                   </div>
                 )}
               </div>

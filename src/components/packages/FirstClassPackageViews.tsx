@@ -6,7 +6,7 @@ import { BooklyApiError } from "@/lib/api/client";
 import { formatBookingMoney } from "@/lib/bookings/format";
 import { packagePrimaryCta, packageSecondaryCta } from "./package-cta";
 
-const card = "min-w-0 rounded-xl border border-[#C6C6CB] bg-white p-5 sm:p-7 font-poppins text-[#020305] break-words";
+const card = "min-w-0 rounded-2xl border border-[#E2E1E6] bg-white p-6 shadow-sm font-manrope text-[#020305] break-words";
 const button = packagePrimaryCta;
 export const PACKAGE_UNAVAILABLE = "First-class Package checkout and session changes are unavailable while genuine purchase consent is being completed. No purchase, charge or booking will be made.";
 export function PackageUnavailable({ reason }: { reason?: PackageOffer["checkoutUnavailableReason"] }) {
@@ -14,7 +14,7 @@ export function PackageUnavailable({ reason }: { reason?: PackageOffer["checkout
     ? "Package purchases are not enabled in this application. You can review the details, but no payment or booking will be made."
     : reason ? "Package checkout is awaiting server readiness. No payment or booking will be made. Please try again after the application is ready."
     : PACKAGE_UNAVAILABLE;
-  return <p role="status" className="rounded-xl bg-[#F5F4EE] p-4 text-sm leading-6">{message}</p>;
+  return <p role="status" className="rounded-xl bg-[#F8F7F4] border border-[#D1D5DB] p-4 text-sm leading-6 text-[#111827] font-semibold">{message}</p>;
 }
 export function PackageReadError({ error, onRetry, retrying = false }: { error: unknown; onRetry?: () => void; retrying?: boolean }) {
   const status = error instanceof BooklyApiError ? error.status : undefined;
@@ -27,59 +27,59 @@ export function PackageReadError({ error, onRetry, retrying = false }: { error: 
 }
 export function OfferCard({ offer, detail = false, showActions = true }: { offer: PackageOffer; detail?: boolean; showActions?: boolean }) {
   return <article className={`${card} flex h-full flex-col gap-5`}>
-    {detail ? <h1 className="font-manrope text-2xl font-bold">{offer.name}</h1> : <h3 className="font-manrope text-xl font-bold">{offer.name}</h3>}
-    {offer.description && <p className="text-sm leading-6 text-[#5F5E5A]">{offer.description}</p>}
-    <ul className="space-y-3">{offer.items.map((item) => <li key={item.itemId} className="flex flex-wrap justify-between gap-2 rounded-xl bg-[#F5F4EE] p-3">
-      <span>{item.name}<span className="block text-xs text-[#5F5E5A]">{item.pricingMode === "PER_PERSON" ? "Group · One credit = one participant / seat" : "Fixed session"}</span></span>
-      <span className="font-semibold">{item.quantity} {item.quantity === 1 ? "session" : "sessions"}</span>
+    {detail ? <h1 className="font-manrope text-2xl font-bold text-[#020305]">{offer.name}</h1> : <h3 className="font-manrope text-xl font-bold text-[#020305]">{offer.name}</h3>}
+    {offer.description && <p className="text-sm leading-6 text-[#1F2937] font-medium">{offer.description}</p>}
+    <ul className="space-y-3">{offer.items.map((item) => <li key={item.itemId} className="flex flex-wrap justify-between gap-2 rounded-xl bg-[#F8F7F4] border border-[#E5E7EB] p-3">
+      <span className="font-bold text-[#020305]">{item.name}<span className="block text-xs font-semibold text-[#1F2937]">{item.pricingMode === "PER_PERSON" ? "Group · One credit = one participant / seat" : "Fixed session"}</span></span>
+      <span className="font-bold text-[#020305]">{item.quantity} {item.quantity === 1 ? "session" : "sessions"}</span>
     </li>)}</ul>
-    <p>{offer.items.reduce((n, item) => n + item.quantity, 0)} total sessions · {formatBookingMoney(offer.bundlePriceCents)}</p>
-    <p className="text-sm">{offer.validity.mode === "FOREVER" ? "No expiry" : `Valid for ${offer.validity.months} calendar months from purchase`}</p>
-    <p className="text-sm text-[#5F5E5A]">{offer.fulfilmentMode === "TRAVEL_TO_CUSTOMER" ? "Travel appointments. Purchased travel rights require exact server terms; current settings are not purchased rights." : "Appointments at the business location."}</p>
+    <p className="font-bold text-[#020305]">{offer.items.reduce((n, item) => n + item.quantity, 0)} total sessions · {formatBookingMoney(offer.bundlePriceCents)}</p>
+    <p className="text-sm font-semibold text-[#1F2937]">{offer.validity.mode === "FOREVER" ? "No expiry" : `Valid for ${offer.validity.months} calendar months from purchase`}</p>
+    <p className="text-sm font-medium text-[#1F2937]">{offer.fulfilmentMode === "TRAVEL_TO_CUSTOMER" ? "Travel appointments. Purchased travel rights require exact server terms; current settings are not purchased rights." : "Appointments at the business location."}</p>
     {showActions && (detail ? <>{offer.checkoutAvailable === true
       ? <Link className={button} href={`/customer/package-consent/${offer.businessId}/${offer.id}`}>Choose initial appointments</Link>
       : <><PackageUnavailable reason={offer.checkoutUnavailableReason} /><button type="button" className={button} disabled>Checkout unavailable</button><InitialAppointmentReview /></>}
-      <p className="text-sm">A package purchase requires at least one real initial appointment. Remaining credits do not create placeholder bookings. Final FIRST / RETURNING classification, upfront amount and penalty disclosures require an authoritative server quote.</p></>
-      : <Link className="mt-auto inline-flex min-h-12 items-center font-semibold text-[#240183] underline" href={`/customer/package-consent/${offer.businessId}/${offer.id}`}>View package details</Link>)}
+      <p className="text-sm font-medium text-[#1F2937]">A package purchase requires at least one real initial appointment. Remaining credits do not create placeholder bookings. Final FIRST / RETURNING classification, upfront amount and penalty disclosures require an authoritative server quote.</p></>
+      : <Link className="mt-auto inline-flex min-h-12 items-center font-bold text-[#1E1B4B] underline" href={`/customer/package-consent/${offer.businessId}/${offer.id}`}>View package details</Link>)}
   </article>;
 }
 function Counter({ label, value }: { label: string; value: number }) {
-  return <div className="rounded-xl bg-[#F5F4EE] p-3"><dt className="text-xs text-[#5F5E5A]">{label}</dt><dd className="mt-1 text-xl font-bold">{value}</dd></div>;
+  return <div className="rounded-xl bg-[#F8F7F4] border border-[#E5E7EB] p-3"><dt className="text-xs font-bold text-[#1F2937] uppercase tracking-wider">{label}</dt><dd className="mt-1 text-xl font-bold text-[#020305]">{value}</dd></div>;
 }
 export function OwnedPackageCard({ pkg, detail = false, sessionReview = true }: { pkg: OwnedPackageView; detail?: boolean; sessionReview?: boolean }) {
   // P2A: credits are usable only when the server verified the original purchase completed.
   const purchaseVerified = pkg.purchaseCompletion === "VERIFIED";
   return <article className={`${card} flex flex-col gap-5`}>
-    {detail ? <h1 className="font-manrope text-2xl font-bold">{pkg.name}</h1> : <h3 className="font-manrope text-xl font-bold">{pkg.name}</h3>}
-    <p className="text-sm">First-class Package · {pkg.status}</p>
-    {!purchaseVerified && <p role="status" className="rounded-xl bg-[#F5F4EE] p-3 text-sm">Purchase not completed. These sessions cannot be booked or used, and no payment is confirmed.</p>}
-    <p className="text-sm">{pkg.validity?.mode === "FOREVER" ? "FOREVER · No expiry" : pkg.validity?.expiresAt ? `Expires ${new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: pkg.validity.timezone ?? "UTC" }).format(new Date(pkg.validity.expiresAt))} (${pkg.validity.timezone})` : "Validity unavailable"}</p>
+    {detail ? <h1 className="font-manrope text-2xl font-bold text-[#020305]">{pkg.name}</h1> : <h3 className="font-manrope text-xl font-bold text-[#020305]">{pkg.name}</h3>}
+    <p className="text-sm font-bold text-[#111827]">First-class Package · <span className="font-semibold text-[#1F2937]">{pkg.status}</span></p>
+    {!purchaseVerified && <p role="status" className="rounded-xl bg-[#FFFBEB] border border-[#F59E0B] p-3 text-sm text-[#92400E] font-semibold">Purchase not completed. These sessions cannot be booked or used, and no payment is confirmed.</p>}
+    <p className="text-sm font-semibold text-[#1F2937]">{pkg.validity?.mode === "FOREVER" ? "FOREVER · No expiry" : pkg.validity?.expiresAt ? `Expires ${new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: pkg.validity.timezone ?? "UTC" }).format(new Date(pkg.validity.expiresAt))} (${pkg.validity.timezone})` : "Validity unavailable"}</p>
     {pkg.items.map((item) => <section key={item.id} aria-label={item.name}>
-      <h4 className="mb-3 font-semibold">{item.name}</h4>
-      {item.group && <p className="mb-3 text-sm">Group · One credit = one participant / seat</p>}
+      <h4 className="mb-3 font-bold text-[#020305]">{item.name}</h4>
+      {item.group && <p className="mb-3 text-sm font-semibold text-[#1F2937]">Group · One credit = one participant / seat</p>}
       <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">{(["total", "remaining", "scheduled", "completed", "forfeited", "expired"] as const).map((key) => <Counter key={key} label={key[0].toUpperCase() + key.slice(1)} value={item[key]} />)}</dl>
-      {detail && item.travelCities.length > 0 && <p className="mt-3 text-sm">Purchased travel rights: {item.travelCities.map((city) => `${city.city} (${formatBookingMoney(city.feeCents)})`).join(", ")}. Current coverage must still permit the appointment.</p>}
+      {detail && item.travelCities.length > 0 && <p className="mt-3 text-sm font-medium text-[#1F2937]">Purchased travel rights: {item.travelCities.map((city) => `${city.city} (${formatBookingMoney(city.feeCents)})`).join(", ")}. Current coverage must still permit the appointment.</p>}
     </section>)}
-    {pkg.purchaseFinancials ? <section aria-label="Original package purchase"><h4 className="font-semibold">Original package purchase</h4>
-      <p className="text-sm leading-7">Bundle {formatBookingMoney(pkg.bundlePriceCents)} · Deposit paid {formatBookingMoney(pkg.purchaseFinancials.depositCents)} · Outstanding {formatBookingMoney(pkg.purchaseFinancials.outstandingBalanceCents)}</p>
-      {!pkg.purchaseFinancials.balanceSettled && <p className="text-sm text-[#BA1A1A]">Remaining sessions are locked until the original balance is settled.</p>}</section>
-      : <p>Original purchase financial status unavailable. No payment confirmation inferred.</p>}
+    {pkg.purchaseFinancials ? <section aria-label="Original package purchase"><h4 className="font-bold text-[#020305]">Original package purchase</h4>
+      <p className="text-sm leading-7 font-bold text-[#111827]">Bundle {formatBookingMoney(pkg.bundlePriceCents)} · Deposit paid {formatBookingMoney(pkg.purchaseFinancials.depositCents)} · Outstanding {formatBookingMoney(pkg.purchaseFinancials.outstandingBalanceCents)}</p>
+      {!pkg.purchaseFinancials.balanceSettled && <p className="text-sm font-bold text-[#BA1A1A]">Remaining sessions are locked until the original balance is settled.</p>}</section>
+      : <p className="text-sm font-medium text-[#1F2937]">Original purchase financial status unavailable. No payment confirmation inferred.</p>}
     {detail ? <>{!pkg.actionsAvailable && <PackageUnavailable />}
-      {pkg.penalty && <p className="text-sm">Independent penalties: appointment cap {formatBookingMoney(pkg.penalty.appointmentCapCents)}, lifetime cap {formatBookingMoney(pkg.penalty.lifetimeCapCents)}. Original upfront does not pay later penalties. Remaining penalty allowance requires a server assessment.</p>}
-      <h2 className="text-lg font-bold">Session history</h2>
+      {pkg.penalty && <p className="text-sm font-medium text-[#1F2937]">Independent penalties: appointment cap {formatBookingMoney(pkg.penalty.appointmentCapCents)}, lifetime cap {formatBookingMoney(pkg.penalty.lifetimeCapCents)}. Original upfront does not pay later penalties. Remaining penalty allowance requires a server assessment.</p>}
+      <h2 className="text-lg font-bold text-[#020305]">Session history</h2>
       <OperationHistory view={pkg} />
-      {pkg.sessions.length === 0 && <p>No associated bookings.</p>}
-      {pkg.sessions.map((session) => <section key={session.bookingId} className="rounded-xl border border-[#C6C6CB] p-4 text-sm leading-7">
-        <p className="font-semibold">{session.status} · {session.booking?.role === "PURCHASE" ? "Original initial appointment" : session.booking?.role === "REDEMPTION" ? "Later redeemed appointment" : "Booking association unavailable"}</p>
-        {session.restoration && <p>Restored credit: {session.restoration}</p>}
-        {session.booking ? <><p>{new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: session.booking.timezone }).format(new Date(session.booking.startAt))} ({session.booking.timezone})</p>
-          <p>Booking status: {session.booking.status} · Occupied duration: {session.booking.occupiedDurationMin ?? "Unavailable"} min</p>
-          <p>Professional: {session.booking.staffName ?? "Name unavailable"}</p>
-          <p>Session Travel {formatBookingMoney(session.booking.travelFeeCents)} · Add-ons {formatBookingMoney(session.booking.addonsSubtotalCents)} · Session outstanding {formatBookingMoney(session.booking.outstandingBalanceCents)}</p>
-          <Link className="text-[#240183] underline" href={`/customer/bookings/view?id=${session.bookingId}`}>View booking</Link></> : <p>Booking details unavailable. No booking success is inferred.</p>}
+      {pkg.sessions.length === 0 && <p className="text-sm font-medium text-[#1F2937]">No associated bookings.</p>}
+      {pkg.sessions.map((session) => <section key={session.bookingId} className="rounded-xl border border-[#D1D5DB] p-4 text-sm leading-7 bg-[#F9FAFB]">
+        <p className="font-bold text-[#020305]">{session.status} · {session.booking?.role === "PURCHASE" ? "Original initial appointment" : session.booking?.role === "REDEMPTION" ? "Later redeemed appointment" : "Booking association unavailable"}</p>
+        {session.restoration && <p className="text-sm font-semibold text-[#1F2937]">Restored credit: {session.restoration}</p>}
+        {session.booking ? <><p className="text-sm font-semibold text-[#111827]">{new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: session.booking.timezone }).format(new Date(session.booking.startAt))} ({session.booking.timezone})</p>
+          <p className="text-sm font-medium text-[#1F2937]">Booking status: <span className="font-bold">{session.booking.status}</span> · Occupied duration: {session.booking.occupiedDurationMin ?? "Unavailable"} min</p>
+          <p className="text-sm font-medium text-[#1F2937]">Professional: <span className="font-bold">{session.booking.staffName ?? "Name unavailable"}</span></p>
+          <p className="text-sm font-semibold text-[#111827]">Session Travel {formatBookingMoney(session.booking.travelFeeCents)} · Add-ons {formatBookingMoney(session.booking.addonsSubtotalCents)} · Session outstanding {formatBookingMoney(session.booking.outstandingBalanceCents)}</p>
+          <Link className="text-[#1E1B4B] font-bold underline hover:text-[#0F0D24]" href={`/customer/bookings/view?id=${session.bookingId}`}>View booking</Link></> : <p className="text-sm text-[#1F2937]">Booking details unavailable. No booking success is inferred.</p>}
       </section>)}
       {purchaseVerified && sessionReview && !pkg.actionsAvailable && <SessionReview remainingItems={pkg.items.filter((i) => i.remaining > 0).map((i) => ({ id: i.id, name: i.name }))} />}
-    </> : <Link className="text-[#240183] underline" href={`/customer/packages/${pkg.id}?kind=first-class`}>View sessions and balances</Link>}
+    </> : <Link className="font-bold text-[#1E1B4B] underline hover:text-[#0F0D24]" href={`/customer/packages/${pkg.id}?kind=first-class`}>View sessions and balances</Link>}
   </article>;
 }
 export interface SessionReviewTerms {

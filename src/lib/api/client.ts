@@ -91,6 +91,25 @@ export const setOnSessionExpired = (handler: () => void): void => {
   onSessionExpired = handler;
 };
 
+/** P2.2.6 — set by the auth store: the account was suspended by Bookly (403 USER_SUSPENDED). */
+let onAccountRestricted: (() => void) | null = null;
+
+export const setOnAccountRestricted = (handler: () => void): void => {
+  onAccountRestricted = handler;
+};
+
+/** P2.2.6 — a Bookly account restriction, as opposed to an ordinary expired session. */
+export const isAccountRestrictedError = (error: unknown): boolean => {
+  const normalized = normalizeApiError(error);
+  return normalized.status === 403 && normalized.code === "USER_SUSPENDED";
+};
+
+/** Ends this tab's session after a terminal auth failure, explaining a restriction when it is one. */
+const endSession = (cause: unknown): void => {
+  if (onAccountRestricted && isAccountRestrictedError(cause)) onAccountRestricted();
+  else onSessionExpired?.();
+};
+
 export const setOnSessionUnverified = (handler: () => void): void => {
   onSessionUnverified = handler;
 };
@@ -150,6 +169,7 @@ export const invalidateInFlightAuth = (): void => {
 const REFRESH_LOCK_NAME = "bookly-auth-refresh";
 
 const SESSION_ESTABLISHING_URLS = [
+  "/auth/two-factor/verify",
   "/auth/customer/login", "/auth/professional/login", "/auth/super-admin/login",
   "/auth/customer/register/verify-phone-otp-complete",
   "/auth/professional/register/complete", "/auth/staff/invitation/accept/password",
@@ -376,6 +396,18 @@ apiClient.interceptors.response.use(
     const generation = config?._authGeneration ?? authGeneration;
     if (generation !== authGeneration) throw new StaleAuthGenerationError();
 
+    // P2.2.6 — a signed-in account suspended mid-session: end it with an explanation instead of
+    // leaving the app "authenticated" while every call fails. Sign-in attempts keep their own
+    // inline message (they are not a session yet).
+    if (
+      status === 403 && config && !isRefreshRequest && !isSessionEstablishing(config) &&
+      isAccountRestrictedError(error)
+    ) {
+      clearAccessToken();
+      onAccountRestricted?.();
+      return Promise.reject(normalizeApiError(error));
+    }
+
     if (status === 401 && config && !config._retry && !isRefreshRequest && !isSessionCookieMutation(config)) {
       config._retry = true;
 
@@ -401,11 +433,11 @@ apiClient.interceptors.response.use(
               return Promise.reject(normalizeApiError(secondRefreshError));
             }
             clearAccessToken();
-            onSessionExpired?.();
+            endSession(secondRefreshError);
           }
         } else if (failureClass === "TERMINAL") {
           clearAccessToken();
-          onSessionExpired?.();
+          endSession(firstRefreshError);
         } else if (failureClass === "TRANSIENT") {
           onSessionUnverified?.();
           // Surface the actual refresh failure (e.g. 429), not the original 401.

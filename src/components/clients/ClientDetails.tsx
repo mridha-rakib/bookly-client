@@ -21,7 +21,7 @@ import {
 import { useBusinessBookingsQuery } from "@/lib/bookings/hooks";
 import ClientPagination from "./ClientPagination";
 import type { BookingStatus } from "@/lib/api/bookings";
-import { BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingDate, formatBookingMoney, formatBookingTime, formatPackageSessionLabel } from "@/lib/bookings/format";
+import { BUSINESS_BOOKING_STATUS_LABELS as BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingDate, formatBookingMoney, formatBookingTime, formatPackageSessionLabel } from "@/lib/bookings/format";
 
 interface ClientDetailsProps {
   readOnly?: boolean;

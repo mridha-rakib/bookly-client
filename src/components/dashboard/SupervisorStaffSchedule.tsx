@@ -13,6 +13,7 @@ import {
   type StaffMember,
 } from "@/lib/api/staff";
 import { useStaffListQuery, usePutStaffScheduleMutation } from "@/lib/staff/hooks";
+import StaffTimeOffPanel from "@/components/dashboard/StaffTimeOffPanel";
 import {
   formatIntervalsList,
   buildShiftTimeSelectOptions,
@@ -56,7 +57,9 @@ const scheduleIdentity = (member: StaffMember) => JSON.stringify([
  * Phase 4A — Supervisor's Staff tab: read the team list and manage schedules (Owner-or-Supervisor
  * per staff.route.ts's new schedule/list gate — see requireOwnedOrSupervisedStaffBusiness).
  * Deliberately excludes every core staff-identity action (add/edit/remove/invite) — those stay
- * BUSINESS_OWNER-only; this screen only ever calls listStaff (read) and putSchedule (write).
+ * BUSINESS_OWNER-only. This screen calls listStaff (read), putSchedule (working hours) and, since
+ * P2.2, the existing Owner-or-Supervisor time-off add/remove endpoints (StaffTimeOffPanel). Time
+ * off and working hours are separate writes: neither sends the other's fields.
  */
 export default function SupervisorStaffSchedule() {
   const { businessId, isLoading: businessIsLoading } = useManagedBusinessContext();
@@ -120,7 +123,7 @@ function SupervisorStaffScheduleContent({ businessId, businessIsLoading }: {
   if (!businessIsLoading && !businessId) {
     return (
       <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] select-none font-poppins relative">
-        <DashboardHeader title="Staff" subtitle="Team members and schedules" />
+        <DashboardHeader title="Staff" subtitle="Team members, schedules and time off" />
         <div className="flex-1 flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
           <span className="font-poppins text-sm font-semibold text-[#5F5E5A]">
             Staff isn&apos;t available for your account
@@ -132,7 +135,7 @@ function SupervisorStaffScheduleContent({ businessId, businessIsLoading }: {
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-y-auto bg-[#FCF8F8] select-none font-poppins relative">
-      <DashboardHeader title="Staff" subtitle="Team members and schedules" />
+      <DashboardHeader title="Staff" subtitle="Team members, schedules and time off" />
       <div className="flex-1 p-6 md:p-8 flex flex-col gap-4">
         {editingStaffId && !editingMember && !staffListQuery.isLoading && (
           <div role="alert">This team member is no longer available. <button type="button" onClick={cancelEditing}>Close editor</button></div>
@@ -140,9 +143,19 @@ function SupervisorStaffScheduleContent({ businessId, businessIsLoading }: {
         {staffListQuery.isLoading ? (
           <span className="font-poppins text-sm text-neutral-400">Loading staff…</span>
         ) : staffListQuery.isError ? (
-          <span className="font-poppins text-sm text-[#BA1A1A]">
-            {toUserMessage(staffListQuery.error)}
-          </span>
+          <div role="alert" className="flex items-center gap-3">
+            <span className="font-poppins text-sm text-[#BA1A1A]">
+              {toUserMessage(staffListQuery.error)}
+            </span>
+            <button
+              type="button"
+              onClick={() => void staffListQuery.refetch()}
+              disabled={staffListQuery.isFetching}
+              className="h-8 px-3 rounded-lg text-xs font-poppins font-semibold text-[#111111] border border-[#D5D2C9] hover:bg-neutral-50 disabled:opacity-50"
+            >
+              {staffListQuery.isFetching ? "Retrying…" : "Retry"}
+            </button>
+          </div>
         ) : members.length === 0 ? (
           <span className="font-poppins text-sm text-[#5F5E5A]">No team members yet.</span>
         ) : (
@@ -366,6 +379,8 @@ function SupervisorStaffScheduleContent({ businessId, businessIsLoading }: {
                   )}
                 </div>
               )}
+
+              {businessId && <StaffTimeOffPanel businessId={businessId} member={member} />}
             </div>
           ))
         )}

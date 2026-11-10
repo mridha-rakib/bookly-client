@@ -80,6 +80,7 @@ const adminDto = (t: Ticket) => ({ ...ticketDto(t), requesterUserId: t.owner, re
   requesterDisplayName: "Casey Customer", requesterEmail: "casey@example.test" });
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/customer/tickets");
   fx.requests = [];
   fx.search = "";
   nextId = 1;

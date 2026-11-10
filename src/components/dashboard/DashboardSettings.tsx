@@ -27,12 +27,11 @@ import { useCurrentUserQuery } from "@/lib/auth/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
 import {
   useBusinessQuery,
-  useConnectGoogleCalendarMutation,
-  useDisconnectGoogleCalendarMutation,
   useGoogleCalendarStatusQuery,
   useMyBusinessProfileQuery,
   useUpdateBusinessMutation,
 } from "@/lib/business/hooks";
+import GoogleCalendarIntegrationCard from "@/components/dashboard/GoogleCalendarIntegrationCard";
 import { useStaffListQuery, useUploadOwnerAvatarMutation } from "@/lib/staff/hooks";
 import {
   cancellationTiers,
@@ -71,12 +70,9 @@ export default function DashboardSettings() {
   const updateBusinessMutation = useUpdateBusinessMutation();
 
   const googleCalendarStatusQuery = useGoogleCalendarStatusQuery(businessId);
-  const connectGoogleCalendarMutation = useConnectGoogleCalendarMutation();
-  const disconnectGoogleCalendarMutation = useDisconnectGoogleCalendarMutation();
   const [googleCalendarRedirectNotice, setGoogleCalendarRedirectNotice] = useState<
     "connected" | "error" | null
   >(null);
-  const [googleCalendarConnectError, setGoogleCalendarConnectError] = useState<string | null>(null);
 
   // Landed back here from the Google Calendar OAuth redirect (see
   // integration.controller.ts's frontendSettingsUrl) — show a one-time result banner and open
@@ -600,63 +596,8 @@ export default function DashboardSettings() {
                 <span className="font-semibold text-sm text-[#1A1A1A]">Connected apps</span>
                 <span className="text-[11px] text-neutral-400 -mt-4">Third-party tools that extend Bookly</span>
 
-                {/* App 1: Google Calendar — real OAuth, one-way Bookly -> Google booking sync */}
-                <div className="border border-neutral-100 rounded-[12px] p-4 flex flex-col items-start gap-3 w-full">
-                  <div className="flex items-center gap-3">
-                    <Image src="/Icons/Google.svg" alt="Google" className="w-8 h-8 object-contain" width={32} height={32} />
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-sm text-[#111111]">Google Calendar</span>
-                      <span className="text-xs text-[#666666] mt-0.5">
-                        {googleCalendarStatusQuery.data?.connected
-                          ? googleCalendarStatusQuery.data.status === "ERROR"
-                            ? `Connected · sync error (${googleCalendarStatusQuery.data.googleAccountEmail})`
-                            : `Connected · ${googleCalendarStatusQuery.data.googleAccountEmail}`
-                          : "Not connected"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {googleCalendarRedirectNotice === "connected" && (
-                    <p className="text-xs text-green-600">Google Calendar connected. New bookings will now sync.</p>
-                  )}
-                  {googleCalendarRedirectNotice === "error" && (
-                    <p className="text-xs text-red-600">Couldn&apos;t connect Google Calendar. Please try again.</p>
-                  )}
-                  {googleCalendarConnectError && (
-                    <p className="text-xs text-red-600">{googleCalendarConnectError}</p>
-                  )}
-
-                  <div className="flex items-center gap-2">
-                    {googleCalendarStatusQuery.data?.connected ? (
-                      <button
-                        disabled={disconnectGoogleCalendarMutation.isPending}
-                        onClick={() => businessId && disconnectGoogleCalendarMutation.mutate(businessId)}
-                        className="px-4 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-[#5B5D58] hover:bg-neutral-50 cursor-pointer disabled:opacity-60"
-                      >
-                        {disconnectGoogleCalendarMutation.isPending ? "Disconnecting..." : "Disconnect"}
-                      </button>
-                    ) : (
-                      <button
-                        disabled={!businessId || connectGoogleCalendarMutation.isPending}
-                        onClick={() => {
-                          if (!businessId) return;
-                          setGoogleCalendarConnectError(null);
-                          connectGoogleCalendarMutation.mutate(businessId, {
-                            onError: (error) =>
-                              setGoogleCalendarConnectError(
-                                error instanceof Error
-                                  ? error.message
-                                  : "Couldn't start the Google Calendar connection. Please try again.",
-                              ),
-                          });
-                        }}
-                        className="px-4 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-[#1A1A1A] hover:bg-neutral-50 cursor-pointer disabled:opacity-60"
-                      >
-                        {connectGoogleCalendarMutation.isPending ? "Redirecting..." : "Connect"}
-                      </button>
-                    )}
-                  </div>
-                </div>
+                {/* App 1: Google Calendar — real OAuth, one-way Bookly -> Google booking sync (P2.2.9 status) */}
+                <GoogleCalendarIntegrationCard businessId={businessId} redirectNotice={googleCalendarRedirectNotice} />
 
                 {/* App 2: Instagram — manual handle link, no OAuth/Graph API */}
                 <div className="border border-neutral-100 rounded-[12px] p-4 flex flex-col items-start gap-3 w-full">

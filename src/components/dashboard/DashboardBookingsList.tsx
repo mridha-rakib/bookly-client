@@ -14,7 +14,7 @@ import { useBusinessBookingsQuery } from "@/lib/bookings/hooks";
 import { useStaffListQuery } from "@/lib/staff/hooks";
 import type { BookingListItem, BookingStatus } from "@/lib/api/bookings";
 import {
-  BOOKING_STATUS_LABELS,
+  BUSINESS_BOOKING_STATUS_LABELS as BOOKING_STATUS_LABELS,
   BOOKING_STATUS_TONE,
   type BookingStatusTone,
   bookingClientBadge,

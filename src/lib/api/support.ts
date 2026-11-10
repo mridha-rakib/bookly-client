@@ -6,7 +6,15 @@ import { apiRequest } from "@/lib/api/client";
  * cross-Business" convention as lib/api/review.ts's Customer endpoints.
  */
 
-export type SupportTicketStatus = "OPEN" | "PENDING" | "RESOLVED" | "CLOSED";
+export const SUPPORT_TICKET_STATUSES = ["OPEN", "PENDING", "RESOLVED", "CLOSED"] as const;
+export type SupportTicketStatus = (typeof SUPPORT_TICKET_STATUSES)[number];
+export type SupportTicketListParams = { page?: number; limit?: number; q?: string; status?: SupportTicketStatus };
+export const normalizeSupportTicketListParams = (params: SupportTicketListParams = {}) => ({
+  page: params.page ?? 1,
+  limit: params.limit ?? 20,
+  ...(params.q?.trim() ? { q: params.q.trim() } : {}),
+  ...(params.status ? { status: params.status } : {}),
+});
 
 export interface SupportTicketStatusHistoryEntry {
   previousStatus: SupportTicketStatus | null;
@@ -73,15 +81,19 @@ export const supportApi = {
   create: (input: CreateSupportTicketInput) =>
     apiRequest<SupportTicket>({ method: "POST", url: "/me/support/tickets", data: input }),
 
-  list: (pagination: { page?: number; limit?: number } = {}) =>
-    apiRequest<SupportTicketListResult>({
+  list: (pagination: SupportTicketListParams = {}) => {
+    const params = normalizeSupportTicketListParams(pagination);
+    return apiRequest<SupportTicketListResult>({
       method: "GET",
       url: "/me/support/tickets",
       params: {
-        ...(pagination.page ? { page: String(pagination.page) } : {}),
-        ...(pagination.limit ? { limit: String(pagination.limit) } : {}),
+        page: String(params.page),
+        limit: String(params.limit),
+        ...(params.q ? { q: params.q } : {}),
+        ...(params.status ? { status: params.status } : {}),
       },
-    }),
+    });
+  },
 
   getById: (ticketId: string) =>
     apiRequest<SupportTicket>({ method: "GET", url: `/me/support/tickets/${ticketId}` }),

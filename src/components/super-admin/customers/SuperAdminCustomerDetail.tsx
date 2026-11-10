@@ -8,14 +8,20 @@ import {
   formatPackageSessionLabel,
 } from "@/lib/bookings/format";
 import { useSuperAdminCustomerDetailQuery } from "@/lib/superAdminCustomers/hooks";
-import { superAdminCustomersApi } from "@/lib/api/superAdminCustomers";
+import { type CustomerEditableField, superAdminCustomersApi } from "@/lib/api/superAdminCustomers";
 import { CustomerAvatar, CustomerExport, CustomerPagination } from "./CustomerShared";
+import CustomerStatusControl from "./CustomerStatusControl";
 
 const statusLabels: Record<string, string> = {
   ACTIVE: "Active",
   DORMANT: "Dormant",
   SUSPENDED: "Suspended",
   DELETED: "Deleted",
+};
+/** Historical Super Admin profile edits are shown read-only (P2.2.8.2.1). */
+const editedFieldLabels: Record<CustomerEditableField, string> = {
+  firstName: "First name",
+  lastName: "Last name",
 };
 const bookingLabels = { ...BOOKING_STATUS_LABELS, CANCELLED_BY_CUSTOMER: "Cancelled by customer" };
 const money = (cents: number, currency: string) =>
@@ -79,7 +85,20 @@ export default function SuperAdminCustomerDetail({
             >
               {statusLabels[customer.status]}
             </span>
+            <div className="ml-auto">
+              <CustomerStatusControl
+                customerId={customer.id}
+                customerName={name}
+                status={customer.status}
+              />
+            </div>
           </div>
+          {customer.status === "SUSPENDED" && (
+            <p className="mb-4 rounded-lg bg-rose-50 p-3 text-xs text-rose-700">
+              Account restricted: this customer can&apos;t sign in or use Bookly. Their bookings,
+              payments and refunds are unchanged and continue to be processed.
+            </p>
+          )}
           <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
             {[
               ["Email", customer.email],
@@ -112,6 +131,53 @@ export default function SuperAdminCustomerDetail({
           </dl>
         </div>
       </section>
+      {Boolean(customer.statusHistory?.length) && (
+        <section
+          aria-label="Account status history"
+          className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm"
+        >
+          <h3 className="mb-3 text-lg font-semibold text-gray-900">Account status history</h3>
+          <ul className="flex flex-col gap-2 text-sm">
+            {customer.statusHistory?.map((entry, index) => (
+              <li key={`${entry.changedAt}:${entry.action}:${index}`} className="text-gray-700">
+                <span className="font-medium text-gray-900">
+                  {entry.action === "SUSPEND" ? "Suspended" : "Reactivated"}
+                </span>{" "}
+                ({statusLabels[entry.fromStatus]} → {statusLabels[entry.toStatus]}) on{" "}
+                {new Date(entry.changedAt).toLocaleString("en-GB", {
+                  timeZone: "Europe/Nicosia",
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}{" "}
+                by a Super Admin
+                {entry.reason && <span className="block text-gray-500">Note: {entry.reason}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {Boolean(customer.profileEditHistory?.length) && (
+        <section
+          aria-label="Profile edit history"
+          className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm"
+        >
+          <h3 className="mb-3 text-lg font-semibold text-gray-900">Profile edit history</h3>
+          <ul className="flex flex-col gap-2 text-sm text-gray-700">
+            {customer.profileEditHistory?.map((entry, index) => (
+              <li key={`${entry.changedAt}:${index}`}>
+                <span className="font-medium text-gray-900">{entry.fields.map((field) => editedFieldLabels[field]).join(" and ")}</span>{" "}
+                updated on{" "}
+                {new Date(entry.changedAt).toLocaleString("en-GB", {
+                  timeZone: "Europe/Nicosia",
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}{" "}
+                by a Super Admin
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section aria-label="Booking statistics" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {[
           ["Total Bookings", customer.statistics.total, "text-indigo-600"],

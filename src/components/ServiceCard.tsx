@@ -29,6 +29,8 @@ export interface Recommendation {
   /** Batch 16 — real Businesses that are no longer publicly visible (e.g. a Favorite whose
    * Business was later SUSPENDED) degrade the card rather than vanish or pretend to be bookable. */
   isAvailable?: boolean;
+  /** P2.2.3 — Explore availability filter: the earliest bookable slot found (indication only). */
+  availabilityLabel?: string;
 }
 
 interface ServiceCardProps {
@@ -198,6 +200,11 @@ export default function ServiceCard({
                 </>
               )}
             </div>
+            {rec.availabilityLabel && (
+              <span className="text-[10px] sm:text-xs font-medium text-[#137333]" data-testid="card-availability">
+                Available: {rec.availabilityLabel}
+              </span>
+            )}
             {rec.lastVisited && (
               <span className="text-[9px] sm:text-[11px] text-[#757575] font-medium pl-4 sm:pl-5">{rec.lastVisited}</span>
             )}

@@ -6,6 +6,13 @@ import SuperAdminBookingsAnalytics from "../bookings/SuperAdminBookingsAnalytics
 import SuperAdminBusinessesAnalytics from "../businesses/SuperAdminBusinessesAnalytics";
 import SuperAdminCustomersAnalytics from "../customers/SuperAdminCustomersAnalytics";
 import SuperAdminCitiesAnalytics from "./SuperAdminCitiesAnalytics";
+import ReportingCityDayFilters, { describeCityDay, type ReportingCityDay } from "../ReportingCityDayFilters";
+import {
+  PLATFORM_REPORTING_TIMEZONE,
+  PLATFORM_REPORTING_TIMEZONE_LABEL,
+  platformLastMonth,
+  platformMonthToDate,
+} from "@/lib/superAdminDashboard/period";
 
 type AnalyticsTab = "Overview" | "Bookings" | "Businesses" | "Customers" | "Cities";
 
@@ -25,13 +32,9 @@ export default function SuperAdminAnalytics({ setActiveTab }: SuperAdminAnalytic
     setAppliedToDate(toDate);
   };
 
+  // P2.2.1 — presets are Cyprus calendar months (Europe/Nicosia), independent of the browser.
   const handlePresetLastMonth = () => {
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
-    
-    const fromStr = firstDay.toISOString().split("T")[0];
-    const toStr = lastDay.toISOString().split("T")[0];
+    const { fromDate: fromStr, toDate: toStr } = platformLastMonth();
     setFromDate(fromStr);
     setToDate(toStr);
     setAppliedFromDate(fromStr);
@@ -39,11 +42,7 @@ export default function SuperAdminAnalytics({ setActiveTab }: SuperAdminAnalytic
   };
 
   const handlePresetThisMonth = () => {
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    const fromStr = firstDay.toISOString().split("T")[0];
-    const toStr = now.toISOString().split("T")[0];
+    const { fromDate: fromStr, toDate: toStr } = platformMonthToDate();
     setFromDate(fromStr);
     setToDate(toStr);
     setAppliedFromDate(fromStr);
@@ -59,11 +58,15 @@ export default function SuperAdminAnalytics({ setActiveTab }: SuperAdminAnalytic
 
   const subTabs: AnalyticsTab[] = ["Overview", "Bookings", "Businesses", "Customers", "Cities"];
 
+  // Inclusive Cyprus calendar dates; the API converts them to Europe/Nicosia day boundaries.
+  // P2.2.4 — City (registered Business city) and Day (Cyprus day of week) join the period, so
+  // every period-bound view sends the same contract as the Overview.
+  const [cityDay, setCityDay] = useState<ReportingCityDay>({});
   const period = {
-    ...(appliedFromDate ? { fromDate: new Date(appliedFromDate).toISOString() } : {}),
-    ...(appliedToDate
-      ? { toDate: new Date(`${appliedToDate}T23:59:59.999Z`).toISOString() }
-      : {}),
+    ...(appliedFromDate ? { fromDate: appliedFromDate } : {}),
+    ...(appliedToDate ? { toDate: appliedToDate } : {}),
+    ...(cityDay.city ? { city: cityDay.city } : {}),
+    ...(cityDay.day ? { day: cityDay.day } : {}),
   };
 
   return (
@@ -75,8 +78,14 @@ export default function SuperAdminAnalytics({ setActiveTab }: SuperAdminAnalytic
             Analytics
           </h2>
           <span className="text-sm text-[#4E5F78]">
-            Platform-wide performance and growth insights
+            Platform-wide performance and growth insights · dates in {PLATFORM_REPORTING_TIMEZONE_LABEL} ({PLATFORM_REPORTING_TIMEZONE})
           </span>
+          {(cityDay.city || cityDay.day) && (
+            <span className="text-xs text-[#4E5F78]" data-testid="analytics-scope-note">
+              Filtered: {describeCityDay(cityDay)}. Bookings, revenue, top services and business
+              metrics follow it; customer metrics are platform-wide.
+            </span>
+          )}
         </div>
 
         {/* Filters Controls block */}
@@ -131,6 +140,14 @@ export default function SuperAdminAnalytics({ setActiveTab }: SuperAdminAnalytic
 
           <div className="hidden xl:block w-px h-5 bg-gray-200" />
 
+          <ReportingCityDayFilters
+            value={cityDay}
+            onChange={setCityDay}
+            className="bg-white border border-[#E2E8F0] rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#314158] focus:outline-none focus:ring-1 focus:ring-[#2E9DA7]"
+          />
+
+          <div className="hidden xl:block w-px h-5 bg-gray-200" />
+
           <button
             onClick={handlePresetAllTime}
             className="bg-[#111111] hover:bg-black text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors w-full xl:w-auto text-center"
@@ -165,7 +182,7 @@ export default function SuperAdminAnalytics({ setActiveTab }: SuperAdminAnalytic
       {activeSubTab === "Bookings" && <SuperAdminBookingsAnalytics period={period} />}
       {activeSubTab === "Businesses" && <SuperAdminBusinessesAnalytics period={period} />}
       {activeSubTab === "Customers" && <SuperAdminCustomersAnalytics period={period} />}
-      {activeSubTab === "Cities" && <SuperAdminCitiesAnalytics setActiveTab={setActiveTab} />}
+      {activeSubTab === "Cities" && <SuperAdminCitiesAnalytics setActiveTab={setActiveTab} period={period} />}
     </div>
   );
 }

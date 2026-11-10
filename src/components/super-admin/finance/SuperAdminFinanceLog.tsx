@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  describeOverviewPeriod,
+  platformRecentDays,
+  validatePlatformRange,
+} from "@/lib/superAdminDashboard/period";
 import React, { useMemo, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Download01Icon, ArrowDown01Icon, ArrowUp01Icon } from "@hugeicons/core-free-icons";
@@ -66,6 +71,9 @@ const formatDate = (iso: string) =>
     new Date(iso),
   );
 
+const DEFAULT_LOG_DAYS = 90;
+const LOG_MAX_RANGE_DAYS = 92;
+
 export default function SuperAdminFinanceLog() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [fromDate, setFromDate] = useState("");
@@ -75,11 +83,13 @@ export default function SuperAdminFinanceLog() {
   const [activeTab, setActiveTab] = useState<TabType>("No-show & late cancel");
   const [page, setPage] = useState(1);
 
+  // P2.2.2 (E17) — inclusive Cyprus calendar dates; the API converts them to the Europe/Nicosia
+  // `[from, to)` window on the ledger `createdAt`. The table and its CSV export send this same
+  // `period`, so both select the same records.
+  const [rangeError, setRangeError] = useState<string | null>(null);
   const period = useMemo(() => {
-    const now = new Date();
-    const from = appliedFromDate ? new Date(appliedFromDate) : new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-    const to = appliedToDate ? new Date(new Date(appliedToDate).getTime() + 24 * 60 * 60 * 1000) : now;
-    return { from: from.toISOString(), to: to.toISOString() };
+    const fallback = platformRecentDays(DEFAULT_LOG_DAYS);
+    return { from: appliedFromDate || fallback.fromDate, to: appliedToDate || fallback.toDate };
   }, [appliedFromDate, appliedToDate]);
 
   const isPayoutsTab = activeTab === "SEPA sent";
@@ -98,6 +108,9 @@ export default function SuperAdminFinanceLog() {
     : (transactionsQuery.data?.pagination.total ?? 0);
 
   const handleApplyFilters = () => {
+    const problem = validatePlatformRange(fromDate, toDate, LOG_MAX_RANGE_DAYS);
+    setRangeError(problem);
+    if (problem) return;
     setAppliedFromDate(fromDate);
     setAppliedToDate(toDate);
     setPage(1);
@@ -191,6 +204,11 @@ export default function SuperAdminFinanceLog() {
                 Apply
               </button>
             </div>
+            <p className="text-xs text-gray-500 mt-2" data-testid="finance-log-period">
+              {appliedFromDate ? "" : `Last ${DEFAULT_LOG_DAYS} days · `}
+              {describeOverviewPeriod({ fromDate: period.from, toDate: period.to })}
+            </p>
+            {rangeError && <p role="alert" className="text-xs text-rose-600 mt-1">{rangeError}</p>}
           </div>
           ) : null}
 

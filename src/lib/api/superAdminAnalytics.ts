@@ -5,10 +5,18 @@ import type { BusinessStatus } from "@/lib/api/superAdminBusiness";
 /** Batch 12 — Super Admin Dashboard + Analytics real backend surface. Matches
  * api/src/modules/super-admin/super-admin-*-analytics.service.ts DTOs exactly. */
 
+/** P2.2.1 — inclusive Cyprus calendar dates (`YYYY-MM-DD`); the API applies Europe/Nicosia
+ * day boundaries. Monthly series points are Cyprus calendar months. */
 export interface AnalyticsPeriodParams {
   fromDate?: string;
   toDate?: string;
+  /** P2.2.4 — Business registered city (one of the reporting-cities options). */
+  city?: string;
+  /** P2.2.4 — Cyprus day of week of each metric's own event timestamp. */
+  day?: ReportingDay;
 }
+
+export type ReportingDay = "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY" | "SUNDAY";
 
 export interface MonthlySeriesPoint {
   year: number;
@@ -17,7 +25,7 @@ export interface MonthlySeriesPoint {
 }
 
 export interface SuperAdminBookingAnalytics {
-  period: { from: string; to: string };
+  period: { from: string; to: string; timezone: string };
   totalCount: number;
   statusCounts: Record<BookingStatus, number>;
   monthlySeries: MonthlySeriesPoint[];
@@ -39,7 +47,7 @@ export interface SuperAdminTopBusinessRow {
 }
 
 export interface SuperAdminBusinessAnalytics {
-  period: { from: string; to: string };
+  period: { from: string; to: string; timezone: string };
   createdOverTime: MonthlySeriesPoint[];
   statusCounts: Record<BusinessStatus, number> & { total: number };
   topByBookings: SuperAdminTopBusinessRow[];
@@ -48,7 +56,7 @@ export interface SuperAdminBusinessAnalytics {
 }
 
 export interface SuperAdminCustomerAnalytics {
-  period: { from: string; to: string };
+  period: { from: string; to: string; timezone: string };
   registeredOverTime: MonthlySeriesPoint[];
   registeredTotal: number;
   activatedCount: number;
@@ -65,7 +73,7 @@ export interface SuperAdminTopServiceRow {
 }
 
 export interface SuperAdminTopServicesResult {
-  period: { from: string; to: string };
+  period: { from: string; to: string; timezone: string };
   services: SuperAdminTopServiceRow[];
 }
 
@@ -125,9 +133,15 @@ export const superAdminAnalyticsApi = {
       params: {
         ...(period.fromDate ? { fromDate: period.fromDate } : {}),
         ...(period.toDate ? { toDate: period.toDate } : {}),
+        ...(period.city ? { city: period.city } : {}),
+        ...(period.day ? { day: period.day } : {}),
         ...(period.limit ? { limit: String(period.limit) } : {}),
       },
     }),
+
+  /** P2.2.4 — distinct registered Business cities (names only). */
+  getReportingCities: () =>
+    apiRequest<{ cities: string[] }>({ method: "GET", url: "/super-admin/analytics/reporting-cities" }),
 
   getCityCoverage: () =>
     apiRequest<SuperAdminCityCoverageResult>({ method: "GET", url: "/super-admin/analytics/cities" }),

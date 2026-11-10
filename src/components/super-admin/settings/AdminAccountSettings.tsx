@@ -183,8 +183,9 @@ export default function AdminAccountSettings({
         </div>
 
         {/* Language Row */}
+        <p className="text-xs text-gray-500">Saves your account preference. The Bookly interface is currently available in English only.</p>
         <div className="flex flex-col sm:flex-row sm:items-center py-4 gap-2 min-h-[58px]">
-          <div className="w-full sm:w-1/3 text-sm font-medium text-[#6B7280]">Default language</div>
+          <div className="w-full sm:w-1/3 text-sm font-medium text-[#6B7280]">Language preference</div>
           <div className="w-full sm:w-1/3 text-sm text-[#111827]">
             {language === "EN" ? "English (EN)" : "Greek (GR)"}
           </div>
@@ -192,6 +193,7 @@ export default function AdminAccountSettings({
             <div className="w-full sm:w-1/3 flex sm:justify-start">
               <div className="inline-flex bg-[#F9FAFB] border border-[#E5E7EB] rounded-full p-0.5">
                 <button
+                  aria-pressed={language === "EN"}
                   onClick={() => setLanguage("EN")}
                   disabled={savingLanguage}
                   className={`px-3 py-1 text-xs font-semibold rounded-full border-none cursor-pointer transition-all disabled:cursor-not-allowed ${
@@ -203,6 +205,7 @@ export default function AdminAccountSettings({
                   EN
                 </button>
                 <button
+                  aria-pressed={language === "GR"}
                   onClick={() => setLanguage("GR")}
                   disabled={savingLanguage}
                   className={`px-3 py-1 text-xs font-semibold rounded-full border-none cursor-pointer transition-all disabled:cursor-not-allowed ${

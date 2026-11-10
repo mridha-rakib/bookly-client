@@ -9,6 +9,28 @@ import {
   MapsIcon,
 } from "@hugeicons/core-free-icons";
 import { BUSINESS_CITIES } from "@/lib/constants/cities";
+import {
+  AvailabilityControl,
+  DistanceControl,
+  type ExploreAvailability,
+  type ExploreQuickAction,
+  QuickActionsControl,
+} from "@/components/explore/DiscoveryControls";
+import type { VisitorLocationStatus } from "@/lib/discovery/location";
+
+/** P2.2.3 — state and handlers for the server-backed Quick actions / Distance / Availability. */
+export interface ExploreDiscoveryControlsProps {
+  quickAction: ExploreQuickAction | null;
+  onQuickAction: (action: ExploreQuickAction | null) => void;
+  locationStatus: VisitorLocationStatus;
+  hasOrigin: boolean;
+  onRequestLocation: () => void;
+  onClearLocation: () => void;
+  radiusKm: number | null;
+  setRadiusKm: (value: number | null) => void;
+  availability: ExploreAvailability | null;
+  setAvailability: (value: ExploreAvailability | null) => void;
+}
 
 export interface FilterSidebarProps {
   searchQuery: string;
@@ -28,6 +50,7 @@ export interface FilterSidebarProps {
   showMap: boolean;
   setShowMap: (val: boolean) => void;
   onApplyFilters: () => void;
+  discovery: ExploreDiscoveryControlsProps;
 }
 
 export default function FilterSidebar({
@@ -46,6 +69,7 @@ export default function FilterSidebar({
   showMap,
   setShowMap,
   onApplyFilters,
+  discovery,
 }: FilterSidebarProps) {
   return (
     <aside className="hidden lg:flex flex-col items-start px-3 gap-6 w-[284px] bg-white border border-[#E5E5E5]/50 rounded-2xl py-6 shrink-0 shadow-sm sticky top-24 h-fit">
@@ -136,24 +160,7 @@ export default function FilterSidebar({
       <hr className="w-full border-t border-neutral-100" />
 
       {/* Quick Actions Section */}
-      <div className="flex flex-col gap-3 w-full">
-        <span className="font-semibold text-xs text-black uppercase tracking-wider">Quick actions</span>
-        <p className="text-xs text-[#757575]">Quick action filters are unavailable. Use search, category or city filters.</p>
-        <div className="flex flex-col gap-2.5">
-          {["Recommended", "Services near you", "Trending services"].map((action, idx) => (
-            <label key={idx} className="flex items-center gap-2.5 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={false}
-                disabled
-                aria-label={`${action} (unavailable)`}
-                className="w-4 h-4 border border-neutral-300 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 accent-black"
-              />
-              <span className="text-[#4E5F78]">{action}</span>
-            </label>
-          ))}
-        </div>
-      </div>
+      <QuickActionsControl active={discovery.quickAction} onSelect={discovery.onQuickAction} />
 
       <hr className="w-full border-t border-neutral-100" />
 
@@ -201,49 +208,19 @@ export default function FilterSidebar({
       <hr className="w-full border-t border-neutral-100" />
 
       {/* Distance Section */}
-      <div className="flex flex-col gap-3 w-full">
-        <span className="font-semibold text-xs text-black uppercase tracking-wider">Distance</span>
-        <p className="text-xs text-[#757575]">Distance filtering is unavailable. Choose a city instead.</p>
-        <div className="flex flex-col gap-2 w-full px-1">
-          <input
-            type="range"
-            min="1"
-            max="30"
-            value={15}
-            disabled
-            aria-label="Distance (unavailable)"
-
-            className="w-full h-1 bg-[#EDEDED] rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 accent-black"
-          />
-          <div className="flex justify-between text-[10px] text-[#757575] font-medium mt-1">
-            <span>5 km</span>
-            <span>10 km</span>
-            <span>20 km</span>
-          </div>
-        </div>
-      </div>
+      <DistanceControl
+          locationStatus={discovery.locationStatus}
+          hasOrigin={discovery.hasOrigin}
+          onRequestLocation={discovery.onRequestLocation}
+          onClearLocation={discovery.onClearLocation}
+          radiusKm={discovery.radiusKm}
+          setRadiusKm={discovery.setRadiusKm}
+        />
 
       <hr className="w-full border-t border-neutral-100" />
 
       {/* Availability Section */}
-      <div className="flex flex-col gap-3 w-full">
-        <span className="font-semibold text-xs text-black uppercase tracking-wider">Availability</span>
-        <p className="text-xs text-[#757575]">Choose a service and appointment time on a Business page to check availability.</p>
-        <div className="flex flex-col gap-2.5">
-          {["Today", "This week", "This weekend", "Weekends", "Evenings"].map((avail, idx) => (
-            <label key={idx} className="flex items-center gap-2.5 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={false}
-                disabled
-                aria-label={`${avail} (unavailable)`}
-                className="w-4 h-4 border border-neutral-300 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 accent-black"
-              />
-              <span className="text-[#4E5F78]">{avail}</span>
-            </label>
-          ))}
-        </div>
-      </div>
+      <AvailabilityControl value={discovery.availability} onChange={discovery.setAvailability} />
 
       <hr className="w-full border-t border-neutral-100" />
 

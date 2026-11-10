@@ -8,6 +8,28 @@ import {
   StarIcon,
 } from "@hugeicons/core-free-icons";
 import { BUSINESS_CITIES } from "@/lib/constants/cities";
+import {
+  AvailabilityControl,
+  DistanceControl,
+  type ExploreAvailability,
+  type ExploreQuickAction,
+  QuickActionsControl,
+} from "@/components/explore/DiscoveryControls";
+import type { VisitorLocationStatus } from "@/lib/discovery/location";
+
+/** P2.2.3 — state and handlers for the server-backed Quick actions / Distance / Availability. */
+export interface ExploreDiscoveryControlsProps {
+  quickAction: ExploreQuickAction | null;
+  onQuickAction: (action: ExploreQuickAction | null) => void;
+  locationStatus: VisitorLocationStatus;
+  hasOrigin: boolean;
+  onRequestLocation: () => void;
+  onClearLocation: () => void;
+  radiusKm: number | null;
+  setRadiusKm: (value: number | null) => void;
+  availability: ExploreAvailability | null;
+  setAvailability: (value: ExploreAvailability | null) => void;
+}
 
 export interface MobileFilterDrawerProps {
   showMobileFilters: boolean;
@@ -25,6 +47,7 @@ export interface MobileFilterDrawerProps {
   toggleRating: (rating: number) => void;
   handleClearAll: () => void;
   onApplyFilters: () => void;
+  discovery: ExploreDiscoveryControlsProps;
 }
 
 export default function MobileFilterDrawer({
@@ -43,6 +66,7 @@ export default function MobileFilterDrawer({
   toggleRating,
   handleClearAll,
   onApplyFilters,
+  discovery,
 }: MobileFilterDrawerProps) {
   return (
     <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex justify-start transition-opacity duration-300 ease-out xl:hidden ${showMobileFilters ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
@@ -130,22 +154,7 @@ export default function MobileFilterDrawer({
 
           {/* Quick Actions filter mobile */}
           <div className="flex flex-col gap-4 bg-white p-4 rounded-xl border border-neutral-100">
-            <span className="font-semibold text-xs text-black uppercase tracking-wider">Quick actions</span>
-            <p className="text-xs text-[#757575]">Quick action filters are unavailable. Use search, category or city filters.</p>
-            <div className="flex flex-col gap-2.5">
-              {["Recommended", "Services near you", "Trending services"].map((action, idx) => (
-                <label key={idx} className="flex items-center gap-2.5 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={false}
-                    disabled
-                    aria-label={`${action} (unavailable)`}
-                    className="w-4 h-4 border border-neutral-300 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 accent-black"
-                  />
-                  <span className="text-[#4E5F78]">{action}</span>
-                </label>
-              ))}
-            </div>
+            <QuickActionsControl active={discovery.quickAction} onSelect={discovery.onQuickAction} />
           </div>
 
           {/* Locations filter mobile */}
@@ -189,45 +198,19 @@ export default function MobileFilterDrawer({
 
           {/* Distance Filter mobile */}
           <div className="flex flex-col gap-4 bg-white p-4 rounded-xl border border-neutral-100">
-            <span className="font-semibold text-xs text-black uppercase tracking-wider">Distance</span>
-            <p className="text-xs text-[#757575]">Distance filtering is unavailable. Choose a city instead.</p>
-            <div className="flex flex-col gap-2 w-full px-1">
-              <input
-                type="range"
-                min="1"
-                max="30"
-                value={15}
-                disabled
-            aria-label="Distance (unavailable)"
-
-                className="w-full h-1 bg-[#EDEDED] rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 accent-black"
-              />
-              <div className="flex justify-between text-[10px] text-[#757575] font-medium mt-1">
-                <span>5 km</span>
-                <span>10 km</span>
-                <span>20 km</span>
-              </div>
-            </div>
+            <DistanceControl
+              locationStatus={discovery.locationStatus}
+              hasOrigin={discovery.hasOrigin}
+              onRequestLocation={discovery.onRequestLocation}
+              onClearLocation={discovery.onClearLocation}
+              radiusKm={discovery.radiusKm}
+              setRadiusKm={discovery.setRadiusKm}
+            />
           </div>
 
           {/* Availability filter mobile */}
           <div className="flex flex-col gap-4 bg-white p-4 rounded-xl border border-neutral-100">
-            <span className="font-semibold text-xs text-black uppercase tracking-wider">Availability</span>
-            <p className="text-xs text-[#757575]">Choose a service and appointment time on a Business page to check availability.</p>
-            <div className="flex flex-col gap-2.5">
-              {["Today", "This week", "This weekend", "Weekends", "Evenings"].map((avail, idx) => (
-                <label key={idx} className="flex items-center gap-2.5 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={false}
-                    disabled
-                    aria-label={`${avail} (unavailable)`}
-                    className="w-4 h-4 border border-[#ACAAB4] rounded accent-black cursor-pointer"
-                  />
-                  <span className="text-[#4E5F78]">{avail}</span>
-                </label>
-              ))}
-            </div>
+            <AvailabilityControl value={discovery.availability} onChange={discovery.setAvailability} />
           </div>
 
         </div>

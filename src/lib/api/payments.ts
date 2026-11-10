@@ -12,7 +12,14 @@ export interface CreateSetupIntentResponse {
 
 export interface SavedCardStatus {
   hasSavedCard: boolean;
-  card?: { brand: string; last4: string; expMonth: number; expYear: number };
+  /** `paymentMethodId` (a Stripe `pm_…` id, never card data) addresses a removal request. */
+  card?: { paymentMethodId?: string; brand: string; last4: string; expMonth: number; expYear: number };
+}
+
+export interface RemoveSavedCardResult {
+  removed: true;
+  paymentMethodId: string;
+  alreadyDetached: boolean;
 }
 
 export interface PaymentMethodSummary {
@@ -36,4 +43,11 @@ export const paymentsApi = {
 
   getSavedCardStatus: () =>
     apiRequest<SavedCardStatus>({ method: "GET", url: "/payments/card-status" }),
+
+  /** P2.2.5 — detaches the saved card at Stripe and removes it from Bookly (server-authorized). */
+  removeSavedCard: (paymentMethodId: string) =>
+    apiRequest<RemoveSavedCardResult>({
+      method: "DELETE",
+      url: `/payments/payment-methods/${encodeURIComponent(paymentMethodId)}`,
+    }),
 };

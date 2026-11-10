@@ -188,3 +188,59 @@ it("does not leak account A state or a late save into a remounted account B cach
   expect(host.querySelector('[role="alert"]')).toBeNull();
   oldCache.clear();
 });
+
+function languagePicker() {
+  return host.querySelector<HTMLSelectElement>("#account-language")!;
+}
+const chooseLanguage = async (value: string) => {
+  await act(async () => {
+    languagePicker().value = value;
+    languagePicker().dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await flush();
+};
+it("restores the persisted language after a fresh settings session and explains English coverage", async () => {
+  const saved = fixture(); saved.profile!.defaultLanguage = "GR";
+  vi.mocked(authApi.me).mockResolvedValue(saved);
+  await render();
+  expect(languagePicker().value).toBe("GR");
+  expect(Array.from(languagePicker().options, option => option.value)).toEqual(["EN", "GR"]);
+  expect(host.textContent).toContain("available in English only");
+  cache = newCache(); await render("fresh-session");
+  expect(languagePicker().value).toBe("GR");
+  expect(authApi.updateMyProfile).not.toHaveBeenCalled();
+});
+it("saves only the self-service language field and renders the authoritative response", async () => {
+  const saved = fixture(); saved.profile!.defaultLanguage = "GR";
+  vi.mocked(authApi.updateMyProfile).mockResolvedValue(saved);
+  await render(); await chooseLanguage("GR");
+  expect(authApi.updateMyProfile).toHaveBeenCalledWith({ defaultLanguage: "GR" }, expect.anything());
+  expect(cache.getQueryData(["auth", "me"])).toEqual(saved);
+  expect(languagePicker().value).toBe("GR");
+  expect(host.textContent).toContain("Your language preference has been updated.");
+});
+it("keeps the confirmed language and shows an error when saving fails", async () => {
+  vi.mocked(authApi.updateMyProfile).mockRejectedValue(new Error("Unavailable"));
+  await render(); await chooseLanguage("GR");
+  expect(languagePicker().value).toBe("EN");
+  expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  expect(host.textContent).not.toContain("Your language preference has been updated.");
+  expect(languagePicker().disabled).toBe(false);
+});
+it("does not report success when the server retains the previous language", async () => {
+  vi.mocked(authApi.updateMyProfile).mockResolvedValue(fixture());
+  await render(); await chooseLanguage("GR");
+  expect(languagePicker().value).toBe("EN");
+  expect(host.textContent).toContain("was not saved");
+  expect(host.textContent).not.toContain("Your language preference has been updated.");
+});
+it("locks language changes during a pending write and rejects unsupported selections", async () => {
+  const pending = deferred<CurrentUserResponse>();
+  vi.mocked(authApi.updateMyProfile).mockReturnValue(pending.promise);
+  await render(); await chooseLanguage("FR");
+  expect(authApi.updateMyProfile).not.toHaveBeenCalled();
+  await chooseLanguage("GR");
+  expect(languagePicker().disabled).toBe(true);
+  await act(async () => pending.resolve(fixture())); await flush();
+  expect(languagePicker().disabled).toBe(false);
+});

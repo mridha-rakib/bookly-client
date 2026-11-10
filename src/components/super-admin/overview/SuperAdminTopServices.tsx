@@ -3,14 +3,26 @@
 import React from "react";
 import { useSuperAdminTopServicesQuery } from "@/lib/superAdminAnalytics/hooks";
 import { describeOverviewPeriod, type OverviewPeriodParams } from "@/lib/superAdminDashboard/period";
+import { describeCityDay, type ReportingCityDay } from "../ReportingCityDayFilters";
 
 /** Batch 12 — real, server-aggregated Top Services (deferred in Batch 11 for lack of a real
  * primitive). Each row's name comes from the persisted booking snapshot, never a live Service
  * lookup, so an archived/deleted Service still resolves correctly. */
-export default function SuperAdminTopServices({ period }: { period?: OverviewPeriodParams }) {
-  // P1.9 — Bookings created in the selected Overview period (all time when none).
-  const { data, isLoading, isError, isFetching, refetch } = useSuperAdminTopServicesQuery({ ...period, limit: 6 });
-  const periodLabel = describeOverviewPeriod(period);
+export default function SuperAdminTopServices({
+  period,
+  filters = {},
+}: {
+  period?: OverviewPeriodParams;
+  filters?: ReportingCityDay;
+}) {
+  // Bookings created in the selected Overview period (all time when none), narrowed by the
+  // registered Business city and the Cyprus day of week of createdAt (P2.2.4).
+  const { data, isLoading, isError, isFetching, refetch } = useSuperAdminTopServicesQuery({
+    ...period,
+    ...filters,
+    limit: 6,
+  });
+  const periodLabel = [describeOverviewPeriod(period), describeCityDay(filters)].filter(Boolean).join(" · ");
 
   return (
     <div className="bg-white rounded-xl p-5 shadow-[0px_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 flex flex-col gap-4 w-full h-full">

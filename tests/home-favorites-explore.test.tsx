@@ -143,12 +143,12 @@ describe("persistent Business favorites", () => {
 });
 
 describe("truthful Explore filters", () => {
-  it("disables unsupported controls on desktop/mobile while supported filters change transport parameters and reset paging", async () => {
+  it("has no unavailable controls on desktop/mobile while filters change transport parameters and reset paging", async () => {
     await render(<ExplorePage />); await waitFor(() => expect(searches()).toHaveLength(1));
-    const unsupported = [...host.querySelectorAll<HTMLInputElement>('input[aria-label$="(unavailable)"]')];
-    expect(unsupported).toHaveLength(18); expect(unsupported.every(input => input.disabled)).toBe(true);
-    expect(host.textContent).toContain("Distance filtering is unavailable");
-    expect(host.textContent).toContain("appointment time on a Business page");
+    // P2.2.3 — Quick actions, Distance and Availability are now server-backed (no disabled stand-ins).
+    expect(host.querySelectorAll('input[aria-label$="(unavailable)"]')).toHaveLength(0);
+    expect(host.textContent).not.toContain("Distance filtering is unavailable");
+    expect(host.querySelectorAll('[aria-label="Recommended"]')).toHaveLength(2);
     await click(host.querySelector('[aria-label="Next page"]')!); await waitFor(() => expect(searches().at(-1)?.params?.page).toBe("2"));
     const checkbox = (label: string) => [...host.querySelectorAll("label")].find(node => node.textContent?.trim() === label)!.querySelector("input")!;
     await click(checkbox("Beauty")); await waitFor(() => expect(searches().at(-1)?.params).toMatchObject({ category: "Beauty", page: "1" }));

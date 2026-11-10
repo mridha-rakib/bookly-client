@@ -4,6 +4,22 @@ import { apiRequest } from "@/lib/api/client";
 // api/src/modules/central-payout/central-payout.route.ts. Amounts are integer minor units.
 
 export type CentralStripeMode = "TEST" | "LIVE";
+export interface PlatformBankAccountSummary {
+  mode: CentralStripeMode | null;
+  managedBy: "STRIPE";
+  state: "NOT_CONFIGURED" | "NO_DESTINATION" | "UNAVAILABLE" | "CONFIGURED";
+  payoutsEnabled: boolean | null;
+  inventoryComplete?: boolean;
+  unavailableReason?: "PERMISSIONS" | "PROVIDER" | "INCOMPLETE";
+  destinations: {
+    bankName: string | null;
+    last4: string | null;
+    currency: string | null;
+    country: string | null;
+    status: string | null;
+    defaultForCurrency: boolean | null;
+  }[];
+}
 export type CentralPayoutState = "PREPARED" | "UNKNOWN" | "SUBMITTED" | "REJECTED";
 export type ProviderPayoutStatus = "pending" | "in_transit" | "paid" | "failed" | "canceled";
 
@@ -14,7 +30,7 @@ export interface CentralBankDestination {
   currency: string;
   country: string;
   status: string;
-  defaultForCurrency: boolean;
+  defaultForCurrency: boolean | null;
   eligible: boolean;
 }
 
@@ -67,6 +83,9 @@ export interface InitiateCentralPayoutInput {
 }
 
 export const centralPayoutsApi = {
+  getBankAccount: () => apiRequest<PlatformBankAccountSummary>({
+    method: "GET", url: "/super-admin/finance/withdrawals/bank-account",
+  }),
   getOverview: () =>
     apiRequest<CentralPayoutOverview>({ method: "GET", url: "/super-admin/finance/withdrawals/overview" }),
   list: (page: number, limit: number) =>

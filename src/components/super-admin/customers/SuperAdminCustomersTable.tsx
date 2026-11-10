@@ -3,6 +3,7 @@
 import React from "react";
 import type { SuperAdminCustomerListItem } from "@/lib/api/superAdminCustomers";
 import { CustomerAvatar } from "./CustomerShared";
+import CustomerStatusControl from "./CustomerStatusControl";
 
 interface SuperAdminCustomersTableProps {
   customers: SuperAdminCustomerListItem[];
@@ -115,6 +116,9 @@ export default function SuperAdminCustomersTable({
                       >
                         View Customer
                       </button>
+                      <div className="mt-2">
+                        <CustomerStatusControl customerId={c.id} customerName={name} status={c.status} />
+                      </div>
                     </details>
                   </td>
                 </tr>

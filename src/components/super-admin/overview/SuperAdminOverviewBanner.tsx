@@ -5,16 +5,16 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Tick01Icon } from "@hugeicons/core-free-icons";
 import { formatBookingMoney } from "@/lib/bookings/format";
 import { useSuperAdminPlatformSummaryQuery } from "@/lib/superAdminFinance/hooks";
+import { platformRecentDays } from "@/lib/superAdminDashboard/period";
 
 /** Batch 11 — reuses the exact same platform Finance summary primitive as the Finance tab
  * (protectedEarningsAllTimeCents), never a duplicate calculation. */
 export default function SuperAdminOverviewBanner() {
+  // Only the all-time protected-earnings figure is read here; the summary endpoint still needs a
+  // bounded period, so it gets the same last-90-Cyprus-days window as the Finance tab (P2.2.2).
   const period = useMemo(() => {
-    const now = new Date();
-    return {
-      from: new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-      to: now.toISOString(),
-    };
+    const { fromDate, toDate } = platformRecentDays(90);
+    return { from: fromDate, to: toDate };
   }, []);
   const { data: summary } = useSuperAdminPlatformSummaryQuery(period);
 

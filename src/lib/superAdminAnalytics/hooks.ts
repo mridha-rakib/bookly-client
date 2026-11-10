@@ -15,8 +15,17 @@ export const superAdminAnalyticsKeys = {
   topServices: (period: AnalyticsPeriodParams & { limit?: number }) =>
     [...superAdminAnalyticsKeys.all, "topServices", period] as const,
   cities: () => [...superAdminAnalyticsKeys.all, "cities"] as const,
+  reportingCities: () => [...superAdminAnalyticsKeys.all, "reportingCities"] as const,
   recentActivity: (limit?: number) => [...superAdminAnalyticsKeys.all, "recentActivity", limit] as const,
 };
+
+/** P2.2.4 — City options for the Overview/Analytics City selector. */
+export const useSuperAdminReportingCitiesQuery = () =>
+  useQuery({
+    queryKey: superAdminAnalyticsKeys.reportingCities(),
+    queryFn: () => superAdminAnalyticsApi.getReportingCities(),
+    staleTime: 5 * 60 * 1000,
+  });
 
 export const useSuperAdminBookingAnalyticsQuery = (period: AnalyticsPeriodParams = {}) =>
   useQuery({
