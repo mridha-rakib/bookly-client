@@ -5,6 +5,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SettingsPage from "@/app/customer/settings/page";
 import { authApi, type CurrentUserResponse } from "@/lib/api/auth";
 
+vi.mock("@/lib/auth/providers", () => ({
+  useAppleOAuthAvailability: () => ({ customer: false, professional: false, linking: false }),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }));
 vi.mock("next/image", () => ({ default: () => null }));
 vi.mock("@/components/Navbar", () => ({ default: () => null }));
@@ -243,4 +246,20 @@ it("locks language changes during a pending write and rejects unsupported select
   expect(languagePicker().disabled).toBe(true);
   await act(async () => pending.resolve(fixture())); await flush();
   expect(languagePicker().disabled).toBe(false);
+});
+
+
+it("does not offer an unavailable Apple account-link action", async () => {
+  await render();
+  expect(host.textContent).not.toContain("Apple");
+});
+
+it("preserves an existing Apple identity and its unlink action while new linking is disabled", async () => {
+  const existing = fixture();
+  existing.linkedAccounts = [{ provider: "APPLE", email: "linked@example.test", linkedAt: "2026-01-01T00:00:00.000Z" }];
+  vi.mocked(authApi.me).mockResolvedValue(existing);
+  await render();
+  expect(host.textContent).toContain("Apple");
+  expect(host.textContent).toContain("linked@example.test");
+  expect([...host.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Unlink")).toBe(true);
 });

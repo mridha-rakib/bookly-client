@@ -1,5 +1,6 @@
 "use client";
 
+import { useAppleOAuthAvailability } from "@/lib/auth/providers";
 import Image from "next/image";
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -108,6 +109,7 @@ function SettingsPageContent() {
   const [isUnlinkAppleModalOpen, setIsUnlinkAppleModalOpen] = useState(false);
   const linkGoogleMutation = useLinkGoogleAccountMutation();
   const linkFacebookMutation = useLinkFacebookAccountMutation();
+  const appleAvailability = useAppleOAuthAvailability();
   const linkAppleMutation = useLinkAppleAccountMutation();
 
   // Return trip from a provider consent screen: the backend redirects here with
@@ -418,7 +420,7 @@ function SettingsPageContent() {
               </div>
 
               {/* Apple — real. Server state comes from meQuery.data.linkedAccounts. */}
-              <div className="w-full box-border flex flex-row justify-between items-center p-4 border border-[#C6C6CB] rounded-lg">
+              {(appleAccount || appleAvailability.linking) && <div className="w-full box-border flex flex-row justify-between items-center p-4 border border-[#C6C6CB] rounded-lg">
                 <div className="flex flex-row items-center gap-4">
                   <div className="w-10 h-10 bg-[#EBE7E7] rounded-full flex items-center justify-center shrink-0">
                     <Image src="/settingsIcons/apple.svg" alt="Apple" className="w-6 h-6 object-contain" width={24} height={24} />
@@ -457,7 +459,7 @@ function SettingsPageContent() {
                     {linkAppleMutation.isPending ? "Connecting…" : "Link"}
                   </button>
                 )}
-              </div>
+              </div>}
             </div>
           </section>
 

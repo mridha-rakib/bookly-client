@@ -1,5 +1,6 @@
 "use client";
 
+import { useAppleOAuthAvailability } from "@/lib/auth/providers";
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -30,6 +31,7 @@ export default function CustomerAuthPage() {
   const sendEmailOtp = useSendCustomerEmailOtpMutation();
   const googleAuth = useCustomerGoogleAuthMutation();
   const facebookAuth = useCustomerFacebookAuthMutation();
+  const appleAvailability = useAppleOAuthAvailability();
   const appleAuth = useCustomerAppleAuthMutation();
   const isSubmitting = customerEntry.isPending || sendEmailOtp.isPending;
 
@@ -129,13 +131,13 @@ export default function CustomerAuthPage() {
               disabled={googleAuth.isPending}
               aria-busy={googleAuth.isPending}
             />
-            <SocialButton
+            {appleAvailability.customer && (<SocialButton
               provider="apple"
               label={appleAuth.isPending ? "Redirecting to Apple…" : "Continue With Apple"}
               onClick={() => appleAuth.mutate()}
               disabled={appleAuth.isPending}
               aria-busy={appleAuth.isPending}
-            />
+            />)}
             <SocialButton
               provider="facebook"
               label={facebookAuth.isPending ? "Redirecting to Facebook…" : "Continue With Facebook"}

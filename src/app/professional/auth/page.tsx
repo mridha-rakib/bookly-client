@@ -1,5 +1,6 @@
 "use client";
 
+import { useAppleOAuthAvailability } from "@/lib/auth/providers";
 import React, { useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -31,6 +32,7 @@ function ProfessionalAuthContent() {
   const sendEmailOtp = useSendProfessionalEmailOtpMutation();
   const googleAuth = useProfessionalGoogleAuthMutation();
   const facebookAuth = useProfessionalFacebookAuthMutation();
+  const appleAvailability = useAppleOAuthAvailability();
   const appleAuth = useProfessionalAppleAuthMutation();
   const isSubmitting = professionalEntry.isPending || sendEmailOtp.isPending;
 
@@ -141,13 +143,13 @@ function ProfessionalAuthContent() {
             disabled={googleAuth.isPending}
             aria-busy={googleAuth.isPending}
           />
-          <SocialButton
+          {appleAvailability.professional && (<SocialButton
             provider="apple"
             label={appleAuth.isPending ? "Redirecting to Apple…" : "Continue With Apple"}
             onClick={() => appleAuth.mutate()}
             disabled={appleAuth.isPending}
             aria-busy={appleAuth.isPending}
-          />
+          />)}
           <SocialButton
             provider="facebook"
             label={facebookAuth.isPending ? "Redirecting to Facebook…" : "Continue With Facebook"}
