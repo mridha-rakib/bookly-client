@@ -39,12 +39,20 @@ export interface PackageSettlementView {
   packageProgressId?: string;
   session: OwnedPackageView["sessions"][number] | null; actionsAvailable: boolean;
 }
+export interface SupervisorPackageSessionView {
+  originBookingId: string; packageProgressId: string;
+  purchaseCompletion?: OwnedPackageView["purchaseCompletion"];
+  session: { bookingId: string; itemId: string; status: string; restoration: string | null;
+    booking: Pick<NonNullable<OwnedPackageView["sessions"][number]["booking"]>,
+      "status" | "role" | "startAt" | "endAt" | "timezone" | "staffId" | "staffName" | "occupiedDurationMin"> | null } | null;
+  actionsAvailable: boolean;
+}
 export const packageViewsApi = {
   catalogue: (businessId: string, packageId?: string) => apiRequest<{ packages: PackageOffer[] }>({
     method: "GET", url: `/package-views/catalog/${encodeURIComponent(businessId)}${packageId ? `/${encodeURIComponent(packageId)}` : ""}` }),
   owned: (id?: string, before?: string) => apiRequest<{ packages: OwnedPackageView[]; hasMore: boolean; nextCursor?: string | null }>({
     method: "GET", url: `/package-views/owned${id ? `/${encodeURIComponent(id)}` : ""}`,
     ...(!id && before ? { params: { before } } : {}) }),
-  settlement: (businessId: string, bookingId: string) => apiRequest<PackageSettlementView>({
+  settlement: (businessId: string, bookingId: string) => apiRequest<PackageSettlementView | SupervisorPackageSessionView>({
     method: "GET", url: `/package-views/settlement/${encodeURIComponent(businessId)}/${encodeURIComponent(bookingId)}` }),
 };

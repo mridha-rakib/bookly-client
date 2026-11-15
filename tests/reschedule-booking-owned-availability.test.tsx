@@ -109,6 +109,51 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); client.clear(); host.remove(); });
 
+it("shows all existing services and professionals in the customer reschedule summary", async () => {
+  fx.detail.serviceLines.push({ ...fx.detail.serviceLines[0]!, serviceId: "second", name: "Second service", staffMembershipId: "second-staff", staffName: "Second professional" });
+  await render("customer");
+  await waitFor(() => expect(host.textContent).toContain("Second service"));
+  const summary = host.querySelector('[aria-label="Services in this booking"]');
+  expect(summary?.textContent).toContain("Original service");
+  expect(summary?.textContent).toContain("Original professional");
+  expect(summary?.textContent).toContain("Second service");
+  expect(summary?.textContent).toContain("Second professional");
+});
+
+it("submits only one owner reschedule while the first request is pending", async () => {
+  let resolve!: (value: unknown) => void;
+  const pending = new Promise((done) => { resolve = done; });
+  fx.respond = (req) => req.url.endsWith("/reschedule") ? pending : respond(req);
+  await render("business"); await select("business");
+  const save = button("Save changes");
+  await act(async () => { save.click(); save.click(); });
+  expect(posts()).toHaveLength(1);
+  await act(async () => resolve(fx.detail));
+});
+
+it("shows the professional and add-ons for each service in the management booking summary", async () => {
+  fx.detail.serviceLines[0]!.addons = [{ addonId: "addon", name: "Extra", priceCents: 100 }];
+  fx.detail.serviceLines.push({ ...fx.detail.serviceLines[0]!, serviceId: "second", name: "Second service", staffMembershipId: "second-staff", staffName: "Second professional", addons: [] });
+  await act(async () => root.render(<QueryClientProvider client={client}><ClientBookingHistoryCard booking={fx.detail} businessId={BUSINESS} showOperationalContext /></QueryClientProvider>));
+  expect(host.textContent).toContain("Professional: Original professional");
+  expect(host.textContent).toContain("Professional: Second professional");
+  expect(host.textContent).toContain("Extra");
+});
+
+it("retries a failed customer booking read before allowing rescheduling", async () => {
+  let failed = false;
+  fx.respond = (req) => {
+    if (req.url === `/me/bookings/${ID}` && !failed) { failed = true; throw new Error("Offline"); }
+    return respond(req);
+  };
+  await render("customer");
+  await waitFor(() => expect(host.textContent).toContain("Booking details could not be loaded"));
+  expect(host.textContent).not.toContain("could not be found");
+  await click("Retry");
+  await waitFor(() => expect(host.textContent).toContain("Original service"));
+  expect(posts()).toHaveLength(0);
+});
+
 describe.each(["customer", "business"] as const)("F1C-A %s reschedule", (scope) => {
   it.each(["HOURLY", "PER_PERSON", "FIXED"] as const)("uses the owned %s booking, retains history and sends only startAt", async (mode) => {
     fx.detail = booking(mode);

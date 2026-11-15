@@ -67,6 +67,8 @@ vi.mock("@/lib/services/hooks", () => ({
           pricingMode: "HOURLY",
           isPackageDeal: false,
         },
+        { id: "777777777777777777777777", name: "Eligible group", status: "ACTIVE", pricingMode: "PER_PERSON", isPackageDeal: false, perPersonPricing: { minPersons: 1, maxPersons: 5, durationMin: 60, ratePerPersonCents: 1000 } },
+        { id: "888888888888888888888888", name: "Multi-person minimum", status: "ACTIVE", pricingMode: "PER_PERSON", isPackageDeal: false, perPersonPricing: { minPersons: 2, maxPersons: 5, durationMin: 60, ratePerPersonCents: 1000 } },
       ],
     },
     isPending: false,
@@ -386,6 +388,17 @@ describe("Owner Package management with mocked dedicated APIs", () => {
     });
     expect(write.data.contractTerms).not.toHaveProperty("version");
   });
+  it("submits only one Package update when the form is submitted twice rapidly", async () => {
+    await render(); await click("Edit Hair & Facial");
+    const originalRequest = fx.request.getMockImplementation()!;
+    fx.request.mockImplementation((config: AxiosRequestConfig) => config.method === "PATCH" ? new Promise(() => {}) : originalRequest(config));
+    const form = container.querySelector("form")!;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(writes()).toHaveLength(1);
+  });
   it.each(["6", "12", "FOREVER"])(
     "creates a multi-Service Package with %s validity, exact cents and P0",
     async (validity) => {
@@ -397,12 +410,12 @@ describe("Owner Package management with mocked dedicated APIs", () => {
       await change("Business subcategory", "Hair");
       await change("Selling price", "19.99");
       await change("Package validity", validity);
-      await change("Add a FIXED Service", serviceId);
+      await change("Add an eligible Service", serviceId);
       await click("Add Service");
       await change("Included sessions", "3");
       await change("Reference unit price", "20");
       await change("Penalty basis", "0");
-      await change("Add a FIXED Service", secondServiceId);
+      await change("Add an eligible Service", secondServiceId);
       await click("Add Service");
       await change("Included sessions", "2", 1);
       await change("Reference unit price", "30", 1);
@@ -613,10 +626,15 @@ describe("Owner Package management with mocked dedicated APIs", () => {
   it("excludes legacy Package Deals and hourly Services from item choices", async () => {
     await render();
     await click("Create Package");
-    const select = control("Add a FIXED Service");
+    const select = control("Add an eligible Service");
     expect(select.textContent).toContain("Hair");
     expect(select.textContent).not.toContain("Old Package");
     expect(select.textContent).not.toContain("Hourly");
+    expect(select.textContent).toContain("Eligible group");
+    expect(select.textContent).not.toContain("Multi-person minimum");
+    await change("Add an eligible Service", "777777777777777777777777");
+    await click("Add Service");
+    expect(container.textContent).toContain("Eligible group");
     expect(container.querySelector('a[href*="purchase"]')).toBeNull();
   });
 });

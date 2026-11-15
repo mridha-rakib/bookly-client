@@ -146,6 +146,7 @@ export default function BookAgainCard({
           </div>
         </div>
 
+        <p className="px-4 pb-2 text-xs text-[#5F5E5A]">Rebooking starts with this service. You can add other services at the business.</p>
         {/* 4. Rebook Button */}
         <button
           onClick={() => onRebook(item.businessId, item.serviceId)}

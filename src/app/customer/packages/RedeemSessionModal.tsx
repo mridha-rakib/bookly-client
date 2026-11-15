@@ -356,12 +356,14 @@ export default function RedeemSessionModal({
           <LegacyPackageRecovery businessId={businessId} />
           {catalogQuery.isLoading ? (
             <p className="text-sm text-neutral-500">Loading…</p>
+          ) : catalogQuery.isError ? (
+            <div role="alert" className="text-sm text-red-600">The service could not be loaded. <button type="button" disabled={catalogQuery.isFetching} onClick={() => void catalogQuery.refetch()} className="underline disabled:opacity-50">{catalogQuery.isFetching ? "Retrying…" : "Retry"}</button></div>
           ) : !service ? (
             <p className="text-sm text-red-600">This service is no longer available for booking.</p>
           ) : (
             <div className="flex min-w-0 flex-col gap-6">
               {subStep === "addons" ? (
-                <AddonsStep
+                addonsQuery.isError ? <div role="alert" className="text-sm text-red-600">Add-ons could not be loaded. <button type="button" disabled={addonsQuery.isFetching} onClick={() => void addonsQuery.refetch()} className="underline disabled:opacity-50">{addonsQuery.isFetching ? "Retrying…" : "Retry"}</button></div> : <AddonsStep
                   addons={addonsQuery.data?.addons ?? []}
                   isLoading={addonsQuery.isLoading}
                   selectedAddonIds={selectedAddonIds}
@@ -526,7 +528,7 @@ export default function RedeemSessionModal({
               </button>
             )}
             {subStep === "addons" ? (
-              <button type="button" onClick={() => setSubStep(isTravel ? "travel" : "professional")} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white">
+              <button type="button" disabled={addonsQuery.isLoading || addonsQuery.isError || addonsQuery.isFetching} onClick={() => setSubStep(isTravel ? "travel" : "professional")} className="rounded-lg bg-[#1C1B1C] px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50">
                 Continue
               </button>
             ) : subStep === "travel" ? (

@@ -2,7 +2,7 @@
 import { invalidateBusinessBookingViews } from "@/lib/bookings/dashboard-cache";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { formatBookingDate, formatBookingTimeRange } from "@/lib/bookings/format";
 import { packagesApi } from "@/lib/api/packages";
 import { useAuthStore } from "@/lib/auth/store";
@@ -18,6 +18,7 @@ export default function PackageActionControls({
   const role = useAuthStore((state) => state.user?.role);
   const cache = useQueryClient();
   const [action, setAction] = useState<"future" | "terminate" | null>(null);
+  const submitting = useRef(false);
   const permitted = role === "CUSTOMER" || role === "BUSINESS_OWNER" || role === "SUPERVISOR";
   const customerQuery = usePackageDetailQuery(packageId, {
     enabled: role === "CUSTOMER",
@@ -38,15 +39,18 @@ export default function PackageActionControls({
       void invalidateBusinessBookingViews(cache, businessId);
       void cache.invalidateQueries({ queryKey: ["customerBookings"] });
     },
+    onSettled: () => { submitting.current = false; },
   });
-  if (!permitted || !query.data) return null;
+  if (!permitted) return null;
+  if (query.isError) return <div role="alert" className="rounded-lg border p-4 text-sm">Package actions could not be loaded. <button type="button" disabled={query.isFetching} onClick={() => void query.refetch()} className="underline disabled:opacity-50">{query.isFetching ? "Retrying..." : "Retry"}</button></div>;
+  if (!query.data) return <p role="status" className="rounded-lg border p-4 text-sm">Loading package actions...</p>;
   const pkg = query.data;
   const refund = pkg.voidRefundSettlement;
   if (pkg.status === "VOIDED") {
     return (
       <div className="rounded-lg border p-4 text-sm">
         <p>Package cancelled. No sessions are available to schedule.</p>
-        <p>Refund: {refund ? refund.status.toLowerCase() : "none required"}.</p>
+        {role !== "SUPERVISOR" && <p>Refund: {refund ? refund.status.toLowerCase() : "none required"}.</p>}
       </div>
     );
   }
@@ -82,7 +86,7 @@ export default function PackageActionControls({
             ))}
           </ul>
           {mutation.error && <p role="alert" className="text-red-700">{mutation.error.message}</p>}
-          <button type="button" disabled={mutation.isPending} onClick={() => mutation.mutate(action)} className="rounded bg-black px-3 py-2 text-white">
+          <button type="button" disabled={mutation.isPending} onClick={() => { if (submitting.current) return; submitting.current = true; mutation.mutate(action); }} className="rounded bg-black px-3 py-2 text-white">
             {mutation.isPending ? "Cancelling…" : "Confirm cancellation"}
           </button>
           <button type="button" disabled={mutation.isPending} onClick={() => setAction(null)} className="ml-3">

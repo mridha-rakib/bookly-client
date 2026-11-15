@@ -31,7 +31,6 @@ export default function RescheduleModal({ bookingId, onClose, onSaved }: Resched
 
   const detailQuery = useCustomerBookingDetailQuery(bookingId);
   const detail = detailQuery.data;
-  const primaryLine = detail?.serviceLines[0];
 
   const catalogQuery = useBusinessCatalogQuery(detail?.businessId);
   const business = catalogQuery.data?.business;
@@ -96,6 +95,8 @@ export default function RescheduleModal({ bookingId, onClose, onSaved }: Resched
 
         {detailQuery.isLoading ? (
           <p className="text-center text-sm text-[#4E5F78]">Loading booking…</p>
+        ) : detailQuery.isError ? (
+          <div role="alert" className="text-center text-sm text-[#4E5F78]">Booking details could not be loaded. <button type="button" disabled={detailQuery.isFetching} onClick={() => void detailQuery.refetch()} className="underline disabled:opacity-50">{detailQuery.isFetching ? "Retrying…" : "Retry"}</button></div>
         ) : !detail ? (
           <p className="text-center text-sm text-[#4E5F78]">
             This booking could not be found. It may not exist, or it may not belong to your account.
@@ -132,7 +133,7 @@ export default function RescheduleModal({ bookingId, onClose, onSaved }: Resched
             <hr className="border-t border-[#EBEBEB] w-full" />
 
             <div className="flex flex-col gap-3 w-full font-poppins">
-              <h3 className="text-[#111111] font-semibold text-base">{primaryLine?.name ?? "—"}</h3>
+              <div aria-label="Services in this booking" className="flex flex-col gap-1">{detail.serviceLines.map((line, index) => <div key={`${line.serviceId}:${index}`}><h3 className="text-[#111111] font-semibold text-base">{line.name}</h3><p className="text-xs text-[#4E5F78]">Professional: {line.staffName ?? "Information unavailable"}</p></div>)}</div>
 
               <div className="flex items-center gap-2 text-sm font-medium flex-wrap">
                 <HugeiconsIcon icon={Calendar01Icon} className="w-4 h-4 text-gray-500" />

@@ -29,6 +29,8 @@ interface SuperAdminBusinessDetailProps {
   onBack: () => void;
   onSuspend: (id: string) => void;
   initialTab?: string;
+  isSuspending?: boolean;
+  actionError?: string | null;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -65,9 +67,11 @@ export default function SuperAdminBusinessDetail({
   onBack,
   onSuspend,
   initialTab = "Overview",
+  isSuspending = false,
+  actionError,
 }: SuperAdminBusinessDetailProps) {
   const [activeSubTab, setActiveSubTab] = useState(initialTab);
-  const { data: business, isLoading, isError } = useSuperAdminBusinessDetailQuery(businessId);
+  const { data: business, isLoading, isError, isFetching, refetch } = useSuperAdminBusinessDetailQuery(businessId);
   const approveMutation = useApproveBusinessMutation();
   const foundingPartnerMutation = useSetFoundingPartnerMutation();
 
@@ -91,11 +95,9 @@ export default function SuperAdminBusinessDetail({
   }, []);
   const { data: summary } = useSuperAdminBusinessSummaryQuery(businessId, period);
 
+  if (isError) return <div role="alert" className="p-8 text-center text-rose-500">Failed to load this business. <button type="button" disabled={isFetching} onClick={() => void refetch()} className="underline">Retry</button></div>;
   if (isLoading || !business) {
     return <div className="p-8 text-center text-gray-400">Loading…</div>;
-  }
-  if (isError) {
-    return <div className="p-8 text-center text-rose-500">Failed to load this business.</div>;
   }
 
   const initials = business.name
@@ -107,6 +109,7 @@ export default function SuperAdminBusinessDetail({
 
   return (
     <div className="flex flex-col gap-6 w-full max-w-none pb-12 font-sans text-gray-900">
+      {actionError && <p role="alert" className="text-rose-600">{actionError}</p>}
       {/* Breadcrumbs */}
       <div className="flex items-center gap-2 text-[13px] text-[#6B7280]">
         <button onClick={onBack} className="hover:text-gray-900 cursor-pointer bg-transparent border-none p-0">
@@ -251,7 +254,7 @@ export default function SuperAdminBusinessDetail({
           </button>
           {business.status === "SUSPENDED" ? (
             <button
-              onClick={() => approveMutation.mutate(businessId)}
+              onClick={() => approveMutation.mutate(businessId, { onError: () => toast.error("Could not reactivate this business") })}
               disabled={approveMutation.isPending}
               className="w-full sm:w-auto flex items-center justify-center gap-1 px-4 h-[32px] border border-[#16A34A] text-[#16A34A] rounded-full text-xs font-semibold hover:bg-emerald-50 cursor-pointer bg-white transition-colors disabled:opacity-50"
             >
@@ -260,6 +263,7 @@ export default function SuperAdminBusinessDetail({
           ) : (
             <button
               onClick={() => onSuspend(businessId)}
+              disabled={isSuspending}
               className="w-full sm:w-auto flex items-center justify-center gap-1 px-4 h-[32px] border border-[#DC2626] text-[#DC2626] rounded-full text-xs font-semibold hover:bg-red-50 cursor-pointer bg-white transition-colors"
             >
               Suspend

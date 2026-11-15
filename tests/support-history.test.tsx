@@ -372,6 +372,33 @@ describe("G4 — Super Admin conversation", () => {
     seedConversation("t1", 130);
   });
 
+  it("does not submit a reply twice while the first request is pending", async () => {
+    await render(<SuperAdminSupport />);
+    await waitFor(() => expect(host.textContent).toContain("Long thread"));
+    await click([...host.querySelectorAll("tr")].find((row) => row.textContent?.includes("Long thread")));
+    await waitFor(() => expect(shown()).toEqual(range(81, 130)));
+    await type(host.querySelector("textarea"), "A single reply");
+    const gate = deferred();
+    gates.set("POST /super-admin/support/tickets/t1/messages ", gate.promise);
+    const send = button("Send Reply")!;
+    await act(async () => { send.click(); send.click(); });
+    await waitFor(() => expect(fx.requests.filter((r) => r.method === "POST" && r.url === "/super-admin/support/tickets/t1/messages")).toHaveLength(1));
+    gate.release();
+    await settle();
+  });
+
+  it("shows a ticket detail error and retries successfully", async () => {
+    failures.add("GET /super-admin/support/tickets/t1 ");
+    await render(<SuperAdminSupport />);
+    await waitFor(() => expect(host.textContent).toContain("Long thread"));
+    await click([...host.querySelectorAll("tr")].find((row) => row.textContent?.includes("Long thread")));
+    await waitFor(() => expect(host.textContent).toContain("Ticket details could not be loaded"));
+    expect(host.textContent).not.toContain("Loading ticket…");
+    await click(button("Retry"));
+    await waitFor(() => expect(host.textContent).toContain("SUP-t1"));
+    expect(host.textContent).not.toContain("Ticket details could not be loaded");
+  });
+
   it("paginates history and preserves reply and status changes", async () => {
     await render(<SuperAdminSupport />);
     await waitFor(() => expect(host.textContent).toContain("Long thread"));

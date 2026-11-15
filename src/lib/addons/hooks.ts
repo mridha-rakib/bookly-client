@@ -3,6 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { addonsApi, type AddonInput, type ListAddonsParams } from "@/lib/api/addons";
+import { bookingKeys } from "@/lib/bookings/hooks";
+import { catalogKeys } from "@/lib/catalog/hooks";
+import { availabilityKeys } from "@/lib/availability/hooks";
 
 export const addonKeys = {
   all: ["addons"] as const,
@@ -49,6 +52,11 @@ const invalidateAddonCaches = (
   void queryClient.invalidateQueries({ queryKey: [...addonKeys.all, "list", businessId] });
   void queryClient.invalidateQueries({ queryKey: [...addonKeys.all, "detail", businessId] });
   void queryClient.invalidateQueries({ queryKey: [...addonKeys.all, "for-service", businessId] });
+  void queryClient.invalidateQueries({ queryKey: [...bookingKeys.all, "bookable-addons", businessId] });
+  void queryClient.invalidateQueries({ queryKey: [...catalogKeys.all, "addons", businessId] });
+  void queryClient.invalidateQueries({ queryKey: [...availabilityKeys.all, businessId] });
+  void queryClient.invalidateQueries({ queryKey: [...availabilityKeys.all, "composite"], predicate: (query) => query.queryKey[3] === businessId });
+  void queryClient.invalidateQueries({ queryKey: [...catalogKeys.all, "availability", businessId] });
 };
 
 export const useCreateAddonMutation = () => {

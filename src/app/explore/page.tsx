@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Navbar from "@/components/Navbar";
 import FilterSidebar from "@/components/explore/FilterSidebar";
@@ -16,6 +16,7 @@ import type { DiscoveryListMeta, DiscoverySortOption } from "@/lib/api/discovery
 import type { ExploreAvailability, ExploreQuickAction } from "@/components/explore/DiscoveryControls";
 import { useVisitorLocation } from "@/lib/discovery/location";
 import type { BusinessCity } from "@/lib/constants/cities";
+import { parseDiscoverySearch } from "@/lib/discovery/search-handoff";
 
 const ExploreMap = dynamic(() => import("@/components/explore/ExploreMap"), {
   ssr: false,
@@ -90,18 +91,29 @@ const PAGE_SIZE = 12;
 const cardToRecommendation = discoveryCardToRecommendation;
 
 export default function ExplorePage() {
+  return <Suspense fallback={<div className="min-h-screen" />}><ExploreFromUrl /></Suspense>;
+}
+
+function ExploreFromUrl() {
+  const params = useSearchParams();
+  const search = params?.toString() ?? "";
+  return <ExploreContent key={search} initialSearch={search} />;
+}
+
+function ExploreContent({ initialSearch }: { initialSearch: string }) {
   const router = useRouter();
+  const [initial] = useState(() => parseDiscoverySearch(new URLSearchParams(initialSearch)));
   const authUser = useAuthStore((state) => state.user);
   const authStatus = useAuthStore((state) => state.status);
   const isLoggedIn = authStatus === "authenticated" && authUser?.role === "CUSTOMER";
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
 
   // Every Explore control drives a server-side discovery parameter (P2.2.3).
-  const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(initial.q);
+  const [debouncedQuery, setDebouncedQuery] = useState(initial.q);
   const [travelsToYou, setTravelsToYou] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [selectedLocations, setSelectedLocations] = useState<BusinessCity[]>([]);
+  const [selectedLocations, setSelectedLocations] = useState<BusinessCity[]>(initial.city ? [initial.city] : []);
   const [selectedRatings, setSelectedRatings] = useState<number[]>([]);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [sortBy, setSortBy] = useState("Most relevant");
@@ -111,7 +123,7 @@ export default function ExplorePage() {
   // P2.2.3 — location (explicit, memory-only), radius and availability context.
   const visitorLocation = useVisitorLocation();
   const [radiusKm, setRadiusKm] = useState<number | null>(null);
-  const [availability, setAvailability] = useState<ExploreAvailability | null>(null);
+  const [availability, setAvailability] = useState<ExploreAvailability | null>(initial.availability);
   const origin = visitorLocation.origin;
   const quickAction =
     (Object.entries(QUICK_ACTION_SORT).find(([, label]) => label === sortBy)?.[0] as ExploreQuickAction | undefined) ?? null;

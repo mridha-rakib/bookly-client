@@ -437,7 +437,10 @@ export default function DashboardSettings() {
                         </td>
                       </tr>
                     )}
-                    {!staffListQuery.isLoading && staffMembers.length === 0 && (
+                    {staffListQuery.isError && (
+                      <tr><td role="alert" className="py-6 px-6 text-xs text-red-700" colSpan={3}>Team members could not be loaded. <button type="button" disabled={staffListQuery.isFetching} onClick={() => void staffListQuery.refetch()} className="underline disabled:opacity-50">{staffListQuery.isFetching ? "Retrying…" : "Retry"}</button></td></tr>
+                    )}
+                    {!staffListQuery.isLoading && !staffListQuery.isError && staffMembers.length === 0 && (
                       <tr>
                         <td className="py-6 px-6 text-xs text-neutral-400" colSpan={3}>
                           No team members yet.

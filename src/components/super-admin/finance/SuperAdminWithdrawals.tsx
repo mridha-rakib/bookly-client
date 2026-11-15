@@ -407,7 +407,10 @@ function WithdrawalHistory() {
       {query.isLoading ? (
         <p className="px-5 py-6 text-sm text-gray-500">Loading…</p>
       ) : query.isError ? (
-        <p className="px-5 py-6 text-sm text-rose-600">{toUserMessage(query.error)}</p>
+        <div role="alert" className="px-5 py-6 text-sm text-rose-600">
+          {toUserMessage(query.error)}{" "}
+          <button type="button" disabled={query.isFetching} onClick={() => void query.refetch()} className="underline">Retry</button>
+        </div>
       ) : rows.length === 0 ? (
         <p className="px-5 py-6 text-sm text-gray-500">No withdrawals yet.</p>
       ) : (

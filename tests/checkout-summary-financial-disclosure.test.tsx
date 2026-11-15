@@ -97,6 +97,22 @@ describe("checkout pre-activation financial disclosure", () => {
     if (travel) expect(amount(aside, "Travel fee")).toBe(formatBookingMoney(travel));
   });
 
+  it("discloses server service and promo discounts together with travel without changing totals", async () => {
+    const preview = quote(8500, 1700, 0, 1000);
+    preview.financials.servicesSubtotalCents = 10000;
+    preview.financials.addonsSubtotalCents = 500;
+    preview.financials.serviceDiscountCents = 2000;
+    preview.promo = { code: "SAVE", type: "FIXED", value: 1000, promoEligibleBaseCents: 8500, discountCents: 1000 };
+    await render(preview);
+    const aside = container.querySelector("aside")!;
+    expect(amount(aside, "Service discount")).toBe("-€20.00");
+    expect(amount(aside, "Promo discount (SAVE)")).toBe("-€10.00");
+    expect(amount(aside, "Travel fee")).toBe("€10.00");
+    expect(amount(aside, "Booking total")).toBe("€85.00");
+    await render(quote());
+    expect(container.textContent).not.toContain("Service discount");
+  });
+
   it.each([1500, 0])("renders a server-discounted promo booking with %i due now", async due => {
     const preview = quote(7500, due, due ? 285 : 0);
     preview.financials.servicesSubtotalCents = 10000;
@@ -167,7 +183,9 @@ describe("checkout pre-activation financial disclosure", () => {
     vi.stubGlobal("innerWidth", 375);
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ height: 600, bottom: 50 } as DOMRect);
     const onContinue = vi.fn();
-    await render(quote(), { onContinue });
+    const preview = quote();
+    preview.financials.serviceDiscountCents = 2000;
+    await render(preview, { onContinue });
     const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Toggle booking price summary"]')!;
     expect(toggle.textContent).toContain(formatBookingMoney(2000));
     expect(toggle.textContent).not.toContain(formatBookingMoney(2380));
@@ -176,6 +194,7 @@ describe("checkout pre-activation financial disclosure", () => {
     expect(container.querySelectorAll('[aria-label="Calculated VAT information"]')).toHaveLength(2);
     const drawer = container.querySelector("h2")!.parentElement!.parentElement!.parentElement!;
     assertAmounts(drawer, 10000, 2000, 8000, 380);
+    expect(amount(drawer, "Service discount")).toBe("-€20.00");
     const confirm = Array.from(container.querySelectorAll("button")).filter(button => button.textContent === "Confirm").at(-1)!;
     await act(async () => confirm.click());
     expect(onContinue).toHaveBeenCalledOnce();

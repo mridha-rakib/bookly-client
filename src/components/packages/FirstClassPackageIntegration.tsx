@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { OwnedPackageView, PackageOffer, PackageSettlementView } from "@/lib/api/package-views";
+import type { OwnedPackageView, PackageOffer, PackageSettlementView, SupervisorPackageSessionView } from "@/lib/api/package-views";
 import { useAuthStore } from "@/lib/auth/store";
 import { usePackageView } from "@/lib/packages/view-hooks";
 import { CancellationReview, OfferCard, OwnedPackageCard, PackageReadError, PackageUnavailable, SettlementCard } from "./FirstClassPackageViews";
@@ -93,10 +93,10 @@ export function ManagementPackageSettlement({ businessId, bookingId }: { busines
   if (role !== "BUSINESS_OWNER" && role !== "SUPERVISOR") return <p role="status">Package settlement is restricted to the current Owner or Supervisor.</p>;
   if (query.isPending) return <p role="status">Loading package settlement…</p>;
   if (query.isError) return <PackageReadError error={query.error} onRetry={() => void query.refetch()} retrying={query.isFetching} />;
-  const view = query.data as PackageSettlementView | undefined;
-  return view ? <><SettlementCard view={view} />{view.packageProgressId && <FirstClassSessionActions
+  const view = query.data as PackageSettlementView | SupervisorPackageSessionView | undefined;
+  return view ? <>{role === "BUSINESS_OWNER" ? <SettlementCard view={view as PackageSettlementView} /> : <section aria-label="Package session" className="rounded-xl border p-4"><h2>Package session</h2><p>Session status: {view.session?.status ?? "Unavailable"}</p></section>}{view.packageProgressId && <FirstClassSessionActions
     businessId={businessId} progressId={view.packageProgressId} bookingId={bookingId}
     bookingStatus={view.session?.booking?.status}
-    outstandingBalanceCents={view.session?.booking?.outstandingBalanceCents}
+    outstandingBalanceCents={role === "BUSINESS_OWNER" ? (view as PackageSettlementView).session?.booking?.outstandingBalanceCents : undefined}
     enabled={view.actionsAvailable && view.purchaseCompletion === "VERIFIED"} management />}</> : null;
 }

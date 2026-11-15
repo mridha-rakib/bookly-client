@@ -1,0 +1,143 @@
+{
+  "fees": {
+    "success": true,
+    "message": "Platform transactions",
+    "data": {
+      "transactions": [
+        {
+          "id": "6af934e9a221595e050bbf27",
+          "businessId": "6af934e9a221595e050bbf10",
+          "businessName": "Salon A",
+          "bookingId": "6af934e9a221595e050bbf19",
+          "bookingReference": "BK-AGLMKYJD",
+          "customerName": "Test Customer",
+          "type": "NO_SHOW_FEE",
+          "date": "2026-11-15T04:28:25.933Z",
+          "grossCents": 444,
+          "stripeFeeCents": 0,
+          "netCents": 444,
+          "owner": "BUSINESS",
+          "status": "SUCCEEDED",
+          "currency": "EUR"
+        },
+        {
+          "id": "6af934e9a221595e050bbf26",
+          "businessId": "6af934e9a221595e050bbf10",
+          "businessName": "Salon A",
+          "bookingId": "6af934e9a221595e050bbf19",
+          "bookingReference": "BK-AGLMKYJD",
+          "customerName": "Test Customer",
+          "type": "NO_SHOW_FEE",
+          "date": "2026-11-15T04:28:25.929Z",
+          "grossCents": 333,
+          "stripeFeeCents": 0,
+          "netCents": 0,
+          "owner": "BUSINESS",
+          "status": "WAIVED",
+          "currency": "EUR"
+        },
+        {
+          "id": "6af934e9a221595e050bbf25",
+          "businessId": "6af934e9a221595e050bbf10",
+          "businessName": "Salon A",
+          "bookingId": "6af934e9a221595e050bbf19",
+          "bookingReference": "BK-AGLMKYJD",
+          "customerName": "Test Customer",
+          "type": "NO_SHOW_FEE",
+          "date": "2026-11-15T04:28:25.926Z",
+          "grossCents": 222,
+          "stripeFeeCents": 0,
+          "netCents": 0,
+          "owner": "BUSINESS",
+          "status": "FAILED",
+          "currency": "EUR"
+        },
+        {
+          "id": "6af934e9a221595e050bbf24",
+          "businessId": "6af934e9a221595e050bbf10",
+          "businessName": "Salon A",
+          "bookingId": "6af934e9a221595e050bbf19",
+          "bookingReference": "BK-AGLMKYJD",
+          "customerName": "Test Customer",
+          "type": "NO_SHOW_FEE",
+          "date": "2026-11-15T04:28:25.924Z",
+          "grossCents": 111,
+          "stripeFeeCents": 0,
+          "netCents": 0,
+          "owner": "BUSINESS",
+          "status": "PENDING",
+          "currency": "EUR"
+        }
+      ],
+      "pagination": {
+        "page": 1,
+        "limit": 20,
+        "total": 4
+      }
+    }
+  },
+  "refunds": {
+    "success": true,
+    "message": "Platform transactions",
+    "data": {
+      "transactions": [
+        {
+          "id": "6af934e9a221595e050bbf2a",
+          "businessId": "6af934e9a221595e050bbf10",
+          "businessName": "Salon A",
+          "bookingId": "6af934e9a221595e050bbf19",
+          "bookingReference": "BK-AGLMKYJD",
+          "customerName": "Test Customer",
+          "type": "REFUND",
+          "date": "2026-11-15T04:28:25.939Z",
+          "grossCents": 777,
+          "stripeFeeCents": 0,
+          "netCents": 777,
+          "owner": "CUSTOMER",
+          "status": "SUCCEEDED",
+          "currency": "EUR",
+          "refundOrigin": "BOOKLY"
+        },
+        {
+          "id": "6af934e9a221595e050bbf29",
+          "businessId": "6af934e9a221595e050bbf10",
+          "businessName": "Salon A",
+          "bookingId": "6af934e9a221595e050bbf19",
+          "bookingReference": "BK-AGLMKYJD",
+          "customerName": "Test Customer",
+          "type": "REFUND",
+          "date": "2026-11-15T04:28:25.936Z",
+          "grossCents": 666,
+          "stripeFeeCents": 0,
+          "netCents": 0,
+          "owner": "CUSTOMER",
+          "status": "FAILED",
+          "currency": "EUR",
+          "refundOrigin": "BOOKLY"
+        },
+        {
+          "id": "6af934e9a221595e050bbf28",
+          "businessId": "6af934e9a221595e050bbf10",
+          "businessName": "Salon A",
+          "bookingId": "6af934e9a221595e050bbf19",
+          "bookingReference": "BK-AGLMKYJD",
+          "customerName": "Test Customer",
+          "type": "REFUND",
+          "date": "2026-11-15T04:28:25.934Z",
+          "grossCents": 555,
+          "stripeFeeCents": 0,
+          "netCents": 0,
+          "owner": "CUSTOMER",
+          "status": "PENDING",
+          "currency": "EUR",
+          "refundOrigin": "BOOKLY"
+        }
+      ],
+      "pagination": {
+        "page": 1,
+        "limit": 20,
+        "total": 3
+      }
+    }
+  }
+}

@@ -11,6 +11,7 @@ export async function invalidateBusinessAvailability(client: QueryClient, busine
   await Promise.all([
     client.invalidateQueries({ queryKey: ["businessAvailability", businessId] }),
     client.invalidateQueries({ queryKey: ["availability", businessId] }),
+    client.invalidateQueries({ queryKey: ["availability", "composite"], predicate: query => query.queryKey[3] === businessId }),
     client.invalidateQueries({ queryKey: ["catalog", "availability", businessId] }),
     client.invalidateQueries({ queryKey: ["catalog", "business", businessId] }),
     client.invalidateQueries({ queryKey: bookingKeys.calendars(businessId) }),

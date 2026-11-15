@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Plus as PlusIcon } from "@hugeicons/core-free-icons";
 
@@ -26,6 +26,7 @@ type ViewState = { mode: "list" } | { mode: "create" } | { mode: "edit" | "view"
 export default function ServicesListPage() {
   const [view, setView] = useState<ViewState>({ mode: "list" });
   const [archivingId, setArchivingId] = useState<string | null>(null);
+  const pendingActions = useRef(new Set<string>());
   // Confirmation gate for the destructive "Archive" action (soft-archive, not a hard delete —
   // see ServiceService.archiveService's own doc comment; Restore already exists for recovery).
   // Holding the full Service (not just its id) so the confirmation copy can name it.
@@ -108,9 +109,11 @@ export default function ServicesListPage() {
   }
 
   const handleToggleActive = (serviceId: string, currentlyActive: boolean) => {
+    if (pendingActions.current.has(serviceId)) return;
+    pendingActions.current.add(serviceId);
     updateStatusMutation.mutate(
       { businessId, serviceId, status: currentlyActive ? "INACTIVE" : "ACTIVE" },
-      { onError: (error) => toast.error(toUserMessage(error)) }
+      { onError: (error) => toast.error(toUserMessage(error)), onSettled: () => pendingActions.current.delete(serviceId) }
     );
   };
 
@@ -118,13 +121,15 @@ export default function ServicesListPage() {
   const confirmArchive = () => {
     if (!archivingService) return;
     const serviceId = archivingService.id;
+    if (pendingActions.current.has(serviceId)) return;
+    pendingActions.current.add(serviceId);
     setArchivingId(serviceId);
     archiveMutation.mutate(
       { businessId, serviceId },
       {
         onSuccess: () => setArchivingService(null),
         onError: (error) => toast.error(toUserMessage(error)),
-        onSettled: () => setArchivingId(null)
+        onSettled: () => { pendingActions.current.delete(serviceId); setArchivingId(null); }
       }
     );
   };
@@ -146,18 +151,18 @@ export default function ServicesListPage() {
           <div className="bg-white border border-[#F5F5F4] rounded-full py-2 px-4 shadow-sm flex items-center gap-4 text-sm font-medium">
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 bg-[#1D9E75] rounded-full" />
-              <span className="text-[#1F8900]">{counts.active} Active</span>
+              <span className="text-[#1F8900]">{loadError || businessProfileQuery.isLoading || servicesQuery.isLoading ? "—" : counts.active} Active</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 bg-[#BCB8B5] rounded-full" />
-              <span className="text-[#79716B]">{counts.draft} Draft</span>
+              <span className="text-[#79716B]">{loadError || businessProfileQuery.isLoading || servicesQuery.isLoading ? "—" : counts.draft} Draft</span>
             </div>
           </div>
 
           <button
             type="button"
             onClick={() => setView({ mode: "create" })}
-            disabled={!businessId}
+            disabled={!businessId || businessProfileQuery.isError}
             className="bg-[#111111] hover:bg-black text-white text-[13px] font-medium px-3.5 py-2 rounded-lg flex items-center gap-1.5 shadow transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <HugeiconsIcon icon={PlusIcon} className="w-3.5 h-3.5" />
@@ -191,12 +196,12 @@ export default function ServicesListPage() {
           </div>}
         </div>
 
-        {servicesQuery.isError ? (
+        {businessProfileQuery.isError || servicesQuery.isError ? (
           <div role="alert" className="text-sm text-red-700">
             <p>Services could not be loaded.</p>
-            <button type="button" onClick={() => void servicesQuery.refetch()} className="mt-2 underline">Retry services</button>
+            <button type="button" disabled={businessProfileQuery.isFetching || servicesQuery.isFetching} onClick={() => { if (businessProfileQuery.isError) void businessProfileQuery.refetch(); else void servicesQuery.refetch(); }} className="mt-2 underline disabled:opacity-50">{businessProfileQuery.isFetching || servicesQuery.isFetching ? "Retrying…" : "Retry services"}</button>
           </div>
-        ) : servicesQuery.isLoading ? (
+        ) : businessProfileQuery.isLoading || servicesQuery.isLoading ? (
           <div className="text-sm text-neutral-500 py-10 text-center">Loading services…</div>
         ) : services.length === 0 ? (
           <div className="text-sm text-neutral-500 py-10 text-center">

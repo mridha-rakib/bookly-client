@@ -85,7 +85,10 @@ function ConfirmationAppointment({ booking, index, firstClass, onView }: { booki
       </div></div>
       <section aria-label="Appointment payment summary" className={styles.payment}><CustomerFinancialRows rowClassName="flex justify-between items-start gap-4 text-xs sm:text-sm leading-5" rows={[
         { label: firstClass && booking.serviceLines.some((line) => line.packageRole === "REDEMPTION") ? "Included service base" : "Service allocation", amountCents: booking.financials.servicesSubtotalCents },
-        { label: "Add-ons", amountCents: booking.financials.addonsSubtotalCents }, { label: "Travel fee", amountCents: booking.financials.travelFeeCents }, online, ...presentVenuePayment(booking), { label: firstClass ? "Recorded appointment total" : "Total", amountCents: booking.financials.totalCents },
+        { label: "Add-ons", amountCents: booking.financials.addonsSubtotalCents },
+        ...(booking.financials.serviceDiscountCents > 0 ? [{ label: "Service discount", amountCents: -booking.financials.serviceDiscountCents }] : []),
+        ...(booking.financials.promoDiscountCents && booking.financials.promoDiscountCents > 0 ? [{ label: "Promo discount", amountCents: -booking.financials.promoDiscountCents }] : []),
+        { label: "Travel fee", amountCents: booking.financials.travelFeeCents }, online, ...presentVenuePayment(booking), { label: firstClass ? "Recorded appointment total" : "Total", amountCents: booking.financials.totalCents },
       ]} />{firstClass && <p className="text-xs text-[#45474B]">Online amount and venue settlement are separate recorded facts. Confirmation does not attest cash receipt or a current net provider balance.</p>}</section>
       <button type="button" className={`${actionClass} w-full`} onClick={onView}><HugeiconsIcon icon={Calendar03Icon} size={18} />View Booking</button>
     </div>

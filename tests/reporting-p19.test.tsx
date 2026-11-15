@@ -67,6 +67,7 @@ const overviewFor = (params: Record<string, string> | undefined) => {
     scope: "FULL", currency: "EUR", todayDateStr: "2026-11-07",
     period: { fromDate: params?.fromDate ?? "2026-11-01", toDate: params?.toDate ?? "2026-11-07", timezone: "Europe/Nicosia", scheduleLimit: 200 },
     todayBookingsCount: count, todayRemainingCount: 0, schedule: [], timeline: [],
+    noShowCount: count + 1000,
     financials: { payAtVenueDueCents: 0, noShowMonthCount: count + 1000, noShowMonthChargedCents: 0, monthlyRevenueCents: 0, recentActivity: [] },
   };
 };
@@ -216,7 +217,7 @@ describe("G9 — Staff/Supervisor Overview ranges", () => {
   it("a failed read shows Retry and never zero values; Retry recovers", async () => {
     auth("sup-1", "SUPERVISOR");
     failures.set("/businesses/biz-1/dashboard/overview", new BooklyApiError({ message: "Server error", status: 500 }));
-    await render(<SupervisorOverview />);
+    await render(<SupervisorOverview onNavigate={vi.fn()} />);
     await waitFor(() => expect(host.textContent).toContain("The overview could not be loaded."));
     expect(card("Bookings in range")).toContain("—");
     expect(card("No-shows in range")).toContain("—");
@@ -224,6 +225,22 @@ describe("G9 — Staff/Supervisor Overview ranges", () => {
     await click(button("Retry"));
     await waitFor(() => expect(card("No-shows in range")).toContain("1001"));
     expect(host.textContent).not.toContain("could not be loaded");
+  });
+
+  it("Supervisor overview opens the calendar", async () => {
+    auth("sup-1", "SUPERVISOR");
+    const navigate = vi.fn();
+    await render(<SupervisorOverview onNavigate={navigate} />);
+    await click(button("View full calendar"));
+    expect(navigate).toHaveBeenCalledWith("Calendar");
+  });
+
+  it("Supervisor overview displays operational no-show counts without ledger activity or charged totals", async () => {
+    auth("sup-1", "SUPERVISOR");
+    await render(<SupervisorOverview onNavigate={vi.fn()} />);
+    await waitFor(() => expect(card("No-shows in range")).toContain("1001"));
+    expect(host.textContent).not.toContain("Recent activity in range");
+    expect(card("No-shows in range")).not.toContain("charged");
   });
 
   it("inactive employment (no Business context, or a 404) is shown as unavailable, not loading or zero", async () => {
@@ -238,7 +255,7 @@ describe("G9 — Staff/Supervisor Overview ranges", () => {
     client.clear();
     me = { business: { id: "biz-1" } };
     failures.set("/businesses/biz-1/dashboard/overview", new BooklyApiError({ message: "Not found", status: 404 }));
-    await render(<SupervisorOverview />);
+    await render(<SupervisorOverview onNavigate={vi.fn()} />);
     await waitFor(() => expect(host.textContent).toContain("no active employment with this Business"));
     expect(host.textContent).not.toContain("Loading overview…");
   });
@@ -461,7 +478,7 @@ describe("G7 — Super Admin Finance CSV scope", () => {
     });
     expect(fx.downloads[0]!.params).not.toHaveProperty("page");
 
-    await click(button("SEPA sent"));
+    await click(button("Payout records"));
     await waitFor(() => expect(button("Export all 31 (CSV)")).toBeTruthy());
     await click(button("Export all 31 (CSV)"));
     await waitFor(() => expect(fx.downloads).toHaveLength(2));

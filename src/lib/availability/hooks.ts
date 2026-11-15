@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { availabilityApi, type GetAvailabilityParams } from "@/lib/api/availability";
+import { availabilityApi, type CompositeAvailabilityInput, type GetAvailabilityParams } from "@/lib/api/availability";
 
 export const availabilityKeys = {
   all: ["availability"] as const,
@@ -24,3 +24,15 @@ export const useAvailabilityQuery = (
     queryFn: () => availabilityApi.get(businessId as string, serviceId as string, params),
     enabled: Boolean(businessId) && Boolean(serviceId) && enabled,
   });
+
+/** The query key contains every line and scheduling input so older slot sets cannot be reused. */
+export const useCompositeAvailabilityQuery = (
+  scope: "customer" | "business",
+  businessId: string | undefined,
+  input: CompositeAvailabilityInput,
+  enabled = true,
+) => useQuery({
+  queryKey: [...availabilityKeys.all, "composite", scope, businessId ?? "", input] as const,
+  queryFn: () => availabilityApi.getComposite(scope, businessId as string, input),
+  enabled: Boolean(businessId) && input.lines.length > 0 && enabled,
+});

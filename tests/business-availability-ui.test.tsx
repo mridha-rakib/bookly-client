@@ -5,7 +5,7 @@ import DashboardCreateBusiness from "@/components/dashboard/DashboardCreateBusin
 import DashboardCalendar from "@/components/dashboard/DashboardCalendar";
 import type { BusinessAvailabilityRules, CalendarBlock } from "@/lib/api/business-availability";
 
-const fx = vi.hoisted(() => ({ rules: {} as BusinessAvailabilityRules, blocks: [] as CalendarBlock[], save: vi.fn(), change: vi.fn(), back: vi.fn(), error: vi.fn(), warning: vi.fn(), failed: false }));
+const fx = vi.hoisted(() => ({ rules: {} as BusinessAvailabilityRules, blocks: [] as CalendarBlock[], update: vi.fn(), save: vi.fn(), change: vi.fn(), back: vi.fn(), error: vi.fn(), warning: vi.fn(), failed: false }));
 vi.mock("next/image", () => ({ default: () => null }));
 vi.mock("@/components/dashboard/DashboardHeader", () => ({ default: () => null }));
 vi.mock("@/components/notifications/NotificationBell", () => ({ default: () => null }));
@@ -27,7 +27,7 @@ vi.mock("@/lib/services/hooks", () => ({ useCreateServiceCategoryMutation: () =>
 vi.mock("@/lib/business/hooks", () => ({
   useBusinessQuery: () => ({ data: { id: "business", name: "Business", phone: { countryCode: "+357", nationalNumber: "99112233" }, address: { city: "Larnaca", area: "Centre", streetName: "Main", streetNumber: "1" }, category: "Beauty", subcategories: [], briefDescription: "", timezone: "Europe/Nicosia", visitType: "AT_BUSINESS_LOCATION" } }),
   useBusinessMediaQuery: () => ({ data: [] }), useBusinessTravelSettingsQuery: () => ({}),
-  useUpdateBusinessMutation: () => ({ mutateAsync: vi.fn(async () => ({})) }), useUpdateBusinessTravelSettingsMutation: () => ({}),
+  useUpdateBusinessMutation: () => ({ mutateAsync: fx.update }), useUpdateBusinessTravelSettingsMutation: () => ({}),
   useDeleteBusinessMediaMutation: () => ({}), useSetBusinessProfileMediaMutation: () => ({}), useUploadBusinessMediaMutation: () => ({}),
 }));
 vi.mock("@/lib/business/hours-hooks", () => ({ useBusinessHoursQuery: () => ({}), useUpdateBusinessHoursMutation: () => ({ mutateAsync: vi.fn(async () => ({})) }) }));
@@ -46,7 +46,7 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   fx.rules = { businessId: "business", timezone: "Europe/Nicosia", publicVisible: false, minimumNoticeMinutes: 60, maximumAdvanceMonths: 3,
     closedPeriods: [{ startDate: "2030-01-15", endDate: "2030-01-16", note: "Holiday" }] };
-  fx.blocks = []; fx.failed = false; fx.save.mockReset(); fx.change.mockReset(); fx.back.mockReset(); fx.error.mockReset(); fx.warning.mockReset();
+  fx.blocks = []; fx.failed = false; fx.update.mockReset().mockResolvedValue({}); fx.save.mockReset(); fx.change.mockReset(); fx.back.mockReset(); fx.error.mockReset(); fx.warning.mockReset();
   fx.save.mockResolvedValue({ ...fx.rules, overlappingBookings: 2 }); fx.change.mockResolvedValue({ overlappingBookings: 0 });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
@@ -69,6 +69,13 @@ it("keeps the form open and surfaces an availability save failure", async () => 
   fx.save.mockRejectedValue(new Error("Save failed")); await settings(); await click("Save changes");
   expect(fx.back).not.toHaveBeenCalled(); expect(fx.error).toHaveBeenCalled();
 });
+it("does not close or duplicate the profile save during rapid submissions", async () => {
+  fx.update.mockImplementation(() => new Promise(() => {}));
+  await settings();
+  const save = button("Save changes");
+  await act(async () => { save.click(); save.click(); });
+  expect(fx.update).toHaveBeenCalledOnce(); expect(fx.back).not.toHaveBeenCalled();
+});
 it("does not allow failed settings loads to save invented defaults", async () => {
   fx.failed = true; await settings();
   expect(button("Save changes").disabled).toBe(true); expect(host.querySelector('[role="alert"]')).not.toBeNull();
@@ -80,6 +87,15 @@ it("persists a Weekly selection with canonical Staff identity and Business-local
   await act(async () => cell.click()); await click("Disable Selected Slots");
   expect(fx.change).toHaveBeenCalledWith({ businessId: "business", action: "BLOCK", intervals: [expect.objectContaining({ staffMembershipId: "staff-id", startTime: "00:00", endTime: "00:00" })] });
   expect(button("Disable Selected Slots")).toBeUndefined();
+});
+it("clears selected blocks when navigating to a different calendar range", async () => {
+  await calendar();
+  const cell = Array.from(host.querySelectorAll<HTMLDivElement>("div")).find(value => value.className.includes("min-h-[140px]") && value.className.includes("cursor-pointer"))!;
+  await act(async () => cell.click());
+  expect(button("Disable Selected Slots")).toBeDefined();
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Next date"]')!.click());
+  expect(button("Disable Selected Slots")).toBeUndefined();
+  expect(fx.change).not.toHaveBeenCalled();
 });
 it("reloads a persisted block and reopens only its selected range", async () => {
   fx.blocks = [{ staffMembershipId: "staff-id", startAt: "2000-01-01T00:00:00Z", endAt: "2100-01-01T00:00:00Z" }];

@@ -10,6 +10,7 @@ import { twoFactorApi, type TwoFactorStatus } from "@/lib/api/twoFactor";
 const fx = vi.hoisted(() => ({
   changePassword: { mutate: vi.fn(), isPending: false },
   policy: { isSuccess: false, isPending: false, isFetching: false, isError: false, data: undefined, refetch: vi.fn() },
+  staff: { isLoading: false, isError: false, isFetching: false, data: undefined, refetch: vi.fn() },
 }));
 vi.mock("next/image", () => ({ default: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }));
@@ -26,7 +27,7 @@ vi.mock("@/lib/business/hooks", () => ({
   useUpdateBusinessMutation: () => ({}),
   useGoogleCalendarStatusQuery: () => ({ refetch: vi.fn() }),
 }));
-vi.mock("@/lib/staff/hooks", () => ({ useStaffListQuery: () => ({}), useUploadOwnerAvatarMutation: () => ({}) }));
+vi.mock("@/lib/staff/hooks", () => ({ useStaffListQuery: () => fx.staff, useUploadOwnerAvatarMutation: () => ({}) }));
 vi.mock("@/lib/business/cancellation-policy-hooks", () => ({
   useCancellationPolicyQuery: () => fx.policy,
   useUpdateCancellationPolicyMutation: () => ({ mutateAsync: vi.fn() }),
@@ -41,6 +42,7 @@ import StaffSettings from "@/components/dashboard/StaffSettings";
 let host: HTMLDivElement, root: Root;
 let status: TwoFactorStatus | Error;
 beforeEach(() => {
+  Object.assign(fx.staff, { isLoading: false, isError: false, isFetching: false, data: undefined }); fx.staff.refetch.mockReset();
   window.history.replaceState(null, "", "/business-dashboard?section=settings");
   status = { enabled: false, recoveryCodesRemaining: 0, enrollmentAvailable: true };
   vi.spyOn(twoFactorApi, "status").mockImplementation(async () => {
@@ -71,6 +73,16 @@ const placeholderGone = () => {
   expect(host.textContent).not.toContain("Email Authentication");
   expect(host.textContent).not.toContain("Set 2FA Verification");
 };
+
+it("reports and retries a failed owner team-role read", async () => {
+  fx.staff.isError = true;
+  await act(async () => root.render(<DashboardSettings />));
+  await click(button("Role"));
+  expect(host.textContent).toContain("Team members could not be loaded");
+  expect(host.textContent).not.toContain("No team members yet.");
+  await click(button("Retry"));
+  expect(fx.staff.refetch).toHaveBeenCalledOnce();
+});
 
 const screens: Array<[string, React.ComponentType, string]> = [
   ["Business Owner", DashboardSettings, "Security & 2FA"],

@@ -121,6 +121,7 @@ function BookAgainPageContent() {
         ) : candidatesQuery.isError ? (
           <div className="w-full text-center py-20">
             <p className="text-[#757575] text-lg font-medium">Your booking history could not be loaded right now.</p>
+            <button type="button" disabled={candidatesQuery.isFetching} onClick={() => void candidatesQuery.refetch()} className="mt-3 underline disabled:opacity-50">{candidatesQuery.isFetching ? "Retrying…" : "Retry"}</button>
           </div>
         ) : candidates.length === 0 ? (
           <div className="w-full text-center py-20">

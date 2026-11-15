@@ -23,8 +23,9 @@ export default function SuperAdminBookingsFilter({
     <div className="grid grid-cols-1 gap-4 bg-white p-4 rounded-xl border border-gray-100 shadow-[0px_2px_8px_rgba(0,0,0,0.04)] w-full md:flex md:flex-wrap md:items-center">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full md:flex md:items-center md:w-auto md:gap-3">
         <div className="flex items-center gap-2 w-full">
-          <span className="text-xs font-medium text-gray-500 w-8 md:w-auto">From</span>
+          <label htmlFor="admin-bookings-from" className="text-xs font-medium text-gray-500 w-8 md:w-auto">From</label>
           <input
+            id="admin-bookings-from"
             type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
@@ -33,8 +34,9 @@ export default function SuperAdminBookingsFilter({
         </div>
 
         <div className="flex items-center gap-2 w-full">
-          <span className="text-xs font-medium text-gray-500 w-8 md:w-auto">To</span>
+          <label htmlFor="admin-bookings-to" className="text-xs font-medium text-gray-500 w-8 md:w-auto">To</label>
           <input
+            id="admin-bookings-to"
             type="date"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
@@ -42,6 +44,7 @@ export default function SuperAdminBookingsFilter({
           />
         </div>
       </div>
+      <span className="text-xs text-gray-500">Date filters use UTC, inclusive.</span>
 
       <div className="hidden md:block w-px h-6 bg-gray-200" />
 

@@ -42,7 +42,20 @@ export interface GetAvailabilityParams {
   customerCity?: string;
 }
 
+export interface CompositeAvailabilityInput {
+  fromDate: string;
+  toDate: string;
+  customerCity?: string;
+  lines: Array<{ serviceId: string; staffMembershipId: string; hours?: number; partySize?: number }>;
+}
+
 export const availabilityApi = {
+  getComposite: (scope: "customer" | "business", businessId: string, input: CompositeAvailabilityInput) =>
+    apiRequest<AvailabilityResult>({
+      method: "POST",
+      url: scope === "customer" ? `/catalog/businesses/${businessId}/bookings/composite-availability` : `/businesses/${businessId}/bookings/composite-availability`,
+      data: input,
+    }),
   get: (businessId: string, serviceId: string, params: GetAvailabilityParams) =>
     apiRequest<AvailabilityResult>({
       method: "GET",

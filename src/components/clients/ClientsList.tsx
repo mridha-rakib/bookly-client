@@ -31,8 +31,8 @@ interface Client {
 }
 
 export interface ClientsListMetrics {
-  totalClients: number;
-  newThisMonth: number;
+  totalClients?: number;
+  newThisMonth?: number;
   /** undefined => rendered as "—": depends on the Booking/Payment domains, not built yet. */
   activeThisMonth?: number;
   atRisk?: number;
@@ -161,7 +161,7 @@ export default function ClientsList({
         {/* Metrics cards container */}
         <div className="grid grid-cols-2 md:grid-cols-5 bg-white border border-[#E8E8E6] rounded-xl shrink-0 overflow-hidden">
           <div className="p-4 flex flex-col justify-center border-b border-r border-[#E8E8E6] md:border-0">
-            <span className="text-lg font-semibold text-[#1A1A1A]">{metrics ? metrics.totalClients : 18}</span>
+            <span className="text-lg font-semibold text-[#1A1A1A]">{metrics ? (metrics.totalClients ?? "—") : 18}</span>
             <span className="text-xs text-[#888780] font-light mt-0.5">Total clients</span>
           </div>
           <div className="p-4 flex flex-col justify-center border-b border-[#E8E8E6] md:border-l md:border-0">
@@ -171,7 +171,7 @@ export default function ClientsList({
             <span className="text-xs text-[#888780] font-light mt-0.5">Active this month</span>
           </div>
           <div className="p-4 flex flex-col justify-center border-b border-r border-[#E8E8E6] md:border-l md:border-0">
-            <span className="text-lg font-semibold text-[#1D9E75]">{metrics ? metrics.newThisMonth : 3}</span>
+            <span className="text-lg font-semibold text-[#1D9E75]">{metrics ? (metrics.newThisMonth ?? "—") : 3}</span>
             <span className="text-xs text-[#888780] font-light mt-0.5">New this month</span>
           </div>
           <div className="p-4 flex flex-col justify-center border-b border-[#E8E8E6] md:border-l md:border-0">

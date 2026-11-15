@@ -28,6 +28,8 @@ const useInvalidateBusinesses = () => {
   return (businessId: string) => {
     void queryClient.invalidateQueries({ queryKey: superAdminBusinessKeys.all });
     void queryClient.invalidateQueries({ queryKey: superAdminBusinessKeys.detail(businessId) });
+    void queryClient.invalidateQueries({ queryKey: ["superAdminDashboard"] });
+    void queryClient.invalidateQueries({ queryKey: ["superAdminAnalytics"] });
   };
 };
 

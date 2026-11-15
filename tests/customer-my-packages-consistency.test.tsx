@@ -155,6 +155,16 @@ describe("Customer My Packages UI Consistency & UX Enhancement", () => {
     return host.textContent ?? "";
   }
 
+  it.each([
+    [true, 0, true, "Settled"],
+    [false, 25000, true, "Settlement not confirmed"],
+    [false, null, false, "Balance unavailable"],
+  ])("shows authoritative settlement for a voided package", async (balanceSettled, outstandingBalanceCents, settlementAvailable, expected) => {
+    const text = await render(<PackageCard pkg={{ ...mockLegacyPackage, status: "VOIDED", balanceSettled, outstandingBalanceCents, settlementAvailable }} isRefundPending={false} onRequestRefund={vi.fn()} />);
+    expect(text).toContain(expected);
+    if (!balanceSettled) expect(text).not.toContain("Settled");
+  });
+
   // 1. First-Class Card Rendering
   it("renders First-Class package card with name, service item, and provider", async () => {
     const text = await render(<FirstClassPackageCard pkg={mockFirstClassPackage} />);
@@ -349,6 +359,22 @@ describe("Customer My Packages UI Consistency & UX Enhancement", () => {
   });
 
   // 11. Unified 2-Column Responsive Grid & Filter Navigation
+  it.each(["legacy", "first-class"])("reports an incomplete list when the %s read fails and retries it", async (failed) => {
+    const legacyRetry = vi.fn();
+    const firstRetry = vi.fn();
+    vi.spyOn(packagesHooks, "useMyPackagesQuery").mockReturnValue({ data: failed === "legacy" ? undefined : { packages: [mockLegacyPackage] }, isLoading: false, isError: failed === "legacy", refetch: legacyRetry } as unknown as ReturnType<typeof packagesHooks.useMyPackagesQuery>);
+    vi.spyOn(packageViewHooks, "usePackageView").mockReturnValue({ data: failed === "first-class" ? undefined : { packages: [mockFirstClassPackage] }, isPending: false, isError: failed === "first-class", refetch: firstRetry } as unknown as ReturnType<typeof packageViewHooks.usePackageView>);
+    vi.spyOn(packagesHooks, "useVoidPackageMutation").mockReturnValue({ mutate: vi.fn(), isPending: false } as unknown as ReturnType<typeof packagesHooks.useVoidPackageMutation>);
+    const text = await render(<CustomerPackagesList />);
+    expect(text).toContain("The list may be incomplete");
+    expect(text).not.toContain("You have no packages yet");
+    expect(host.querySelector('[role="tab"]')?.textContent).toContain("—");
+    const retry = Array.from(host.querySelectorAll("button")).find((button) => button.textContent === "Retry loading")!;
+    await act(async () => retry.click());
+    expect(legacyRetry).toHaveBeenCalledTimes(failed === "legacy" ? 1 : 0);
+    expect(firstRetry).toHaveBeenCalledTimes(failed === "first-class" ? 1 : 0);
+  });
+
   it("renders CustomerPackagesList with filter tabs and unified 2-column grid", async () => {
     vi.spyOn(packagesHooks, "useMyPackagesQuery").mockReturnValue({
       data: { packages: [mockLegacyPackage] },

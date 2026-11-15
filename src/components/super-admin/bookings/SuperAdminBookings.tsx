@@ -28,10 +28,10 @@ export default function SuperAdminBookings() {
   const [page, setPage] = useState(1);
   const [selectedBooking, setSelectedBooking] = useState<{ id: string; businessName: string } | null>(null);
 
-  const { data, isLoading, isError } = useSuperAdminBookingsQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useSuperAdminBookingsQuery({
     ...(activeStatusFilter !== "All" ? { status: TAB_STATUSES[activeStatusFilter] } : {}),
     ...(fromDate ? { fromDate: new Date(fromDate).toISOString() } : {}),
-    ...(toDate ? { toDate: new Date(toDate).toISOString() } : {}),
+    ...(toDate ? { toDate: new Date(`${toDate}T23:59:59.999Z`).toISOString() } : {}),
     ...(search.trim() ? { q: search.trim() } : {}),
     page,
     limit: PAGE_SIZE,
@@ -43,14 +43,14 @@ export default function SuperAdminBookings() {
         <h2 className="font-semibold text-2xl text-[#111827] leading-[32px]">Bookings</h2>
       </div>
 
-      <SuperAdminBookingsTabs
+      {data && !isError && <SuperAdminBookingsTabs
         activeStatusFilter={activeStatusFilter}
         setActiveStatusFilter={(v) => {
           setActiveStatusFilter(v);
           setPage(1);
         }}
         counts={data?.counts ?? { all: 0, upcoming: 0, completed: 0, cancelled: 0, noShow: 0 }}
-      />
+      />}
 
       <SuperAdminBookingsFilter
         fromDate={fromDate}
@@ -72,7 +72,7 @@ export default function SuperAdminBookings() {
 
       {isError && (
         <div className="p-8 text-center text-rose-500 bg-white rounded-xl border border-gray-100">
-          Failed to load bookings. Please try again.
+          Failed to load bookings. <button type="button" disabled={isFetching} onClick={() => void refetch()} className="underline">Retry</button>
         </div>
       )}
 
@@ -82,7 +82,7 @@ export default function SuperAdminBookings() {
         </div>
       )}
 
-      {data && (
+      {data && !isError && (
         <SuperAdminBookingsTable
           bookings={data.bookings}
           onSelectBooking={(id, businessName) => setSelectedBooking({ id, businessName })}

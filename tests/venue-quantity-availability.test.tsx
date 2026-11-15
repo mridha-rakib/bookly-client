@@ -160,7 +160,7 @@ vi.mock("@/app/venue/components/VenueServices", () => ({
 vi.mock("@/app/venue/components/AddonsStep", () => ({ default: () => <div /> }));
 vi.mock("@/app/venue/components/ProfessionalsStep", () => ({
   default: ({ setSelectedProfessional }: { setSelectedProfessional: (id: string) => void }) => (
-    <button onClick={() => setSelectedProfessional("ANY")}>Choose any professional</button>
+    <><button onClick={() => setSelectedProfessional("ANY")}>Choose any professional</button><button onClick={() => setSelectedProfessional("eeeeeeeeeeeeeeeeeeeeeeee")}>Choose Small</button></>
   ),
 }));
 vi.mock("@/app/venue/components/TimeStep", () => ({
@@ -255,11 +255,18 @@ const defaultRespond = (req: Recorded): unknown => {
     const key = String(req.params?.idempotencyKey), bookingId = fx.committedBookings[key];
     return { businessId: VENUE_ID, idempotencyKey: key, state: bookingId ? "COMMITTED" : "UNRESOLVED", ...(bookingId ? { bookingId } : {}) };
   }
+  if (url === "/platform/booking-config") return { maxServicesPerBooking: 5 };
+  if (url.endsWith("/bookings/composite-availability")) {
+    const input = req.data as { fromDate: string; lines: Array<{ serviceId: string; staffMembershipId: string }> };
+    const result = availabilityFor(input.lines[0]!.serviceId, { fromDate: input.fromDate });
+    result.days.forEach((day) => day.slots.forEach((slot) => { slot.eligibleStaffMembershipIds = input.lines.map((line) => line.staffMembershipId); }));
+    return result;
+  }
   if (url.endsWith("/availability")) {
     const serviceId = url.split("/services/")[1]!.split("/")[0]!;
     return availabilityFor(serviceId, req.params as { fromDate: string; partySize?: number });
   }
-  if (url.endsWith("/addons")) return { addons: [] };
+  if (url.endsWith("/addons")) return { addons: url.includes(groupService.id) ? [{ id: "123456789012345678901234", name: "Mat rental", priceCents: 300 }] : [] };
   if (url.endsWith("/reviews/summary")) return { averageRating: null, reviewCount: 0 };
   if (url.endsWith("/reviews")) return { reviews: [], pagination: { page: 1, limit: 5, total: 0 } };
   if (url === `/catalog/businesses/${VENUE_ID}`) return catalog;
@@ -348,6 +355,36 @@ async function payAndConfirm() {
   await click(byText("Wizard continue")); // finalize
   await waitFor(() => expect(host.textContent).toContain("Booking confirmed"));
 }
+
+describe("Venue parallel booking", () => {
+  it("sends two independently assigned services to composite availability, preview and finalize", async () => {
+    await openWizard(hourlyService);
+    await waitFor(() => expect(host.querySelector<HTMLSelectElement>('select[aria-label="Add service"]')).not.toBeNull());
+    const add = host.querySelector<HTMLSelectElement>('select[aria-label="Add service"]')!;
+    await waitFor(() => expect([...add.options].some((option) => option.value === groupService.id)).toBe(true));
+    await act(async () => { add.value = groupService.id; add.dispatchEvent(new Event("change", { bubbles: true })); });
+    const professional = host.querySelector<HTMLSelectElement>(`select[aria-label="Professional for ${groupService.name}"]`)!;
+    await act(async () => { professional.value = "ffffffffffffffffffffffff"; professional.dispatchEvent(new Event("change", { bubbles: true })); });
+    await waitFor(() => expect(host.textContent).toContain("Mat rental"));
+    const addon = [...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((input) => input.parentElement?.textContent?.includes("Mat rental"))!;
+    await act(async () => addon.click());
+    await waitFor(() => expect(byText("Wizard continue").disabled).toBe(false));
+    await click(byText("Wizard continue"));
+    await click(byText("Choose Small"));
+    await click(byText("Wizard continue"));
+    await selectSlot("10:00");
+    await waitFor(() => expect(lastPost("/bookings/preview")?.serviceLines).toHaveLength(2));
+    const preview = lastPost("/bookings/preview")!;
+    expect(preview.serviceLines).toMatchObject([
+      { serviceId: hourlyService.id, staffMembershipId: "eeeeeeeeeeeeeeeeeeeeeeee", pricingInput: { hours: 2 } },
+      { serviceId: groupService.id, staffMembershipId: "ffffffffffffffffffffffff", addonIds: ["123456789012345678901234"], pricingInput: { personCount: 2 } },
+    ]);
+    expect(posts("/bookings/composite-availability").at(-1)?.data?.lines).toHaveLength(2);
+    await payAndConfirm();
+    expect(lastPost("/bookings/finalize")?.serviceLines).toEqual(preview.serviceLines);
+    expect(lastPost("/bookings/finalize")?.idempotencyKey).toBe(preview.idempotencyKey);
+  });
+});
 
 describe("Venue page — HOURLY quantity (V-1)", () => {
   it("F1-P1: untouched hourly stepper sends minHours in preview AND finalize; no partySize", async () => {

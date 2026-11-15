@@ -12,6 +12,9 @@ import Image from "next/image";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft01Icon, ArrowRight01Icon, Clock04Icon, Location05Icon, SquareLock01Icon, InformationCircleIcon, FavouriteIcon } from "@hugeicons/core-free-icons";
 import AddonsStep from "./components/AddonsStep";
+import { ParallelServiceEditor, type ParallelLineSelection } from "./components/ParallelServiceEditor";
+import { useCompositeAvailabilityQuery } from "@/lib/availability/hooks";
+import { usePublicBookingConfigQuery } from "@/lib/superAdminSettings/hooks";
 import TravelAddressStep, { emptyTravelAddress, type TravelAddressFields } from "./components/TravelAddressStep";
 import ProfessionalsStep from "./components/ProfessionalsStep";
 import TimeStep from "./components/TimeStep";
@@ -111,6 +114,8 @@ function VenueDetailsContent() {
   const [pricingInputByService, setPricingInputByService] = useState<Record<string, VenuePricingInput>>({});
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [selectedProfessional, setSelectedProfessional] = useState<string | null>(null);
+  const [additionalLines, setAdditionalLines] = useState<ParallelLineSelection[]>([]);
+  const bookingConfigQuery = usePublicBookingConfigQuery();
   // Travel/visit-type (Phase 1 fix) — only meaningful when the business is TRAVEL_TO_CUSTOMER;
   // AT_BUSINESS_LOCATION never reads or sends these. customerCity doubles as both the top-level
   // CreateBookingInput.customerCity (served-city + fee lookup) and travelAddress.city (the
@@ -157,7 +162,7 @@ function VenueDetailsContent() {
   // BookingCreationService.resolveFulfilment). servedCities is per-Service, exactly what the
   // backend's requireServedCity validates against — never a hardcoded city list.
   const isTravelBooking = business?.visitType === "TRAVEL_TO_CUSTOMER";
-  const servedCities = (selectedService?.servedCities ?? []) as BusinessCity[];
+  const servedCities = ((selectedService?.servedCities ?? []).filter((city) => additionalLines.every((line) => catalogQuery.data?.services.find((service) => service.id === line.serviceId)?.servedCities.includes(city)))) as BusinessCity[];
   const setTravelAddressField = (patch: Partial<TravelAddressFields>) =>
     setTravelAddress((prev) => ({ ...prev, ...patch }));
 
@@ -166,10 +171,10 @@ function VenueDetailsContent() {
   const availabilityFromDate = `${visibleMonth.getFullYear()}-${String(visibleMonth.getMonth() + 1).padStart(2, "0")}-01`;
   const availabilityToDateObj = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0);
   const availabilityToDate = `${availabilityToDateObj.getFullYear()}-${String(availabilityToDateObj.getMonth() + 1).padStart(2, "0")}-${String(availabilityToDateObj.getDate()).padStart(2, "0")}`;
-  const availabilityQuery = useServiceAvailabilityQuery(
+  const singleAvailabilityQuery = useServiceAvailabilityQuery(
     venueId,
     selectedServiceId,
-    bookingStep === "time" || bookingStep === "payment"
+    (bookingStep === "time" || bookingStep === "payment") && additionalLines.length === 0
       ? {
           fromDate: availabilityFromDate,
           toDate: availabilityToDate,
@@ -183,6 +188,30 @@ function VenueDetailsContent() {
         }
       : undefined,
   );
+
+  const additionalServices = additionalLines.map((line) => catalogQuery.data?.services.find((service) => service.id === line.serviceId));
+  const staffAssignments = [selectedProfessional, ...additionalLines.map((line) => line.staffMembershipId)];
+  const assignmentsValid = Boolean(selectedProfessional && selectedProfessional !== ANY_STAFF && eligibleStaff.some((member) => member.id === selectedProfessional) && additionalLines.every((line, index) => line.staffMembershipId && additionalServices[index]?.assignedStaffMembershipIds.includes(line.staffMembershipId)) && new Set(staffAssignments).size === staffAssignments.length);
+  const compositeInput = {
+    fromDate: availabilityFromDate, toDate: availabilityToDate,
+    ...(isTravelBooking && customerCity ? { customerCity } : {}),
+    lines: selectedService ? [
+      { serviceId: selectedService.id, staffMembershipId: selectedProfessional ?? "", ...(selectedPricingInput.hours !== undefined ? { hours: selectedPricingInput.hours } : {}), ...(selectedPartySize !== undefined ? { partySize: selectedPartySize } : {}) },
+      ...additionalLines.map((line, index) => {
+        const service = additionalServices[index];
+        const input = service ? effectivePricingInput(service, line.pricingInput) : {};
+        return { serviceId: line.serviceId, staffMembershipId: line.staffMembershipId, ...(input.hours !== undefined ? { hours: input.hours } : {}), ...(input.personCount !== undefined ? { partySize: input.personCount } : {}) };
+      }),
+    ] : [],
+  };
+  const compositeAvailabilityQuery = useCompositeAvailabilityQuery("customer", venueId, compositeInput, additionalLines.length > 0 && assignmentsValid && (bookingStep === "time" || bookingStep === "payment"));
+  const availabilityQuery = additionalLines.length ? compositeAvailabilityQuery : singleAvailabilityQuery;
+  const selectionIdentity = JSON.stringify([selectedServiceId, selectedPricingInput, selectedAddonIds, selectedProfessional, additionalLines, customerCity, travelAddress]);
+  const [previousSelectionIdentity, setPreviousSelectionIdentity] = useState(selectionIdentity);
+  if (previousSelectionIdentity !== selectionIdentity) {
+    setPreviousSelectionIdentity(selectionIdentity);
+    if (selectedSlot) setSelectedSlot(undefined);
+  }
 
   // Stale-slot guard (Phase 1.5 fix) — the single canonical source of truth for whether
   // `selectedSlot` still reflects the LATEST availability response for the current
@@ -198,7 +227,7 @@ function VenueDetailsContent() {
   const isSelectedSlotValid = Boolean(
     selectedSlot && selectedAvailabilityDay?.slots.some((slot) =>
       slot.startAt === selectedSlot.startAt && slot.endAt === selectedSlot.endAt &&
-      (selectedProfessional && selectedProfessional !== ANY_STAFF
+      (additionalLines.length ? assignmentsValid && staffAssignments.every((id) => Boolean(id) && slot.eligibleStaffMembershipIds.includes(id as string)) : selectedProfessional && selectedProfessional !== ANY_STAFF
         ? slot.eligibleStaffMembershipIds.includes(selectedProfessional)
         : slot.eligibleStaffMembershipIds.includes(selectedSlot.eligibleStaffMembershipIds[0]!)),
     ),
@@ -285,7 +314,7 @@ function VenueDetailsContent() {
   const [acceptedPreview, setAcceptedPreview] = useState<
     { isPackage: boolean; quantityKey: string; data: BookingCreationPreview } | undefined
   >(undefined);
-  const previewQuantityKey = JSON.stringify([selectedServiceId, selectedPricingInput.hours, selectedPricingInput.personCount]);
+  const previewQuantityKey = JSON.stringify([selectionIdentity, selectedSlot?.startAt]);
   const [isPreviewPending, setIsPreviewPending] = useState(false);
   const [previewFetchFailed, setPreviewFetchFailed] = useState(false);
 
@@ -358,7 +387,7 @@ function VenueDetailsContent() {
   const [promoErrorMessage, setPromoErrorMessage] = useState<string | undefined>(undefined);
 
   const buildBookingInput = (promoCodeOverride?: string | null): CreateBookingInput | undefined => {
-    if (!selectedService || !selectedProfessional || !selectedSlot || !idempotencyKey) return undefined;
+    if (!selectedService || !selectedProfessional || !selectedSlot || !idempotencyKey || (additionalLines.length > 0 && !assignmentsValid)) return undefined;
     const staffMembershipId =
       selectedProfessional === ANY_STAFF ? selectedSlot.eligibleStaffMembershipIds[0] : selectedProfessional;
     if (!staffMembershipId) return undefined;
@@ -385,6 +414,10 @@ function VenueDetailsContent() {
           // F1: never `{}` for HOURLY/PER_PERSON; the API requires the quantity.
           pricingInput: selectedPricingInput,
         },
+        ...additionalLines.map((line, index) => ({
+          serviceId: line.serviceId, staffMembershipId: line.staffMembershipId, addonIds: line.addonIds,
+          pricingInput: additionalServices[index] ? effectivePricingInput(additionalServices[index]!, line.pricingInput) : {},
+        })),
       ],
       startAt: selectedSlot.startAt,
       ...(isTravelBooking && customerCity
@@ -442,7 +475,7 @@ function VenueDetailsContent() {
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookingStep, selectedServiceId, selectedPricingInput.hours, selectedPricingInput.personCount, selectedAddonIds.join(","), selectedProfessional, selectedSlot?.startAt, appliedPromoCode, isPackagePurchaseFlow, customerCity, travelAddress.propertyType, travelAddress.area, travelAddress.streetName, travelAddress.streetNumber, travelAddress.floorUnit, travelAddress.aptRoom, travelAddress.additionalDirections]);
+  }, [bookingStep, selectedServiceId, selectedPricingInput.hours, selectedPricingInput.personCount, selectedAddonIds.join(","), selectedProfessional, selectedSlot?.startAt, appliedPromoCode, isPackagePurchaseFlow, JSON.stringify(additionalLines), customerCity, travelAddress.propertyType, travelAddress.area, travelAddress.streetName, travelAddress.streetNumber, travelAddress.floorUnit, travelAddress.aptRoom, travelAddress.additionalDirections]);
 
   const handleApplyPromo = async () => {
     const code = promoCodeInput.trim();
@@ -490,6 +523,7 @@ function VenueDetailsContent() {
     }
     setSelectedServiceId(serviceId);
     setSelectedAddonIds([]);
+    setAdditionalLines([]);
     setSelectedProfessional(null);
     setSelectedDateIso(undefined);
     setSelectedSlot(undefined);
@@ -518,7 +552,7 @@ function VenueDetailsContent() {
   }
 
   const canContinueWizard = (() => {
-    if (bookingStep === "addons") return true;
+    if (bookingStep === "addons") return additionalLines.length === 0 || Boolean(bookingConfigQuery.data && !bookingConfigQuery.isError && 1 + additionalLines.length <= bookingConfigQuery.data.maxServicesPerBooking && additionalLines.every((line, index) => Boolean(line.staffMembershipId && additionalServices[index])));
     if (bookingStep === "travel") {
       return Boolean(
         customerCity &&
@@ -528,7 +562,7 @@ function VenueDetailsContent() {
           travelAddress.streetNumber.trim(),
       );
     }
-    if (bookingStep === "professionals") return Boolean(selectedProfessional);
+    if (bookingStep === "professionals") return additionalLines.length ? assignmentsValid : Boolean(selectedProfessional);
     if (bookingStep === "time")
       return (
         Boolean(selectedSlot) &&
@@ -545,6 +579,7 @@ function VenueDetailsContent() {
         hasSavedCard &&
         Boolean(preview) &&
         Boolean(selectedSlot) &&
+        isSelectedSlotValid && !availabilityQuery.isFetching && !availabilityQuery.isError &&
         !isPreviewPending &&
         !previewFetchFailed
       );
@@ -553,6 +588,7 @@ function VenueDetailsContent() {
   })();
 
   const handleWizardContinue = async () => {
+    if (!canContinueWizard) return;
     if (bookingStep === "addons") {
       setBookingStep(isTravelBooking ? "travel" : "professionals");
     } else if (bookingStep === "travel") {
@@ -2013,12 +2049,21 @@ function VenueDetailsContent() {
             {/* Left Side: Step Content */}
             <div className={bookingStep === "confirmed" ? "w-full" : bookingMainClass}>
               {bookingStep === "addons" && (
+                <>
                 <AddonsStep
                   addons={serviceAddonsQuery.data?.addons ?? []}
                   isLoading={serviceAddonsQuery.isLoading}
                   selectedAddonIds={selectedAddonIds}
                   setSelectedAddonIds={setSelectedAddonIds}
                 />
+                {!selectedService?.isPackageDeal && <div className="space-y-4 mt-6">
+                  <h2 className="text-lg font-semibold">Additional services</h2>
+                  {bookingConfigQuery.isLoading && <p role="status">Loading booking limits...</p>}
+                  {bookingConfigQuery.isError && <p role="alert">Could not load booking limits. <button type="button" className="underline" onClick={() => void bookingConfigQuery.refetch()}>Retry</button></p>}
+                  {bookingConfigQuery.data && !bookingConfigQuery.isError && <label className="block">Add service <select aria-label="Add service" value="" disabled={1 + additionalLines.length >= bookingConfigQuery.data.maxServicesPerBooking} onChange={(event) => { const id = event.target.value; if (!id) return; setAdditionalLines((prev) => [...prev, { serviceId: id, staffMembershipId: "", addonIds: [], pricingInput: {} }]); if (selectedProfessional === ANY_STAFF) setSelectedProfessional(null); }} className="block w-full border rounded-lg p-2"><option value="">Choose a service</option>{(catalogQuery.data?.services ?? []).filter((service) => !service.isPackageDeal && service.id !== selectedServiceId && !additionalLines.some((line) => line.serviceId === service.id)).map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>}
+                  {additionalLines.map((line) => { const service = catalogQuery.data?.services.find((item) => item.id === line.serviceId); return service ? <ParallelServiceEditor key={line.serviceId} businessId={venueId} service={service} staff={teamMembers} line={line} usedStaff={staffAssignments.filter((id): id is string => Boolean(id))} onChange={(next) => setAdditionalLines((prev) => prev.map((item) => item.serviceId === line.serviceId ? next : item))} onRemove={() => setAdditionalLines((prev) => prev.filter((item) => item.serviceId !== line.serviceId))} /> : null; })}
+                </div>}
+                </>
               )}
 
               {bookingStep === "travel" && (
@@ -2033,10 +2078,11 @@ function VenueDetailsContent() {
 
               {bookingStep === "professionals" && (
                 <ProfessionalsStep
-                  staff={eligibleStaff}
+                  staff={additionalLines.length ? eligibleStaff.filter((member) => !additionalLines.some((line) => line.staffMembershipId === member.id)) : eligibleStaff}
                   isLoading={catalogQuery.isLoading}
                   selectedProfessional={selectedProfessional}
                   setSelectedProfessional={setSelectedProfessional}
+                  allowNoPreference={additionalLines.length === 0}
                 />
               )}
 

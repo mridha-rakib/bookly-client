@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import { toast } from "@/components/ui/sonner";
 import { useMyBusinessProfileQuery } from "@/lib/business/hooks";
@@ -69,7 +69,10 @@ function PackageManager({ businessId }: { businessId: string }) {
   const [stale, setStale] = useState(false);
   const list = useDefinitionsQuery(businessId, filter);
   const mutation = useDefinitionMutation(businessId);
+  const submitting = useRef(false);
   const run = async (action: DefinitionAction) => {
+    if (submitting.current) return;
+    submitting.current = true;
     setError(undefined);
     try {
       await mutation.mutateAsync(action);
@@ -88,6 +91,8 @@ function PackageManager({ businessId }: { businessId: string }) {
         setStale(true);
         await list.refetch();
       }
+    } finally {
+      submitting.current = false;
     }
   };
   // Keep the list mounted in the cache; mutations invalidate it without new polling.
@@ -113,7 +118,7 @@ function PackageManager({ businessId }: { businessId: string }) {
               <span className="relative inline-flex h-2 w-2 rounded-full bg-[#2E9DA7]" />
             </span>
             <span>
-              <strong className="font-semibold text-[#111111]">{list.data?.packages.length ?? 0}</strong>{" "}
+              <strong className="font-semibold text-[#111111]">{list.isError ? "—" : list.data?.packages.length ?? "—"}</strong>{" "}
               Packages in this view
             </span>
           </p>

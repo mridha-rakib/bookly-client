@@ -41,7 +41,7 @@ const statusNote: Record<FinanceTransactionRow["status"], string | undefined> = 
 };
 
 const formatRowDate = (iso: string) =>
-  new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short" }).format(new Date(iso));
+  new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" }).format(new Date(iso));
 
 interface PayoutsBreakdownProps {
   businessId: string;
@@ -75,7 +75,7 @@ export default function PayoutsBreakdown({ businessId, period, periodLabel }: Pa
             {periodLabel} — transaction breakdown
           </h3>
           <span className="font-poppins font-medium text-xs leading-[18px] text-[#686B64]">
-            No-show and cancellation fees collected this month
+            No-show and cancellation fee attempts for this period (UTC)
           </span>
         </div>
 
@@ -98,7 +98,7 @@ export default function PayoutsBreakdown({ businessId, period, periodLabel }: Pa
       ) : query.isError ? (
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
           <span className="font-poppins text-sm font-semibold text-[#BA1A1A]">Couldn&apos;t load transactions</span>
-          <span className="font-poppins text-xs text-[#ABAAA6]">Please try again in a moment.</span>
+          <button type="button" disabled={query.isFetching} onClick={() => void query.refetch()} className="text-xs font-semibold underline disabled:opacity-50">{query.isFetching ? "Retrying..." : "Retry"}</button>
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
@@ -114,8 +114,8 @@ export default function PayoutsBreakdown({ businessId, period, periodLabel }: Pa
               <th className="py-3 px-4 w-[80px]">DATE</th>
               <th className="py-3 px-4 w-[120px]">TYPE</th>
               <th className="py-3 px-4 w-[140px]">CUSTOMER</th>
-              <th className="py-3 px-4 text-right w-[120px]">FEE CHARGED</th>
-              <th className="py-3 px-4 text-right w-[200px]">YOUR PAYOUT</th>
+              <th className="py-3 px-4 text-right w-[120px]">FEE AMOUNT</th>
+              <th className="py-3 px-4 text-right w-[200px]">BUSINESS SHARE</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#ECE9E2] text-xs font-poppins">
@@ -136,7 +136,7 @@ export default function PayoutsBreakdown({ businessId, period, periodLabel }: Pa
                       {customerLabel[row.customerType]}
                     </span>
                   </td>
-                  <td className="py-3.5 px-4 text-right font-medium text-[#4AAF82]">{formatBookingMoney(row.amountCents)}</td>
+                  <td className={`py-3.5 px-4 text-right font-medium ${row.status === "SUCCEEDED" ? "text-[#4AAF82]" : "text-neutral-500"}`}>{formatBookingMoney(row.amountCents)}{note && <span className="block text-[10px]">{note}</span>}</td>
                   <td className="py-3.5 px-4 text-right">
                     <div className="flex flex-col items-end">
                       <span className={`font-medium ${payoutColor}`}>{formatBookingMoney(row.businessOwnedCents)}</span>

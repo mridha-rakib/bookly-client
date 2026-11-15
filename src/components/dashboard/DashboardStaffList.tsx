@@ -59,6 +59,7 @@ import {
 } from "@/lib/staff/format";
 
 import { toUserMessage } from "@/lib/auth/messages";
+import { normalizeApiError } from "@/lib/api/client";
 
 // Mirror of the staff-avatar backend contract so an obviously-wrong file is rejected before
 // we ever open the crop modal — see api/src/modules/staff-avatar/staff-avatar.service.ts
@@ -90,8 +91,7 @@ const initialsFor = (name: string): string =>
 const formatPhone = (phone: StaffMember["phone"]): string | undefined =>
   phone ? `${phone.countryCode} ${phone.nationalNumber}` : undefined;
 
-// Services are a deferred domain in this phase (no backend yet) — this is a neutral,
-// honest placeholder, never fabricated data.
+// The staff list does not include service assignments; those are managed on each Service.
 const toDisplayStaff = (member: StaffMember): Staff => ({
   id: member.membershipId ?? member.userId,
   name: member.name,
@@ -99,7 +99,7 @@ const toDisplayStaff = (member: StaffMember): Staff => ({
   subRole: displayRole(member.role),
   avatarText: initialsFor(member.name),
   avatarBg: avatarBgForRole(member.role),
-  servicesAssigned: "Not assigned yet",
+  servicesAssigned: "Manage in Services",
   schedule: summarizeScheduleForCard(member.schedule, member.offDays),
   status: member.employmentActive ? "Active" : "Inactive",
   email: member.email,
@@ -189,7 +189,7 @@ export default function DashboardStaffList() {
   // --- Time off state ---
   const [timeOffEntries, setTimeOffEntries] = useState<StaffTimeOffEntry[]>([]);
   const [newLeaveType, setNewLeaveType] = useState<StaffTimeOffType>("ANNUAL_HOLIDAY");
-  const [newLeaveDate, setNewLeaveDate] = useState("2026-06-02");
+  const [newLeaveDate, setNewLeaveDate] = useState("");
   const [newLeaveEndDate, setNewLeaveEndDate] = useState("");
   const [timeOffError, setTimeOffError] = useState("");
   const [timeOffBusyId, setTimeOffBusyId] = useState<string | null>(null);
@@ -197,6 +197,8 @@ export default function DashboardStaffList() {
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
   const [formError, setFormError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const timeOffSubmittingRef = useRef(false);
 
   // Dedicated two-step confirmation flow for role / deactivate / reactivate.
   const [accessChange, setAccessChange] = useState<{
@@ -334,7 +336,7 @@ export default function DashboardStaffList() {
   const resetTimeOffForm = () => {
     setTimeOffEntries([]);
     setNewLeaveType("ANNUAL_HOLIDAY");
-    setNewLeaveDate("2026-06-02");
+    setNewLeaveDate("");
     setNewLeaveEndDate("");
     setTimeOffError("");
   };
@@ -523,7 +525,7 @@ export default function DashboardStaffList() {
 
     setTimeOffEntries(member.timeOff);
     setNewLeaveType("ANNUAL_HOLIDAY");
-    setNewLeaveDate("2026-06-02");
+    setNewLeaveDate("");
     setNewLeaveEndDate("");
   };
 
@@ -658,7 +660,9 @@ export default function DashboardStaffList() {
   );
 
   const handleDeleteStaff = async () => {
-    if (editingStaffId === null || !effectiveBusinessId) return;
+    if (submittingRef.current || editingStaffId === null || !effectiveBusinessId) return;
+    if (!window.confirm(`Remove ${staffName} from the business?`)) return;
+    submittingRef.current = true;
     setIsSubmitting(true);
     setFormError("");
     try {
@@ -667,12 +671,17 @@ export default function DashboardStaffList() {
     } catch (error) {
       setFormError(toUserMessage(error));
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
 
   const handleAddStaff = async () => {
-    if (!staffName || !staffEmail || !effectiveBusinessId) return;
+    if (submittingRef.current || !effectiveBusinessId) return;
+    if (!staffName.trim() || !staffEmail.trim()) {
+      setFormError("Enter a name and email address.");
+      return;
+    }
 
     // Save changes must not silently discard a valid Start/End draft the user typed but
     // never explicitly applied via "+ Add Hours" (STEP 2), and must not persist a partial/
@@ -690,6 +699,7 @@ export default function DashboardStaffList() {
     setSelectedDays([]);
     clearTimeInputs();
 
+    submittingRef.current = true;
     setIsSubmitting(true);
     setFormError("");
 
@@ -772,14 +782,22 @@ export default function DashboardStaffList() {
 
       closeForm();
     } catch (error) {
-      setFormError(toUserMessage(error));
+      setFormError(editingStaffId === null && normalizeApiError(error).code === "STAFF_INVITATION_EMAIL_FAILED"
+        ? "The invitation was created, but the email could not be sent. Return to the staff list and resend the pending invitation."
+        : toUserMessage(error));
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
 
   const handleAddTimeOff = async () => {
-    if (editingStaffId === null || !effectiveBusinessId) return;
+    if (timeOffSubmittingRef.current || editingStaffId === null || !effectiveBusinessId) return;
+    if (!newLeaveDate || (newLeaveEndDate && newLeaveEndDate < newLeaveDate)) {
+      setTimeOffError("Choose a start date and an end date on or after it.");
+      return;
+    }
+    timeOffSubmittingRef.current = true;
     setTimeOffError("");
     try {
       const created = await createTimeOffMutation.mutateAsync({
@@ -795,6 +813,8 @@ export default function DashboardStaffList() {
       setNewLeaveEndDate("");
     } catch (error) {
       setTimeOffError(toUserMessage(error));
+    } finally {
+      timeOffSubmittingRef.current = false;
     }
   };
 
@@ -914,7 +934,8 @@ export default function DashboardStaffList() {
         {/* Form Container (No wrapper white card, aligned under 'Add staff') */}
         <div className="ml-0 md:ml-[100px] flex flex-col gap-[20px] w-full max-w-full md:max-w-[958.4px]">
 
-          {/* Photo Section */}
+          {/* An invitation has no membership or photo yet. */}
+          {editingStaffId !== null && (
           <div className="flex flex-col gap-[12px] w-full">
             <span className="font-poppins font-medium text-[12px] leading-[20px] tracking-[1.5px] uppercase text-[#111111]">
               photo
@@ -964,6 +985,7 @@ export default function DashboardStaffList() {
               </div>
             )}
           </div>
+          )}
 
           {/* Name Field */}
           <div className="flex flex-col gap-[12px] w-full">
@@ -1061,29 +1083,16 @@ export default function DashboardStaffList() {
             />
           </div>
 
-          {/* Services Field */}
+          {/* Service eligibility is managed on the Service form. */}
           <div className="flex flex-col gap-[12px] w-full">
             <span className="font-poppins font-medium text-[12px] leading-[20px] tracking-[1.5px] uppercase text-[#111111]">
               services
             </span>
-            <div className="relative w-full">
-              <select
-                disabled
-                title="Services assignment is coming in a later update"
-                className="appearance-none h-[44px] w-full bg-white border border-[#C6C6CB] rounded-[8px] px-4 font-poppins text-sm text-[#1C1B1C] focus:outline-none shadow-[0px_1px_2px_rgba(0,0,0,0.05)] pr-10 cursor-not-allowed opacity-70"
-                style={{
-                  backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23141B34' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`,
-                  backgroundRepeat: 'no-repeat',
-                  backgroundPosition: 'right 16px center',
-                  backgroundSize: '16px'
-                }}
-              >
-                <option value="assigned_services">Assigned services</option>
-              </select>
-            </div>
+            <p className="text-sm text-neutral-600">Assign staff to services from the Services section after the invitation is accepted.</p>
           </div>
 
           {/* Working Hours & Leave Section Grid */}
+          {editingStaffId === null ? <p className="text-sm text-neutral-600">Working hours, time off and photos can be added after the invitation is accepted.</p> : (
           <div className="flex flex-col md:flex-row gap-[48px] w-full items-start mt-4">
 
             {/* Business Working Hours Column */}
@@ -1438,6 +1447,7 @@ export default function DashboardStaffList() {
               )}
             </div>
           </div>
+          )}
 
           {/* Form error */}
           {formError && (

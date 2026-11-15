@@ -1,0 +1,26 @@
+{
+  "success": true,
+  "message": "Platform payout history",
+  "data": {
+    "payouts": [
+      {
+        "id": "6af935b8333be6d865bc4408",
+        "businessId": "6af935b8333be6d865bc43ec",
+        "businessName": "Salon A",
+        "periodStart": "2030-01-01T00:00:00.000Z",
+        "periodEnd": "2030-01-02T00:00:00.000Z",
+        "grossBusinessOwnedCents": 444,
+        "processingFeesCents": 0,
+        "disputeAdjustmentsCents": 0,
+        "netPayoutCents": 444,
+        "currency": "EUR",
+        "status": "PAID"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 1
+    }
+  }
+}

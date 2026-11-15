@@ -1,7 +1,7 @@
 "use client";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { toast } from "@/components/ui/sonner";
 import { toUserMessage } from "@/lib/auth/messages";
 import { useManagedBusinessContext } from "@/lib/business/hooks";
@@ -72,6 +72,7 @@ function SupervisorStaffScheduleContent({ businessId, businessIsLoading }: {
 }) {
   const staffListQuery = useStaffListQuery(businessId);
   const putScheduleMutation = usePutStaffScheduleMutation();
+  const saving = useRef(false);
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [draftOffDays, setDraftOffDays] = useState<DayOfWeek[]>([]);
@@ -98,7 +99,7 @@ function SupervisorStaffScheduleContent({ businessId, businessIsLoading }: {
   };
 
   const saveSchedule = async () => {
-    if (!businessId || !editingStaffId || !draft || draftIsStale || staffListQuery.isError || staffListQuery.isFetching || putScheduleMutation.isPending) {
+    if (!businessId || !editingStaffId || !draft || draftIsStale || staffListQuery.isError || staffListQuery.isFetching || putScheduleMutation.isPending || saving.current) {
       return;
     }
 
@@ -109,6 +110,7 @@ function SupervisorStaffScheduleContent({ businessId, businessIsLoading }: {
         intervals: draft[dayOfWeek].intervals,
       }));
 
+    saving.current = true;
     try {
       // This editor changes working hours. Omit offDays deliberately: the API merges the
       // latest off-days transactionally, removing only weekdays explicitly made working.
@@ -117,6 +119,8 @@ function SupervisorStaffScheduleContent({ businessId, businessIsLoading }: {
       cancelEditing();
     } catch (error) {
       toast.error(toUserMessage(error));
+    } finally {
+      saving.current = false;
     }
   };
 

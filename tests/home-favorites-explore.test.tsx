@@ -11,11 +11,11 @@ import { useBusinessFavorites } from "@/lib/favorite/use-business-favorites";
 
 type Request = { method?: string; url: string; params?: Record<string, string>; data?: unknown };
 const fx = vi.hoisted(() => ({ requests: [] as Request[], push: vi.fn(), error: vi.fn(),
-  respond: undefined as undefined | ((request: Request) => Promise<unknown>) }));
+  search: "", respond: undefined as undefined | ((request: Request) => Promise<unknown>) }));
 vi.mock("@/lib/api/client", async original => ({ ...await original<object>(), apiRequest: (request: Request) => {
   fx.requests.push(request); return fx.respond!(request);
 } }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: fx.push, replace: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: fx.push, replace: vi.fn() }), useSearchParams: () => new URLSearchParams(fx.search) }));
 vi.mock("next/dynamic", () => ({ default: () => () => null }));
 vi.mock("next/image", () => ({ default: () => null }));
 vi.mock("@/components/Navbar", () => ({ default: () => null }));
@@ -37,7 +37,7 @@ function auth(id: string | null, role: AuthUser["role"] = "CUSTOMER", suspended 
     cacheEpoch: useAuthStore.getState().cacheEpoch + 1 });
 }
 beforeEach(() => {
-  fx.requests = []; fx.push.mockClear(); fx.error.mockClear();
+  fx.requests = []; fx.push.mockClear(); fx.error.mockClear(); fx.search = "";
   saved = new Map([["u1", new Set([a])], ["u2", new Set<string>()]]); failWrite = false; writeGate = undefined;
   auth("u1");
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } } });
@@ -78,6 +78,80 @@ async function changeValue(node: HTMLInputElement | HTMLSelectElement, value: st
 }
 
 describe("persistent Business favorites", () => {
+  it("passes Favorites search and city to Explore and applies them to discovery", async () => {
+    await render(<FavoritesPage />);
+    await changeValue(host.querySelector<HTMLInputElement>('input[placeholder="What are you looking for"]')!, "Hair & styling");
+    await changeValue(host.querySelector<HTMLInputElement>('input[placeholder="Anywhere in Cyprus"]')!, "Pafos, Cyprus");
+    await click([...host.querySelectorAll("button")].find(button => button.textContent?.trim() === "Search")!);
+    expect(fx.push).toHaveBeenCalledWith("/explore?q=Hair+%26+styling&city=Paphos");
+    fx.search = fx.push.mock.calls.at(-1)![0].split("?")[1];
+    await render(<ExplorePage />);
+    await waitFor(() => expect(searches().at(-1)?.params).toMatchObject({ q: "Hair & styling", city: "Paphos" }));
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Search businesses"]')?.value).toBe("Hair & styling");
+  });
+
+  it("does not silently discard an unsupported location", async () => {
+    await render(<FavoritesPage />);
+    await changeValue(host.querySelector<HTMLInputElement>('input[placeholder="Anywhere in Cyprus"]')!, "Unknown city");
+    await click([...host.querySelectorAll("button")].find(button => button.textContent?.trim() === "Search")!);
+    expect(fx.push).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("Choose a listed city");
+  });
+
+  it("restores supported URL availability and re-applies search on navigation", async () => {
+    fx.search = "q=Massage&city=Limassol&availDate=2030-05-18&availWindow=MORNING";
+    await render(<ExplorePage />);
+    await waitFor(() => expect(searches().at(-1)?.params).toMatchObject({ q: "Massage", city: "Limassol", availDate: "2030-05-18", availWindow: "MORNING" }));
+    fx.search = "q=Hair";
+    await render(<ExplorePage />);
+    await waitFor(() => expect(searches().at(-1)?.params).toMatchObject({ q: "Hair" }));
+    expect(searches().at(-1)?.params).not.toHaveProperty("city");
+    expect(searches().at(-1)?.params).not.toHaveProperty("availDate");
+  });
+
+  it("navigates an empty search safely to Explore", async () => {
+    await render(<FavoritesPage />);
+    await click([...host.querySelectorAll("button")].find(button => button.textContent?.trim() === "Search")!);
+    expect(fx.push).toHaveBeenCalledWith("/explore");
+  });
+
+  it("sends a selected time window and rejects unsupported custom ranges", async () => {
+    await render(<FavoritesPage />);
+    await click([...host.querySelectorAll("button")].find(button => button.textContent?.trim() === "Anytime")!);
+    await click([...host.querySelectorAll("button")].find(button => button.textContent?.includes("Morning") && button.textContent.includes("6am"))!);
+    await click([...host.querySelectorAll("button")].find(button => button.textContent?.trim() === "Search")!);
+    const url = new URL(fx.push.mock.calls.at(-1)![0], "http://localhost");
+    expect(url.searchParams.get("availDate")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(url.searchParams.get("availWindow")).toBe("MORNING");
+    fx.push.mockClear();
+    await click([...host.querySelectorAll("button")].find(button => button.textContent?.includes("Morning"))!);
+    await click([...host.querySelectorAll("button")].find(button => button.textContent?.trim() === "Custom")!);
+    await click([...host.querySelectorAll("button")].find(button => button.textContent?.trim() === "Search")!);
+    expect(fx.push).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("Custom time ranges are not available");
+  });
+
+  it("returns to the previous Favorites page after removing its last item", async () => {
+    const fallback = fx.respond!;
+    let removed = false;
+    fx.respond = async request => {
+      if (request.url === "/me/favorites") {
+        const current = Number(request.params?.page ?? 1);
+        return { favorites: current === 2 && !removed ? [card(b)] : current === 1 ? [card(a)] : [], pagination: { page: current, limit: 12, total: removed ? 12 : 13 } };
+      }
+      if (request.url === `/me/favorites/${b}` && request.method === "DELETE") { removed = true; return; }
+      return fallback(request);
+    };
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    await render(<FavoritesPage />);
+    await waitFor(() => expect(hearts()).toHaveLength(1));
+    await click([...host.querySelectorAll("button")].find(button => button.textContent?.trim() === "2")!);
+    await waitFor(() => expect(hearts("b")).toHaveLength(1));
+    await click(hearts("b")[0]);
+    await waitFor(() => expect(hearts()).toHaveLength(1));
+    expect(host.textContent).not.toContain("don't have any favorites");
+    vi.restoreAllMocks();
+  });
   it("hydrates all Home rows, persists add/remove, and shares confirmed state with Explore and Favorites", async () => {
     await render(); await waitFor(() => expect(hearts()).toHaveLength(3));
     expect(hearts().every(heart => heart.getAttribute("aria-pressed") === "true")).toBe(true);

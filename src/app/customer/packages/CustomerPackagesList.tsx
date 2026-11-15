@@ -40,7 +40,7 @@ export default function CustomerPackagesList() {
   };
 
   const isLoading = legacyQuery.isLoading || firstClassQuery.isPending;
-  const isError = (legacyQuery.isError && firstClassQuery.isError);
+  const isError = legacyQuery.isError || firstClassQuery.isError;
 
   // Categorization helpers
   const isLegacyActive = (pkg: PackageProgress) =>
@@ -111,25 +111,25 @@ export default function CustomerPackagesList() {
       >
         <FilterTabButton
           label="All"
-          count={allCount}
+          count={isError || isLoading ? null : allCount}
           active={activeFilter === "all"}
           onClick={() => setActiveFilter("all")}
         />
         <FilterTabButton
           label="Active"
-          count={activeCount}
+          count={isError || isLoading ? null : activeCount}
           active={activeFilter === "active"}
           onClick={() => setActiveFilter("active")}
         />
         <FilterTabButton
           label="Action required"
-          count={actionRequiredCount}
+          count={isError || isLoading ? null : actionRequiredCount}
           active={activeFilter === "action-required"}
           onClick={() => setActiveFilter("action-required")}
         />
         <FilterTabButton
           label="History"
-          count={historyCount}
+          count={isError || isLoading ? null : historyCount}
           active={activeFilter === "history"}
           onClick={() => setActiveFilter("history")}
         />
@@ -149,19 +149,20 @@ export default function CustomerPackagesList() {
           role="alert"
           className="w-full rounded-2xl border border-red-200 bg-white p-8 text-center shadow-sm"
         >
-          <p className="font-semibold text-red-700">Packages could not be loaded</p>
+          <p className="font-semibold text-red-700">Some packages could not be loaded</p>
           <p className="mt-1 text-sm text-[#5F5E5A]">
-            Please check your connection and try refreshing the page.
+            The list may be incomplete. Please retry loading your packages.
           </p>
           <button
             type="button"
             onClick={() => {
-              void legacyQuery.refetch();
-              void firstClassQuery.refetch();
+              if (legacyQuery.isError) void legacyQuery.refetch();
+              if (firstClassQuery.isError) void firstClassQuery.refetch();
             }}
-            className="mt-4 rounded-xl bg-[#0D0D0D] px-4 py-2 text-sm font-semibold text-white hover:bg-black transition-colors"
+            disabled={legacyQuery.isFetching || firstClassQuery.isFetching}
+            className="mt-4 rounded-xl bg-[#0D0D0D] px-4 py-2 text-sm font-semibold text-white hover:bg-black transition-colors disabled:opacity-50"
           >
-            Retry loading
+            {legacyQuery.isFetching || firstClassQuery.isFetching ? "Retrying…" : "Retry loading"}
           </button>
         </div>
       )}
@@ -221,7 +222,7 @@ function FilterTabButton({
   onClick,
 }: {
   label: string;
-  count: number;
+  count: number | null;
   active: boolean;
   onClick: () => void;
 }) {
@@ -243,7 +244,7 @@ function FilterTabButton({
           active ? "bg-white/20 text-white" : "bg-neutral-200 text-[#45474B]"
         }`}
       >
-        {count}
+        {count ?? "—"}
       </span>
     </button>
   );

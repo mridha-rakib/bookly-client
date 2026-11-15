@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { BookingCalendarEntry } from "@/lib/api/bookings";
 import DashboardCalendar from "@/components/dashboard/DashboardCalendar";
 
-const fx = vi.hoisted(() => ({ rows: [] as BookingCalendarEntry[], completion: vi.fn(), calendar: vi.fn(), ordinary: vi.fn(), cancel: vi.fn(), waive: vi.fn(), error: vi.fn(), success: vi.fn() }));
+const fx = vi.hoisted(() => ({ rows: [] as BookingCalendarEntry[], completion: vi.fn(), calendar: vi.fn(), ordinary: vi.fn(), cancel: vi.fn(), waive: vi.fn(), error: vi.fn(), success: vi.fn(), refetch: vi.fn() }));
 vi.mock("@/components/ui/sonner", () => ({ toast: { error: fx.error, success: fx.success } }));
 vi.mock("next/image", () => ({ default: () => null }));
 vi.mock("@/lib/business/availability-hooks", () => ({ useCalendarBlocksQuery: () => ({ data: { blocks: [], closedPeriods: [] } }), useChangeCalendarBlocksMutation: () => ({ isPending: false }) }));
@@ -14,7 +14,7 @@ vi.mock("@/components/dashboard/CalendarBookingCompletion", () => ({
 }));
 vi.mock("@/lib/staff/hooks", () => ({ useStaffListQuery: () => ({ data: { members: [{ membershipId: "staff", name: "Professional" }] } }) }));
 vi.mock("@/lib/bookings/hooks", () => ({
-  useBusinessCalendarQuery: (businessId: string) => { fx.calendar(businessId); return { data: { bookings: fx.rows } }; },
+  useBusinessCalendarQuery: (businessId: string) => { fx.calendar(businessId); return { data: { bookings: fx.rows }, refetch: fx.refetch }; },
   useCompleteBookingMutation: () => { fx.ordinary(); return { mutate: vi.fn() }; },
   useCancelByBusinessMutation: () => ({ mutate: fx.cancel }),
   useMarkNoShowMutation: () => ({ mutate: vi.fn() }),
@@ -85,5 +85,13 @@ it.each(["Cancel Booking", "Waive charge"])("BC-F03 reports a failed %s action",
   await act(async () => action("Yes").click());
   expect(mutation).toHaveBeenCalledTimes(1);
   expect(fx.error).toHaveBeenCalledWith(expect.stringContaining("Lifecycle request failed"));
+  expect(fx.refetch).toHaveBeenCalled();
+  expect(fx.success).not.toHaveBeenCalled();
+});
+it("does not submit cancellation twice before the pending mutation settles", async () => {
+  await mount(); await openCard(); await act(async () => action("Cancel Booking").click());
+  const yes = action("Yes");
+  await act(async () => { yes.click(); yes.click(); });
+  expect(fx.cancel).toHaveBeenCalledOnce();
   expect(fx.success).not.toHaveBeenCalled();
 });

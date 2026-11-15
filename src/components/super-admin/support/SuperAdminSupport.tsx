@@ -97,6 +97,7 @@ export default function SuperAdminSupport() {
   const reopenMutation = useSuperAdminReopenSupportMutation();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const actionInFlight = useRef(false);
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
@@ -105,13 +106,16 @@ export default function SuperAdminSupport() {
   }, [selectedTicketId, newestMessageId]);
 
   const handleSendReply = async () => {
-    if (!replyText.trim() || !selectedTicketId) return;
+    if (!replyText.trim() || !selectedTicketId || actionInFlight.current) return;
+    actionInFlight.current = true;
     setActionError(undefined);
     try {
       await replyMutation.mutateAsync({ ticketId: selectedTicketId, message: replyText });
       setReplyText("");
     } catch {
       setActionError("Could not send the reply. Please try again.");
+    } finally {
+      actionInFlight.current = false;
     }
   };
 
@@ -123,22 +127,28 @@ export default function SuperAdminSupport() {
   };
 
   const handleChangeStatus = async (status: SupportTicketStatus) => {
-    if (!selectedTicketId) return;
+    if (!selectedTicketId || actionInFlight.current) return;
+    actionInFlight.current = true;
     setActionError(undefined);
     try {
       await statusMutation.mutateAsync({ ticketId: selectedTicketId, status });
     } catch {
       setActionError("Could not update the ticket status.");
+    } finally {
+      actionInFlight.current = false;
     }
   };
 
   const handleReopen = async () => {
-    if (!selectedTicketId) return;
+    if (!selectedTicketId || actionInFlight.current) return;
+    actionInFlight.current = true;
     setActionError(undefined);
     try {
       await reopenMutation.mutateAsync(selectedTicketId);
     } catch {
       setActionError("Could not reopen the ticket.");
+    } finally {
+      actionInFlight.current = false;
     }
   };
 
@@ -240,11 +250,18 @@ export default function SuperAdminSupport() {
           )}
         </div>
 
+        {ticketQuery.isError && (
+          <div role="alert" className="flex items-center gap-3 px-4 py-3 text-sm text-[#BA1A1A]">
+            Ticket details could not be loaded.
+            <button type="button" onClick={() => void ticketQuery.refetch()} disabled={ticketQuery.isFetching} className="underline disabled:opacity-50">{ticketQuery.isFetching ? "Retrying…" : "Retry"}</button>
+          </div>
+        )}
+
         {/* Workspace Split (Left sidebar detail panel, Right chat conversation) */}
         <div className="flex flex-row flex-grow w-full min-h-0">
           {/* Left Details Panel (300px) */}
           <div className="hidden lg:flex lg:w-[300px] lg:border-r border-[#E5E7EB] bg-white flex-col shrink-0 lg:overflow-y-auto">
-            {ticketQuery.isLoading || !ticket ? (
+            {ticketQuery.isError && !ticket ? null : ticketQuery.isLoading || !ticket ? (
               <div className="p-5 text-sm text-[#6B7280]">Loading ticket…</div>
             ) : (
               <>

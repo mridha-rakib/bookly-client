@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 
@@ -95,6 +95,7 @@ export default function AddonForm({ businessId, mode, addonId, onDone }: AddonFo
   const [form, setForm] = useState<FormState>(initialFormState);
   const [errors, setErrors] = useState<AddonFormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   const addonQuery = useAddonQuery(businessId || undefined, addonId);
   const categoriesQuery = useServiceCategoriesQuery(businessId || undefined);
@@ -159,6 +160,7 @@ export default function AddonForm({ businessId, mode, addonId, onDone }: AddonFo
   // DRAFT tolerates incomplete data — addonInputSchema's superRefine short-circuits its
   // cross-field "required for publish" rules for status "DRAFT" (see lib/addons/schema.ts).
   const handleSave = async (status: AddonInput["status"]) => {
+    if (submittingRef.current) return;
     const input = buildAddonInput(form, status);
     const validation = validateAddonInput(input);
     if (!validation.success) {
@@ -167,6 +169,7 @@ export default function AddonForm({ businessId, mode, addonId, onDone }: AddonFo
       return;
     }
     setErrors({});
+    submittingRef.current = true;
     setIsSubmitting(true);
     try {
       if (mode === "create") {
@@ -180,9 +183,14 @@ export default function AddonForm({ businessId, mode, addonId, onDone }: AddonFo
     } catch (error) {
       toast.error(toUserMessage(error));
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
+
+  if (mode !== "create" && (addonQuery.isError || !addonQuery.data)) {
+    return <main className="p-8"><button type="button" onClick={onDone} className="underline">Back to add-ons</button>{addonQuery.isError ? <div role="alert" className="mt-4">Add-on details could not be loaded. <button type="button" disabled={addonQuery.isFetching} onClick={() => void addonQuery.refetch()} className="underline disabled:opacity-50">{addonQuery.isFetching ? "Retrying…" : "Retry"}</button></div> : <p role="status" className="mt-4">Loading add-on details…</p>}</main>;
+  }
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] md: select-none font-poppins relative">
@@ -374,7 +382,9 @@ export default function AddonForm({ businessId, mode, addonId, onDone }: AddonFo
                   </div>
                 );
               })}
-              {assignableServices.length === 0 && (
+              {servicesQuery.isError && <span role="alert" className="text-xs text-red-700">Services could not be loaded. <button type="button" disabled={servicesQuery.isFetching} onClick={() => void servicesQuery.refetch()} className="underline">Retry services</button></span>}
+              {servicesQuery.isLoading && <span role="status" className="text-xs text-neutral-500">Loading services…</span>}
+              {!servicesQuery.isError && !servicesQuery.isLoading && assignableServices.length === 0 && (
                 <span className="text-xs text-neutral-500">No services yet — create one under Services.</span>
               )}
             </div>

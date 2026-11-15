@@ -657,6 +657,57 @@ describe("storage failures", () => {
 });
 
 describe("account cache protection", () => {
+  it("Admin logout hides mounted private content and redirects while a late read is retired", async () => {
+    signIn({ ...authA, user: { ...userA, role: "SUPER_ADMIN" } });
+    const guard = (await import("@/components/auth/RequireSuperAdmin")).default;
+    root = createRoot(container);
+    await act(async () => root?.render(createElement(guard, null, createElement("div", null, "Private Admin finance"))));
+    expect(container.textContent).toContain("Private Admin finance");
+    const previous = queries.queryClient;
+    const pending = deferred<{ secret: string }>();
+    const read = previous.fetchQuery({ queryKey: ["superAdminFinance", "private"], queryFn: () => pending.promise }).catch(() => undefined);
+    route({ logout: async (c) => ok(c, undefined) });
+    await act(async () => { await store.getState().logout(); });
+    expect(container.textContent).not.toContain("Private Admin finance");
+    expect(replace).toHaveBeenCalledWith("/super-admin/login");
+    pending.resolve({ secret: "Private Admin finance" });
+    await read;
+    expect(queries.queryClient.getQueryData(["superAdminFinance", "private"])).toBeUndefined();
+    expect(container.textContent).not.toContain("Private Admin finance");
+  });
+
+  it("a late Customer A package read cannot populate Customer B's cache after logout", async () => {
+    signIn();
+    const before = queries.queryClient;
+    const pending = deferred<{ name: string }>();
+    const staleRead = before.fetchQuery({ queryKey: ["packages", "detail", "shared-id"], queryFn: () => pending.promise }).catch(() => undefined);
+    before.setQueryData(["customerBookings", "detail", "a-booking"], { privateName: "Customer A" });
+    route({ logout: async (c) => ok(c, undefined) });
+    await expect(store.getState().logout()).resolves.toBe("confirmed");
+    signIn(authB);
+    const current = queries.queryClient;
+    expect(current).not.toBe(before);
+    expect(current.getQueryData(["packages", "detail", "shared-id"])).toBeUndefined();
+    expect(current.getQueryData(["customerBookings", "detail", "a-booking"])).toBeUndefined();
+    const { QueryClientProvider } = await import("@tanstack/react-query");
+    const { usePackageDetailQuery } = await import("@/lib/packages/hooks");
+    const CustomerGuard = (await import("@/components/auth/RequireCustomer")).default;
+    adapter.mockImplementation((config: InternalAxiosRequestConfig) => Promise.resolve(ok(config, { purchaseSnapshot: { name: "Customer B package" } })));
+    function PackageView() {
+      const result = usePackageDetailQuery("shared-id");
+      return createElement("p", null, result.data?.purchaseSnapshot.name ?? "Loading");
+    }
+    root = createRoot(container);
+    await act(async () => root?.render(createElement(QueryClientProvider, { client: current }, createElement(CustomerGuard, null, createElement(PackageView)))));
+    await vi.waitFor(() => expect(container.textContent).toContain("Customer B package"));
+    pending.resolve({ name: "Customer A private package" });
+    await staleRead;
+    expect(container.textContent).toContain("Customer B package");
+    expect(container.textContent).not.toContain("Customer A private package");
+    expect(current.getQueryData<{ purchaseSnapshot: { name: string } }>(["packages", "detail", "shared-id"])?.purchaseSnapshot.name).toBe("Customer B package");
+    expect(store.getState().user?.id).toBe("user-b");
+  });
+
   it("logout retires account caches immediately, even when the server never confirms", async () => {
     signIn();
     queries.queryClient.setQueryData(["auth", "me"], { user: "A" });

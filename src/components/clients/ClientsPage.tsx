@@ -99,7 +99,7 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
   const [clientNotes, setClientNotes] = useState("");
   const [clientTag, setClientTagState] = useState("VIP");
   const [clientAvatar, setClientAvatar] = useState("");
-  const clientAvatarInputRef = useRef<HTMLInputElement>(null);
+  const mutationInFlight = useRef(false);
   const [clientPhoneCode, setClientPhoneCode] = useState("+357");
   const [clientPhoneFlag, setClientPhoneFlag] = useState("cy");
   const [isClientPhoneDropdownOpen, setIsClientPhoneDropdownOpen] = useState(false);
@@ -191,7 +191,7 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
   };
 
   const handleAddClient = () => {
-    if (!businessId) return;
+    if (!businessId || mutationInFlight.current) return;
     const input = buildInput();
     const validation = clientInputSchema.safeParse(input);
     if (!validation.success) {
@@ -199,6 +199,7 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
       return;
     }
     setFormErrors({});
+    mutationInFlight.current = true;
     createMutation.mutate(
       { businessId, input },
       {
@@ -212,12 +213,13 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
             Object.keys(fieldErrors).length > 0 ? fieldErrors : { root: toUserMessage(error) },
           );
         },
+        onSettled: () => { mutationInFlight.current = false; },
       },
     );
   };
 
   const handleSaveClient = () => {
-    if (!businessId || !selectedClientId || !selectedClientQuery.data) return;
+    if (!businessId || !selectedClientId || !selectedClientQuery.data || mutationInFlight.current) return;
     const isLinked = selectedClientQuery.data?.linkState === "LINKED";
     const input: UpdateClientInput = buildInput();
     const hasAddress = [clientCity, clientPropertyType, clientArea, clientStreetName, clientStreetNumber, clientFloor, clientAptNo, clientDirections].some(value => value.trim());
@@ -233,6 +235,7 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
       return;
     }
     setFormErrors({});
+    mutationInFlight.current = true;
     // Linked identity fields are already disabled in the form, but strip them defensively too
     // (matches the server's own rejection — see client.service.ts CLIENT_IDENTITY_LOCKED).
     updateMutation.mutate(
@@ -248,6 +251,7 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
             Object.keys(fieldErrors).length > 0 ? fieldErrors : { root: toUserMessage(error) },
           );
         },
+        onSettled: () => { mutationInFlight.current = false; },
       },
     );
   };
@@ -346,11 +350,6 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
         clientTag={clientTag}
         setClientTagState={setClientTagState}
         clientAvatar={clientAvatar}
-        clientAvatarInputRef={clientAvatarInputRef}
-        handleClientAvatarChange={() => {
-          // Client avatar upload has no backing endpoint yet — intentionally a no-op rather
-          // than fabricating a fake upload; the picker stays visible per the Figma layout.
-        }}
         clientPhoneCode={clientPhoneCode}
         setClientPhoneCode={setClientPhoneCode}
         clientPhoneFlag={clientPhoneFlag}
@@ -400,9 +399,9 @@ export default function ClientsPage({ businessId }: ClientsPageProps) {
       openActionIdx={openActionIdx}
       setOpenActionIdx={setOpenActionIdx}
       metrics={
-        listQuery.data
+        listQuery.data && !listQuery.isError
           ? { totalClients: listQuery.data.stats.totalClients, newThisMonth: listQuery.data.stats.newThisMonth }
-          : { totalClients: 0, newThisMonth: 0 }
+          : { totalClients: undefined, newThisMonth: undefined }
       }
       staffOptions={staffListQuery.data?.members.map((member) => member.name)}
       disableStaffFilter

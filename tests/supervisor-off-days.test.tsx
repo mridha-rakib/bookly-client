@@ -40,6 +40,15 @@ const button = (text: string) => Array.from(host.querySelectorAll("button")).fin
 const click = async (node: Element) => { await act(async () => { node.dispatchEvent(new MouseEvent("click", { bubbles: true })); }); };
 
 describe("Supervisor off-day draft and save", () => {
+  it("blocks same-tick duplicate schedule saves", async () => {
+    let release!: (value: unknown) => void;
+    fx.save.mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    await render(); await click(button("Edit schedule"));
+    const save = button("Save");
+    await act(async () => { save.click(); save.click(); });
+    expect(fx.save).toHaveBeenCalledOnce();
+    await act(async () => { release([]); });
+  });
   it("shows authoritative off-days and changes Thursday without submitting a stale replacement", async () => {
     await render(); expect(host.textContent).toContain("Wed · Off");
     expect(summarizeScheduleForCard(fx.members[0].schedule, fx.members[0].offDays)).toContain("Weekend:");

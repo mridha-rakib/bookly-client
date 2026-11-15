@@ -57,7 +57,10 @@ export default function StaffSidebar({
     const isActive = activeTab === tabName;
     return (
       <button
-        onClick={() => setActiveTab(tabName)}
+        type="button"
+        aria-label={labelText}
+        aria-current={isActive ? "page" : undefined}
+        onClick={() => { setActiveTab(tabName); if (window.matchMedia?.("(max-width: 767px)").matches) setIsCollapsed(true); }}
         className={`w-full flex items-center rounded-lg text-sm transition-all duration-150 relative group ${isCollapsed ? "justify-center p-2.5" : "justify-between px-3 py-2.5"} ${isActive ? "bg-[#111111] text-white" : "text-[#111111] hover:bg-[#B0C5C8]/40"}`}
       >
         <div className="flex items-center gap-2.5">
@@ -89,12 +92,13 @@ export default function StaffSidebar({
   };
 
   return (
-    <aside className={`bg-[#C0D5D8] flex flex-col justify-between shrink-0 border-r border-[#B0C5C8] h-full transition-all duration-300 ${isCollapsed ? "w-[78px]" : "w-[280px]"}`}>
+    <aside className={`bg-[#C0D5D8] flex flex-col justify-between shrink-0 border-r border-[#B0C5C8] h-full transition-all duration-300 ${isCollapsed ? "w-[78px]" : "fixed inset-y-0 left-0 z-50 w-[280px] md:relative md:inset-auto md:z-auto"}`}>
       
       {/* Sidebar Header with Staff badge */}
       <div className={`h-16 flex items-center justify-between px-6 border-b border-[#B0C5C8] bg-[#C0D5D8] shrink-0 ${isCollapsed ? "justify-center !px-3" : ""}`}>
         {isCollapsed ? (
           <button
+            aria-label="Expand navigation"
             onClick={() => setIsCollapsed(false)}
             className="w-8 h-8 rounded-lg hover:bg-[#B0C5C8]/50 flex items-center justify-center text-[#1C1B1C] transition-all cursor-pointer"
           >
@@ -112,6 +116,7 @@ export default function StaffSidebar({
               </div>
             </div>
             <button
+              aria-label="Collapse navigation"
               onClick={() => setIsCollapsed(true)}
               className="w-8 h-8 rounded-lg hover:bg-[#B0C5C8]/50 flex items-center justify-center text-[#1C1B1C] transition-all cursor-pointer"
             >
@@ -163,7 +168,7 @@ export default function StaffSidebar({
       {/* User Footer Profile */}
       <div ref={footerMenuRef} className="border-t border-[#757575]/30 bg-[#C0D5D8] flex flex-col shrink-0 relative">
         <div className={`p-4 flex items-center ${isCollapsed ? "justify-center" : "justify-between"}`}>
-          <div className="flex items-center gap-3 cursor-pointer select-none" onClick={() => setShowFooterMenu(!showFooterMenu)}>
+          <button type="button" aria-label="Account menu" aria-expanded={showFooterMenu} className="flex items-center gap-3 cursor-pointer select-none text-left" onClick={() => setShowFooterMenu(!showFooterMenu)}>
             <Image src={profileImage} alt="User Profile" className="w-10 h-10 rounded-full object-cover border border-[#4E5F78]" width={40} height={40} />
             {!isCollapsed && (
               <div className="flex flex-col">
@@ -171,12 +176,11 @@ export default function StaffSidebar({
                 <span className="text-[11px] text-[#4E5F78] max-w-[140px] truncate">{userEmail}</span>
               </div>
             )}
-          </div>
+          </button>
           {!isCollapsed && (
             <HugeiconsIcon
               icon={ArrowDown01Icon}
-              className={`w-4 h-4 text-[#1C1C1A] cursor-pointer transition-transform duration-200 ${showFooterMenu ? "rotate-180" : ""}`}
-              onClick={() => setShowFooterMenu(!showFooterMenu)}
+              className={`w-4 h-4 text-[#1C1C1A] pointer-events-none transition-transform duration-200 ${showFooterMenu ? "rotate-180" : ""}`}
             />
           )}
         </div>

@@ -159,14 +159,14 @@ export default function DashboardPayoutsList({ businessId }: DashboardPayoutsLis
           {/* Card 4 */}
           <div className="flex flex-col items-start p-4 bg-[#F1F0EA] rounded-[12px] flex-grow w-full md:w-auto h-[100px]">
             <span className="font-poppins font-semibold text-[10px] leading-[15px] tracking-[0.8px] uppercase text-[#83847E]">
-              YOUR PAYOUT — END OF {selectedMonth.slice(0, 3).toUpperCase()}
+              NET FEES — {selectedMonth.slice(0, 3).toUpperCase()} (UTC)
             </span>
             <div className="flex flex-col mt-2">
               <span className="font-poppins font-semibold text-[24px] leading-[24px] tracking-[-0.96px] text-[#43A27E]">
                 {summary ? formatBookingMoney(summary.netPayoutCents) : "—"}
               </span>
               <span className="font-poppins font-semibold text-[11px] leading-[16px] text-[#73756E] mt-1">
-                100% yours, net of processing
+                Net of processing; payout status is shown below
               </span>
             </div>
           </div>
@@ -175,6 +175,7 @@ export default function DashboardPayoutsList({ businessId }: DashboardPayoutsLis
         {summaryQuery.isError ? (
           <div className="w-full py-3 text-center text-xs font-poppins font-semibold text-[#BA1A1A]">
             Couldn&apos;t load this period&apos;s finance summary. Please try again.
+            <button type="button" disabled={summaryQuery.isFetching} onClick={() => void summaryQuery.refetch()} className="ml-2 underline disabled:opacity-50">{summaryQuery.isFetching ? "Retrying…" : "Retry summary"}</button>
           </div>
         ) : null}
 

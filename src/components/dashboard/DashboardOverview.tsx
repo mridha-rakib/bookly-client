@@ -17,7 +17,7 @@ import { formatPackageSessionLabel } from "@/lib/bookings/format";
 import type { OverviewRange } from "@/lib/api/dashboardOverview";
 import { toUserMessage } from "@/lib/auth/messages";
 
-export default function DashboardOverview() {
+export default function DashboardOverview({ onViewCalendar }: { onViewCalendar: () => void }) {
   const [timeFilter, setTimeFilter] = useState("Today");
   const [range, setRange] = useState<OverviewRange>({ range: "Today" });
   const [scheduleFilter, setScheduleFilter] = useState("All");
@@ -208,11 +208,16 @@ export default function DashboardOverview() {
           </div>
           <div className="flex items-center text-[11px] text-[#757575] mt-0.5 font-poppins whitespace-nowrap select-none">
             <span>
-              {ratingSummary
+              {ratingSummaryQuery.isError
+                ? "Reviews unavailable"
+                : ratingSummaryQuery.isLoading
+                  ? "Loading reviews…"
+                  : ratingSummary
                 ? `${ratingSummary.reviewCount} verified review${ratingSummary.reviewCount === 1 ? "" : "s"}`
-                : "No reviews yet"}
+                : "—"}
             </span>
           </div>
+          {ratingSummaryQuery.isError && <button type="button" className="text-xs underline text-left" disabled={ratingSummaryQuery.isFetching} onClick={() => void ratingSummaryQuery.refetch()}>Retry reviews</button>}
         </div>
       </div>
 
@@ -309,7 +314,7 @@ export default function DashboardOverview() {
 
           {/* Bottom Full Calendar Link (outside the box) */}
           <div className="mt-4">
-            <button className="text-xs font-medium text-[#1D9E75] hover:opacity-85 transition-opacity flex items-center gap-1.5 font-poppins">
+            <button type="button" onClick={onViewCalendar} className="text-xs font-medium text-[#1D9E75] hover:opacity-85 transition-opacity flex items-center gap-1.5 font-poppins">
               <span>View full calendar</span>
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7-7 7M3 12h18" />

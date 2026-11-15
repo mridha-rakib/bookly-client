@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -57,6 +57,7 @@ function BookingViewContent({ bookingId }: { bookingId?: string }) {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelError, setCancelError] = useState<string | undefined>(undefined);
   const cancelMutation = useCancelByCustomerMutation();
+  const cancelInFlight = useRef(false);
 
   const isUpcoming = !firstClassLine && (booking?.status === "UPCOMING" || booking?.status === "PENDING");
   const visitMode = booking?.fulfilment?.mode;
@@ -67,13 +68,16 @@ function BookingViewContent({ bookingId }: { bookingId?: string }) {
   const isTravel = visitMode === "TRAVEL_TO_CUSTOMER";
 
   const handleConfirmCancel = async () => {
-    if (!bookingId) return;
+    if (!bookingId || cancelInFlight.current) return;
+    cancelInFlight.current = true;
     setCancelError(undefined);
     try {
       await cancelMutation.mutateAsync({ bookingId });
       setShowCancelConfirm(false);
     } catch (error) {
       setCancelError(toUserMessage(error));
+    } finally {
+      cancelInFlight.current = false;
     }
   };
 

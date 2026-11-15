@@ -9,14 +9,28 @@ import type { AvailabilityResult, AvailabilitySlot, GetAvailabilityParams } from
 const fx = vi.hoisted(() => ({
   services: [] as CatalogService[],
   requests: [] as GetAvailabilityParams[],
+  compositeRequests: [] as Array<{ fromDate: string; lines: Array<{ serviceId: string; staffMembershipId: string }> }>,
   create: vi.fn().mockResolvedValue({ id: "created" }),
   createClient: vi.fn(),
   omitAddress: false,
+  configError: false,
+  configLoading: false,
+  refetchConfig: vi.fn(),
+  addonsError: false,
+  staffError: false,
+  retryAddons: vi.fn(),
+  retryStaff: vi.fn(),
   delay: undefined as undefined | ((params: GetAvailabilityParams) => Promise<AvailabilityResult> | undefined),
 }));
 vi.mock("@/lib/api/client", async (original) => ({
   ...(await original<typeof import("@/lib/api/client")>()),
-  apiRequest: async ({ params }: { params: GetAvailabilityParams }) => {
+  apiRequest: async ({ params, data }: { params: GetAvailabilityParams; data?: { fromDate: string; lines: Array<{ serviceId: string; staffMembershipId: string }> } }) => {
+    if (data?.lines) {
+      fx.compositeRequests.push(data);
+      const value = response({ fromDate: data.fromDate, toDate: data.fromDate });
+      value.days[0]!.slots.forEach((slot) => { slot.eligibleStaffMembershipIds = data.lines.map((line) => line.staffMembershipId); });
+      return value;
+    }
     fx.requests.push(params);
     const delayed = fx.delay?.(params);
     if (delayed) return delayed;
@@ -25,11 +39,12 @@ vi.mock("@/lib/api/client", async (original) => ({
 }));
 vi.mock("@/lib/bookings/hooks", () => ({
   useBookableServicesQuery: () => ({ data: { services: fx.services }, isLoading: false }),
-  useBookableAddonsForServiceQuery: () => ({ data: { addons: [] } }),
+  useBookableAddonsForServiceQuery: (_business: string, serviceId: string | undefined) => ({ data: fx.addonsError ? undefined : { addons: serviceId ? [{ id: `${serviceId}-addon`, name: `${serviceId} extra`, priceCents: 100 }] : [] }, isError: fx.addonsError, refetch: fx.retryAddons }),
   useCreateManualBookingMutation: () => ({ mutateAsync: fx.create, isPending: false }),
 }));
-vi.mock("@/lib/staff/hooks", () => ({ useStaffListQuery: () => ({ data: { members: [
+vi.mock("@/lib/staff/hooks", () => ({ useStaffListQuery: () => ({ isError: fx.staffError, refetch: fx.retryStaff, data: fx.staffError ? undefined : { members: [
   { membershipId: "staff", name: "Professional", employmentActive: true },
+  { membershipId: "staff2", name: "Second professional", employmentActive: true },
 ] } }) }));
 vi.mock("@/lib/clients/hooks", () => ({
   useClientsQuery: () => ({ data: { clients: [{ id: "client", firstName: "Customer", email: "test@example.com",
@@ -38,7 +53,7 @@ vi.mock("@/lib/clients/hooks", () => ({
   }] } }),
   useCreateClientMutation: () => ({ mutateAsync: fx.createClient, isPending: false }),
 }));
-vi.mock("@/lib/superAdminSettings/hooks", () => ({ usePublicBookingConfigQuery: () => ({ data: { maxServicesPerBooking: 5 } }) }));
+vi.mock("@/lib/superAdminSettings/hooks", () => ({ usePublicBookingConfigQuery: () => ({ data: fx.configError || fx.configLoading ? undefined : { maxServicesPerBooking: 5 }, isError: fx.configError, refetch: fx.refetchConfig }) }));
 vi.mock("next/image", () => ({ default: () => <span /> }));
 vi.mock("@/components/dashboard/DashboardHeader", () => ({ default: () => <header /> }));
 vi.mock("@/components/ui/sonner", () => ({ toast: { error: vi.fn() } }));
@@ -100,7 +115,7 @@ async function setup(service: CatalogService) {
   await waitFor(() => button("Slot 09:00"));
 }
 beforeEach(async () => {
-  fx.omitAddress = false; fx.services = [hourly, group, fixed]; fx.requests.length = 0; fx.create.mockReset().mockResolvedValue({ id: "created" }); fx.createClient.mockReset(); fx.delay = undefined;
+  fx.omitAddress = false; fx.configError = false; fx.configLoading = false; fx.addonsError = false; fx.staffError = false; fx.retryAddons.mockReset(); fx.retryStaff.mockReset(); fx.refetchConfig.mockReset(); fx.services = [hourly, group, fixed]; fx.requests.length = 0; fx.compositeRequests.length = 0; fx.create.mockReset().mockResolvedValue({ id: "created" }); fx.createClient.mockReset(); fx.delay = undefined;
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   await act(async () => root.render(<QueryClientProvider client={queryClient}><DashboardBookingForm businessId="business"
@@ -115,6 +130,63 @@ beforeEach(async () => {
 afterEach(async () => { await act(async () => root.unmount()); queryClient.clear(); host.remove(); });
 
 describe("Manual Booking quantity (F1B)", () => {
+  it("offers retries rather than treating failed add-on and staff reads as empty", async () => {
+    await chooseService("fixed");
+    fx.addonsError = true; fx.staffError = true;
+    await act(async () => root.render(<QueryClientProvider client={queryClient}><DashboardBookingForm businessId="business" visitType="AT_BUSINESS_LOCATION" onClose={() => undefined} onCreated={() => undefined} /></QueryClientProvider>));
+    expect(host.textContent).toContain("Add-ons could not be loaded");
+    expect(host.textContent).toContain("Professionals could not be loaded");
+    expect(host.textContent).not.toContain("No eligible professionals available");
+    await click("Retry add-ons"); await click("Retry professionals");
+    expect(fx.retryAddons).toHaveBeenCalledOnce(); expect(fx.retryStaff).toHaveBeenCalledOnce();
+    expect(fx.create).not.toHaveBeenCalled();
+  });
+  it("submits parallel lines with distinct professionals from composite availability", async () => {
+    fx.services = [hourly, { ...fixed, assignedStaffMembershipIds: ["staff2"] }];
+    await act(async () => root.render(<QueryClientProvider client={queryClient}><DashboardBookingForm businessId="business" visitType="AT_BUSINESS_LOCATION" onClose={() => undefined} onCreated={() => undefined} /></QueryClientProvider>));
+    await setup(hourly);
+    await chooseService(fixed.id);
+    const addonService = [...host.querySelectorAll("select")].find((item) => [...item.options].some((option) => option.value === fixed.id) && item.value === hourly.id)!;
+    await act(async () => { addonService.value = fixed.id; addonService.dispatchEvent(new Event("change", { bubbles: true })); });
+    const addonSelect = [...host.querySelectorAll("select")].find((item) => [...item.options].some((option) => option.value === "fixed-addon"))!;
+    await act(async () => { addonSelect.value = "fixed-addon"; addonSelect.dispatchEvent(new Event("change", { bubbles: true })); });
+    const second = [...host.querySelectorAll("button")].find((item) => item.textContent?.includes("Second professional"));
+    expect(second).toBeDefined();
+    await act(async () => second!.click());
+    await waitFor(() => expect(fx.compositeRequests.length).toBeGreaterThan(0));
+    await waitFor(() => button("Slot 09:00"));
+    await click("Slot 09:00");
+    await click("+");
+    expect(button("Create booking").disabled).toBe(true);
+    await waitFor(() => button("Slot 09:00"));
+    await click("Slot 09:00");
+    await click("Create booking");
+    expect(fx.create).toHaveBeenCalledOnce();
+    expect(fx.create.mock.calls[0]![0].input.serviceLines).toMatchObject([
+      { serviceId: "hourly", staffMembershipId: "staff", pricingInput: { hours: 3 } },
+      { serviceId: "fixed", staffMembershipId: "staff2", addonIds: ["fixed-addon"] },
+    ]);
+  });
+  it("blocks service selection and offers retry when booking limits cannot load", async () => {
+    fx.configError = true;
+    await act(async () => root.render(<QueryClientProvider client={queryClient}><DashboardBookingForm businessId="business" visitType="AT_BUSINESS_LOCATION" onClose={() => undefined} onCreated={() => undefined} /></QueryClientProvider>));
+    expect(host.textContent).toContain("Could not load booking limits");
+    expect(host.querySelector("select")?.disabled).toBe(true);
+    await click("Retry");
+    expect(fx.refetchConfig).toHaveBeenCalledOnce();
+  });
+
+  it("does not offer an individually available slot for two overlapping services with one professional", async () => {
+    await setup(hourly);
+    await click("Slot 09:00");
+    await chooseService(fixed.id);
+    expect(host.textContent).toContain("Select a service and staff member to see real availability.");
+    expect(fx.compositeRequests).toHaveLength(0);
+    expect([...host.querySelectorAll("button")].some((b) => b.textContent?.includes("Slot 09:00"))).toBe(false);
+    expect(button("Create booking").disabled).toBe(true);
+    expect(fx.create).not.toHaveBeenCalled();
+  });
+
   it.each([hourly, group])("sends default/edited quantities for $name, clears slots and preserves explicit staff", async (service) => {
     await setup(service);
     const field = service === hourly ? "hours" : "partySize";
@@ -209,6 +281,17 @@ it("BC-F02 retries booking with the already created client instead of creating i
   expect(fx.create).toHaveBeenCalledTimes(2);
   expect(fx.create.mock.calls[1]![0].input.businessClientId).toBe("new-client");
   expect(fx.create.mock.calls[1]![0].input.idempotencyKey).toBe(fx.create.mock.calls[0]![0].input.idempotencyKey);
+});
+it("does not replay an uncertain booking request with changed details under the same key", async () => {
+  await setup(fixed); await click("Slot 09:00");
+  fx.create.mockRejectedValueOnce(Error("Connection lost"));
+  await click("Create booking");
+  await click("Slot 11:00"); await click("Create booking");
+  expect(fx.create).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("previous booking request may have been saved");
+  await click("Slot 09:00"); await click("Create booking");
+  expect(fx.create).toHaveBeenCalledTimes(2);
+  expect(fx.create.mock.calls[1]![0].input).toEqual(fx.create.mock.calls[0]![0].input);
 });
 it("BC-F02 client creation failure never dispatches a booking", async () => {
   await newClientForm();

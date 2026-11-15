@@ -9,6 +9,7 @@ import { Mail01Icon, ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 import AuthLayout from "@/components/auth/AuthLayout";
 import AuthCard from "@/components/auth/AuthCard";
 import { InputField } from "@/components/auth/InputField";
+import { requestRecovery } from "@/lib/auth/password-recovery";
 
 function ForgotPasswordContent() {
   const router = useRouter();
@@ -17,9 +18,11 @@ function ForgotPasswordContent() {
 
   const [email, setEmail] = useState(emailParam);
   const [emailError, setEmailError] = useState("");
+  const [pending, setPending] = useState(false);
 
-  const handleNextSubmit = (e: React.FormEvent) => {
+  const handleNextSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (pending) return;
     if (!email) {
       setEmailError("Please enter your email");
       return;
@@ -28,9 +31,16 @@ function ForgotPasswordContent() {
       setEmailError("Please enter a valid email address");
       return;
     }
+    setPending(true);
     setEmailError("");
-    // Redirect to verify code with flow=reset
-    router.push(`/customer/verify?email=${encodeURIComponent(email)}&flow=reset`);
+    try {
+      const available = await requestRecovery("customer", email.trim());
+      if (!available) {
+        setEmailError("Please wait before requesting another code, then try again.");
+        return;
+      }
+      router.push(`/customer/verify?email=${encodeURIComponent(email.trim())}&flow=reset`);
+    } catch { setEmailError("Could not start recovery. Please try again."); } finally { setPending(false); }
   };
 
   return (
@@ -53,9 +63,10 @@ function ForgotPasswordContent() {
 
           <button
             type="submit"
+            disabled={pending}
             className="w-full max-w-[520px] h-12 bg-[#1A1A1A] hover:bg-black text-white font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer"
           >
-            Next
+            {pending ? "Sending…" : "Next"}
           </button>
 
           {/* Back to Login link */}

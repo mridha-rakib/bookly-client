@@ -397,6 +397,7 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
   // a search-in-progress can never be mistaken for the actual saved business address.
   const [resolvedLocationLabel, setResolvedLocationLabel] = useState("Larnaca, Cyprus");
   const searchRequestRef = useRef(0);
+  const saveInFlight = useRef(false);
 
   const handleLocationSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -665,7 +666,7 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
   }, [businessHours]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const handleSaveChanges = async () => {
+  const saveChanges = async () => {
     if (mode === "edit" && (!availabilityRulesQuery.data || availabilityRulesQuery.isError || updateAvailabilityMutation.isPending)) return;
     if (closedPeriods.some(period => !/^\d{4}-\d{2}-\d{2}$/.test(period.start) || !/^\d{4}-\d{2}-\d{2}$/.test(period.end) || period.end < period.start)) {
       toast.error("Each closed period needs valid start and end dates, with the end on or after the start.");
@@ -678,7 +679,6 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
       updateBusinessTravelSettingsMutation.isPending ||
       updateBusinessHoursMutation.isPending
     ) {
-      onBack();
       return;
     }
 
@@ -778,6 +778,12 @@ export default function DashboardCreateBusiness({ onBack, mode = "create", busin
     } catch (error) {
       toast.error(`Some Business details were saved, but availability settings could not be fully saved. ${toUserMessage(error)}`);
     }
+  };
+
+  const handleSaveChanges = async () => {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
+    try { await saveChanges(); } finally { saveInFlight.current = false; }
   };
 
   const handleUploadImages = async (files: FileList) => {

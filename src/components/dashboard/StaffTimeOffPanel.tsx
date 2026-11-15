@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 
 import { toast } from "@/components/ui/sonner";
 import { toUserMessage } from "@/lib/auth/messages";
@@ -30,6 +30,7 @@ export default function StaffTimeOffPanel({ businessId, member }: StaffTimeOffPa
   const [formError, setFormError] = useState("");
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const submitting = useRef(false);
 
   const staffId = member.membershipId;
   if (!staffId) return null;
@@ -45,6 +46,7 @@ export default function StaffTimeOffPanel({ businessId, member }: StaffTimeOffPa
   };
 
   const handleAdd = async () => {
+    if (submitting.current) return;
     if (!startDate) {
       setFormError("Choose a start date.");
       return;
@@ -54,6 +56,7 @@ export default function StaffTimeOffPanel({ businessId, member }: StaffTimeOffPa
       return;
     }
     setFormError("");
+    submitting.current = true;
     try {
       await createMutation.mutateAsync({
         businessId,
@@ -65,10 +68,14 @@ export default function StaffTimeOffPanel({ businessId, member }: StaffTimeOffPa
     } catch (error) {
       // Keep the entered values so the Supervisor can correct them (e.g. an overlap).
       setFormError(toUserMessage(error));
+    } finally {
+      submitting.current = false;
     }
   };
 
   const handleRemove = async (timeOffId: string) => {
+    if (submitting.current) return;
+    submitting.current = true;
     setRemovingId(timeOffId);
     try {
       await removeMutation.mutateAsync({ businessId, staffId, timeOffId });
@@ -78,6 +85,7 @@ export default function StaffTimeOffPanel({ businessId, member }: StaffTimeOffPa
       toast.error(toUserMessage(error));
     } finally {
       setRemovingId(null);
+      submitting.current = false;
     }
   };
 

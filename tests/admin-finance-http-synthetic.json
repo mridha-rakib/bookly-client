@@ -1,0 +1,29 @@
+{
+  "success": true,
+  "message": "Platform transactions",
+  "data": {
+    "transactions": [
+      {
+        "id": "6af91ca79b86ebe7b931a0fe",
+        "businessId": "6af91ca79b86ebe7b931a0e2",
+        "businessName": "Salon A",
+        "bookingId": "6af91ca79b86ebe7b931a0f8",
+        "bookingReference": "BK-UWQS5V2K",
+        "customerName": "Test Customer",
+        "type": "PLATFORM_FEE",
+        "date": "2026-11-15T02:44:55.756Z",
+        "grossCents": 1600,
+        "stripeFeeCents": 0,
+        "netCents": 1600,
+        "owner": "BOOKLY",
+        "status": "SUCCEEDED",
+        "currency": "EUR"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 1,
+      "total": 2
+    }
+  }
+}

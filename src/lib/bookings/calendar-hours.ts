@@ -8,20 +8,77 @@ function localParts(instant: string, timezone: string) {
   return { date: `${get("year")}-${get("month")}-${get("day")}`, minutes: Number(get("hour")) * 60 + Number(get("minute")) };
 }
 
-/** Intersect the actual appointment with a calendar-local day. Comparing local dates rather
- * than dividing elapsed milliseconds preserves midnight and DST boundaries. No Booking edits. */
-export function bookingDayInterval(booking: Pick<BookingCalendarEntry, "schedule">, date: string, timezone = booking.schedule.timezone) {
-  const start = localParts(booking.schedule.startAt, timezone), end = localParts(booking.schedule.endAt, timezone);
-  if (start.date > date || end.date < date || (end.date === date && end.minutes === 0)) return null;
-  const from = start.date < date ? 0 : start.minutes;
-  let to = end.date > date ? 1440 : end.minutes;
-  // The repeated hour at DST fall-back can end earlier on the wall clock. Keep a
-  // positive persisted duration visible in the existing single-hour-row layout.
-  if (to <= from && start.date === date && end.date === date) {
-    const elapsed = (Date.parse(booking.schedule.endAt) - Date.parse(booking.schedule.startAt)) / 60000;
-    if (elapsed > 0) to = Math.min(1440, from + elapsed);
+/** Locate the first instant of a civil date without using the browser's timezone. */
+const dayBoundaryCache = new Map<string, number>();
+function dayBoundary(date: string, timezone: string): number {
+  const cacheKey = `${timezone}:${date}`;
+  const cached = dayBoundaryCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" });
+  const key = (ms: number) => {
+    const parts = formatter.formatToParts(new Date(ms));
+    const get = (type: string) => parts.find(part => part.type === type)?.value ?? "";
+    return `${get("year")}-${get("month")}-${get("day")}`;
+  };
+  const reference = Date.parse(`${date}T00:00:00Z`);
+  let low = Math.floor((reference - 48 * 3600000) / 60000);
+  let high = Math.ceil((reference + 48 * 3600000) / 60000);
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (key(mid * 60000) < date) low = mid + 1; else high = mid;
   }
-  return to > from ? { from, to } : null;
+  const result = low * 60000;
+  if (dayBoundaryCache.size >= 512) dayBoundaryCache.clear();
+  dayBoundaryCache.set(cacheKey, result);
+  return result;
+}
+
+export interface CalendarTimelineSlot {
+  startAt: number;
+  endAt: number;
+  wallMinute: number;
+  offset: string;
+  ambiguous: boolean;
+  discontinuous: boolean;
+}
+
+/** Half-hour rows in chronological instant order, including both repeated-hour occurrences. */
+const timelineCache = new Map<string, { startAt: number; endAt: number; slots: CalendarTimelineSlot[] }>();
+export function calendarDayTimeline(date: string, timezone: string) {
+  const cacheKey = `${timezone}:${date}`;
+  const cached = timelineCache.get(cacheKey);
+  if (cached) return cached;
+  const next = new Date(`${date}T00:00:00Z`); next.setUTCDate(next.getUTCDate() + 1);
+  const startAt = dayBoundary(date, timezone);
+  const endAt = dayBoundary(next.toISOString().slice(0, 10), timezone);
+  const offsetFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, timeZoneName: "shortOffset", hour: "2-digit" });
+  const slots: CalendarTimelineSlot[] = [];
+  for (let start = startAt; start < endAt; start += 30 * 60000) {
+    const end = Math.min(start + 30 * 60000, endAt);
+    const wallMinute = localParts(new Date(start).toISOString(), timezone).minutes;
+    const endParts = localParts(new Date(end).toISOString(), timezone);
+    const expected = wallMinute + (end - start) / 60000;
+    slots.push({ startAt: start, endAt: end, wallMinute,
+      offset: offsetFormatter.formatToParts(new Date(start)).find(part => part.type === "timeZoneName")?.value ?? "",
+      ambiguous: false,
+      discontinuous: endParts.date === date ? endParts.minutes !== expected : expected !== 1440 });
+  }
+  const occurrences = new Map<number, number>();
+  for (const slot of slots) occurrences.set(slot.wallMinute, (occurrences.get(slot.wallMinute) ?? 0) + 1);
+  for (const slot of slots) slot.ambiguous = (occurrences.get(slot.wallMinute) ?? 0) > 1;
+  const result = { startAt, endAt, slots };
+  if (timelineCache.size >= 128) timelineCache.clear();
+  timelineCache.set(cacheKey, result);
+  return result;
+}
+
+/** Intersect an appointment with a business-local day, measured in real elapsed minutes. */
+export function bookingDayInterval(booking: Pick<BookingCalendarEntry, "schedule">, date: string, timezone = booking.schedule.timezone) {
+  const next = new Date(`${date}T00:00:00Z`); next.setUTCDate(next.getUTCDate() + 1);
+  const dayStart = dayBoundary(date, timezone), dayEnd = dayBoundary(next.toISOString().slice(0, 10), timezone);
+  const start = Math.max(dayStart, Date.parse(booking.schedule.startAt));
+  const end = Math.min(dayEnd, Date.parse(booking.schedule.endAt));
+  return end > start ? { from: (start - dayStart) / 60000, to: (end - dayStart) / 60000 } : null;
 }
 
 export function calendarDayHours(date: string, bookings: Pick<BookingCalendarEntry, "schedule">[], openingHours: BusinessHoursDay[], schedules: ScheduleDay[][], timezone?: string) {

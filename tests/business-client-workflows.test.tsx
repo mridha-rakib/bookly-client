@@ -73,6 +73,11 @@ it.each([false, true])("saves non-address edits with saved-address=%s", async (w
   if (withAddress) expect(payload.input.address).toMatchObject(fx.dto.address!);
   else expect(payload.input).not.toHaveProperty("address");
 });
+it("does not send duplicate client updates on rapid submission", async () => {
+  await mount(); await click("Edit"); await click("Change notes");
+  await act(async () => { button("Save").click(); button("Save").click(); });
+  expect(fx.update).toHaveBeenCalledOnce();
+});
 it("allows optional address on PATCH while validating any supplied address and preserving create rules", () => {
   expect(clientUpdateSchema.safeParse({ notes: "Edited" }).success).toBe(true);
   expect(clientUpdateSchema.safeParse({ address: { city: "Larnaca" } }).success).toBe(false);

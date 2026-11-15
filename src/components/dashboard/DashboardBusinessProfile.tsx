@@ -70,7 +70,7 @@ export function BusinessCard({
   const showImage = Boolean(image) && failedImageUrl !== image;
 
   return (
-    <div className="box-border flex flex-col items-start gap-5 w-[372px] min-h-[507px] rounded-xl bg-white border border-[#E8E6FF] overflow-hidden shadow-sm font-poppins">
+    <div className="box-border flex flex-col items-start gap-5 w-[372px] max-w-full min-h-[507px] rounded-xl bg-white border border-[#E8E6FF] overflow-hidden shadow-sm font-poppins">
       {/* Image Container */}
       <div className="relative w-full h-[233px] shrink-0">
         {showImage ? (
@@ -102,10 +102,10 @@ export function BusinessCard({
       </div>
 
       {/* Details Area */}
-      <div className="flex flex-col justify-start items-start px-5 pb-5 pt-0 gap-4 w-[372px] min-h-[246px] flex-1">
+      <div className="flex flex-col justify-start items-start px-5 pb-5 pt-0 gap-4 w-full min-h-[246px] flex-1">
         {/* Title & Star Rating */}
-        <div className="flex flex-row justify-between items-start gap-4 w-[332px] h-16 shrink-0">
-          <h3 className="w-[211px] h-16 font-poppins font-medium text-lg text-[#1C1B1C] leading-[32px] line-clamp-2">
+        <div className="flex flex-row justify-between items-start gap-4 w-full h-16 shrink-0">
+          <h3 className="min-w-0 flex-1 h-16 font-poppins font-medium text-lg text-[#1C1B1C] leading-[32px] line-clamp-2">
             {title}
           </h3>
 
@@ -145,7 +145,7 @@ export function BusinessCard({
         </div>
 
         {/* Divider & Action */}
-        <div className="box-border flex flex-row justify-between items-center pt-3 gap-2.5 w-[332px] h-[62px] border-t border-[#111111]/20 mt-auto shrink-0">
+        <div className="box-border flex flex-row justify-between items-center pt-3 gap-2.5 w-full h-[62px] border-t border-[#111111]/20 mt-auto shrink-0">
           {/* Price Frame */}
           <div className="flex flex-col items-start select-none">
             <span className="font-poppins font-medium text-xs text-[#757575] leading-5 tracking-wider uppercase whitespace-nowrap">

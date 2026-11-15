@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { InformationCircleIcon, CreditCardPosIcon } from "@hugeicons/core-free-icons";
 import { CardCvcElement, CardExpiryElement, CardNumberElement, useElements, useStripe } from "@stripe/react-stripe-js";
@@ -56,6 +56,7 @@ export function CardCollectionForm({
   const elements = useElements();
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [error, setError] = useState<string | undefined>(undefined);
   // Stripe-reported brand only (`event.brand`) — never derived from the card number itself,
   // which this component never has access to in the first place.
@@ -66,10 +67,11 @@ export function CardCollectionForm({
   };
 
   const handleSave = async () => {
-    if (!stripe || !elements) return;
+    if (!stripe || !elements || savingRef.current) return;
     const cardNumberElement = elements.getElement(CardNumberElement);
     if (!cardNumberElement) return;
 
+    savingRef.current = true;
     setSaving(true);
     setError(undefined);
     try {
@@ -95,6 +97,7 @@ export function CardCollectionForm({
     } catch {
       setError("This card could not be saved. Please try again.");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };

@@ -105,6 +105,19 @@ const writes = () => fx.requests.filter((r) => r.method && r.method !== "GET");
 const panelText = () => host.querySelector('[aria-label="Time off for Alex"]')?.textContent ?? "";
 
 describe("Supervisor team time off", () => {
+  it("blocks rapid duplicate time-off submissions before pending state renders", async () => {
+    await render();
+    await waitFor(() => expect(button("+ Add time off")).toBeTruthy());
+    await click(button("+ Add time off"));
+    await setValue(dateInputs()[0]!, "2026-12-22");
+    let release!: (value: unknown) => void;
+    const original = fx.respond!;
+    fx.respond = (request) => request.method === "POST" ? new Promise(resolve => { release = resolve; }) : original(request);
+    const save = button("Save time off")!;
+    await act(async () => { save.click(); save.click(); });
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    await act(async () => { release({ id: "new", type: "ANNUAL_HOLIDAY", startDate: "2026-12-22", endDate: "2026-12-22" }); });
+  });
   it("shows persisted time off and adds an entry through the existing API without touching the schedule", async () => {
     const invalidate = vi.spyOn(client, "invalidateQueries");
     await render();

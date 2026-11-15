@@ -22,13 +22,11 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function BusinessOverviewTab({ businessId }: BusinessOverviewTabProps) {
-  const { data: business, isLoading, isError } = useSuperAdminBusinessDetailQuery(businessId);
+  const { data: business, isLoading, isError, isFetching, refetch } = useSuperAdminBusinessDetailQuery(businessId);
 
+  if (isError) return <div role="alert" className="p-8 text-center text-rose-500">Failed to load this business. <button type="button" disabled={isFetching} onClick={() => void refetch()} className="underline">Retry</button></div>;
   if (isLoading || !business) {
     return <div className="p-8 text-center text-gray-400">Loading…</div>;
-  }
-  if (isError) {
-    return <div className="p-8 text-center text-rose-500">Failed to load this business.</div>;
   }
 
   return (

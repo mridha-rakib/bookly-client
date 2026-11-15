@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 
 import { staffAppointmentsApi, type StaffAppointmentDetail, type StaffAppointmentListParams } from "@/lib/api/staff-appointments";
@@ -32,6 +32,7 @@ export const useMyAppointmentsQuery = (businessId: string | undefined, params: S
  * Abort and ignore late responses; an old response never restores authorization.
  */
 export const useMyAppointmentQuery = (businessId: string | undefined, bookingId: string | undefined) => {
+  const queryClient = useQueryClient();
   const epoch = useAuthStore((state) => state.cacheEpoch);
   const status = useAuthStore((state) => state.status);
   const actor = useAuthStore((state) => state.user);
@@ -77,6 +78,11 @@ export const useMyAppointmentQuery = (businessId: string | undefined, bookingId:
       );
     };
     const visibility = () => document.visibilityState === "hidden" ? clear() : load();
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      const key = event.query.queryKey;
+      if (event.type === "updated" && event.action.type === "invalidate" &&
+          key[0] === "staff" && key[1] === "my-appointments" && key[2] === businessId) load();
+    });
     load();
     window.addEventListener("focus", load);
     document.addEventListener("visibilitychange", visibility);
@@ -86,8 +92,9 @@ export const useMyAppointmentQuery = (businessId: string | undefined, bookingId:
       clearTimeout(expiryTimer);
       window.removeEventListener("focus", load);
       document.removeEventListener("visibilitychange", visibility);
+      unsubscribe();
     };
-  }, [scope, revision, enabled, businessId, bookingId]);
+  }, [scope, revision, enabled, businessId, bookingId, queryClient]);
 
   const current = enabled && state.scope === scope;
   return {

@@ -3,12 +3,11 @@ import Image from "next/image";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 
 
-import React, { RefObject } from "react";
+import React from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowLeft02Icon,
   User02Icon,
-  PencilEdit02Icon,
   Mail01Icon,
   Calendar03Icon,
   ScissorIcon,
@@ -57,8 +56,6 @@ interface ClientFormProps {
   setClientTagState: (val: string) => void;
 
   clientAvatar: string;
-  clientAvatarInputRef: RefObject<HTMLInputElement | null>;
-  handleClientAvatarChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 
   clientPhoneCode: string;
   setClientPhoneCode: (val: string) => void;
@@ -119,8 +116,6 @@ export default function ClientForm({
   setClientTagState,
 
   clientAvatar,
-  clientAvatarInputRef,
-  handleClientAvatarChange,
 
   clientPhoneCode,
   setClientPhoneCode,
@@ -175,27 +170,15 @@ export default function ClientForm({
               </div>
             )}
 
-            {/* Avatar Picker */}
-            <div 
-              onClick={() => clientAvatarInputRef.current?.click()}
-              className="relative w-14 h-14 bg-[#E1F5EE] rounded-full flex items-center justify-center select-none cursor-pointer hover:opacity-95 transition-opacity"
+            <div
+              className="relative w-14 h-14 bg-[#E1F5EE] rounded-full flex items-center justify-center select-none"
             >
               {clientAvatar ? (
                 <Image src={clientAvatar} className="w-full h-full rounded-full object-cover" alt="client avatar" fill />
               ) : (
                 <HugeiconsIcon icon={User02Icon} className="w-[22px] h-[22px] text-[#ABAAA6]" />
               )}
-              <div className="absolute right-0 bottom-0 w-6 h-6 bg-white border border-[#E8E8E6] rounded-full flex items-center justify-center shadow-sm">
-                <HugeiconsIcon icon={PencilEdit02Icon} className="w-3 h-3 text-[#757575]" />
-              </div>
             </div>
-            <input 
-              type="file"
-              ref={clientAvatarInputRef}
-              onChange={handleClientAvatarChange}
-              accept="image/*"
-              className="hidden"
-            />
 
             {/* First and Last Name */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

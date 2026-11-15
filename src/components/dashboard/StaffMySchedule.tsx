@@ -24,7 +24,8 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
  * Time off is out of scope for this phase (deferred pending an approval-workflow decision).
  */
 export default function StaffMySchedule() {
-  const businessId = useCurrentUserQuery().data?.business?.id;
+  const userQuery = useCurrentUserQuery();
+  const businessId = userQuery.data?.business?.id;
   const scheduleQuery = useMyScheduleQuery(businessId);
   const servicesQuery = useMyAssignedServicesQuery(businessId);
 
@@ -36,6 +37,7 @@ export default function StaffMySchedule() {
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-y-auto bg-[#FCF8F8] select-none font-poppins relative">
       <DashboardHeader title="Staff" subtitle="Your schedule and assigned services" />
       <div className="flex-1 p-6 md:p-8 flex flex-col gap-6">
+        {userQuery.isLoading ? <p role="status">Loading your staff access…</p> : userQuery.isError ? <div role="alert">Your staff access could not be loaded. <button type="button" disabled={userQuery.isFetching} onClick={() => void userQuery.refetch()} className="underline disabled:opacity-50">{userQuery.isFetching ? "Retrying…" : "Retry"}</button></div> : !businessId ? <p>Your staff access is not linked to an active business.</p> : <>
         <div className="flex flex-col gap-3 w-full bg-white border border-[#EDEBE6] rounded-xl p-5">
           <span className="font-poppins text-xs font-semibold text-[#111111] uppercase tracking-wide">
             My schedule
@@ -43,9 +45,10 @@ export default function StaffMySchedule() {
           {scheduleQuery.isLoading ? (
             <span className="font-poppins text-sm text-neutral-400">Loading…</span>
           ) : scheduleQuery.isError ? (
-            <span className="font-poppins text-sm text-[#BA1A1A]">
+            <div role="alert" className="font-poppins text-sm text-[#BA1A1A]">
               {toUserMessage(scheduleQuery.error)}
-            </span>
+              <button type="button" disabled={scheduleQuery.isFetching} onClick={() => void scheduleQuery.refetch()} className="ml-2 underline disabled:opacity-50">{scheduleQuery.isFetching ? "Retrying…" : "Retry"}</button>
+            </div>
           ) : (
             <div className="flex flex-col gap-1.5">
               {daysOfWeek.map((dayOfWeek) => {
@@ -74,9 +77,10 @@ export default function StaffMySchedule() {
           {servicesQuery.isLoading ? (
             <span className="font-poppins text-sm text-neutral-400">Loading…</span>
           ) : servicesQuery.isError ? (
-            <span className="font-poppins text-sm text-[#BA1A1A]">
+            <div role="alert" className="font-poppins text-sm text-[#BA1A1A]">
               {toUserMessage(servicesQuery.error)}
-            </span>
+              <button type="button" disabled={servicesQuery.isFetching} onClick={() => void servicesQuery.refetch()} className="ml-2 underline disabled:opacity-50">{servicesQuery.isFetching ? "Retrying…" : "Retry"}</button>
+            </div>
           ) : (servicesQuery.data ?? []).length === 0 ? (
             <span className="font-poppins text-xs text-[#ABAAA6]">
               No services are assigned to you yet.
@@ -94,6 +98,7 @@ export default function StaffMySchedule() {
             </div>
           )}
         </div>
+        </>}
       </div>
     </main>
   );

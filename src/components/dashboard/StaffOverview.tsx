@@ -12,11 +12,10 @@ import { useDashboardOverviewQuery } from "@/lib/dashboardOverview/hooks";
 import type { OverviewRange } from "@/lib/api/dashboardOverview";
 import OverviewRangeToolbar from "@/components/dashboard/OverviewRangeToolbar";
 import OverviewRequestState, { resolveOverviewViewState } from "@/components/dashboard/OverviewRequestState";
-import { formatEuro } from "@/lib/services/format";
 import { formatTime12Hour } from "@/lib/staff/format";
 import { formatPackageSessionLabel } from "@/lib/bookings/format";
 
-export default function StaffOverview() {
+export default function StaffOverview({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   // P1.9 — the applied range is sent to the API (Business-timezone presets / inclusive Custom).
   const [range, setRange] = useState<OverviewRange>({ range: "Today" });
   const [scheduleFilter, setScheduleFilter] = useState("All");
@@ -86,7 +85,7 @@ export default function StaffOverview() {
               <span>
                 {ratingSummary
                   ? `${ratingSummary.reviewCount} verified review${ratingSummary.reviewCount === 1 ? "" : "s"}`
-                  : "No reviews yet"}
+                  : ratingSummaryQuery.isError ? "Rating unavailable" : "Loading rating…"}
               </span>
               <svg className="w-3.5 h-3.5 ml-1.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M9 5l7 7-7 7" />
@@ -128,11 +127,6 @@ export default function StaffOverview() {
                     <tr className="bg-[#F7F5F1] border-b border-[#F7F5F1]">
                       <th className="py-2.5 px-4 text-xs font-semibold text-[#5F5E5A] font-poppins">Time</th>
                       <th className="py-2.5 px-4 text-xs font-semibold text-[#5F5E5A] font-poppins">Name & Service</th>
-                      <th className="py-2.5 px-4 text-xs font-semibold text-[#5F5E5A] font-poppins">Total Payment</th>
-                      <th className="py-2.5 px-4 text-xs font-semibold text-[#5F5E5A] font-poppins">Platform fee</th>
-                      <th className="py-2.5 px-4 text-xs font-semibold text-[#5F5E5A] font-poppins">Remaining fee</th>
-                      <th className="py-2.5 px-4 text-xs font-semibold text-[#5F5E5A] font-poppins">Staff</th>
-                      <th className="py-2.5 px-4 text-xs font-semibold text-[#5F5E5A] font-poppins">Lead</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
@@ -150,30 +144,11 @@ export default function StaffOverview() {
                             ))}
                           </div>
                         </td>
-                        <td className="py-3 px-4 text-xs text-[#5F5E5A] font-poppins">{formatEuro(row.totalPaymentCents)}</td>
-                        <td className="py-3 px-4 text-xs text-[#5F5E5A] font-poppins">{formatEuro(row.platformFeeCents)}</td>
-                        <td className="py-3 px-4 text-xs text-[#5F5E5A] font-poppins">{formatEuro(row.remainingFeeCents)}</td>
-                        <td className="py-3 px-4 text-xs text-[#5F5E5A] font-poppins">{row.staffName}</td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`inline-block px-2.5 py-1 text-[11px] font-medium rounded-full whitespace-nowrap ${
-                              row.leadType === "NEW_CUSTOMER"
-                                ? "bg-[#E1F5EE] text-[#085041]"
-                                : "bg-blue-50 text-blue-700"
-                            }`}
-                          >
-                            {row.leadType === "NEW_CUSTOMER"
-                              ? "New customer"
-                              : row.leadType === "MANUAL"
-                                ? "Manual"
-                                : "Returning"}
-                          </span>
-                        </td>
                       </tr>
                     ))}
                     {overview && scheduleData.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-6 px-4 text-xs text-[#888780] font-poppins text-center">
+                        <td colSpan={2} className="py-6 px-4 text-xs text-[#888780] font-poppins text-center">
                           No bookings scheduled in this range.
                         </td>
                       </tr>
@@ -184,7 +159,7 @@ export default function StaffOverview() {
             </div>
 
             <div className="mt-4">
-              <button className="text-xs font-medium text-[#1D9E75] hover:opacity-85 transition-opacity flex items-center gap-1.5 font-poppins">
+              <button type="button" onClick={() => onNavigate?.("Calendar")} className="text-xs font-medium text-[#1D9E75] hover:opacity-85 transition-opacity flex items-center gap-1.5 font-poppins">
                 <span>View full calendar</span>
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7-7 7M3 12h18" />

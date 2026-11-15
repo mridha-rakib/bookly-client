@@ -14,9 +14,10 @@ interface NoShowModalProps {
   /** `reason` / `internalNote` are optional, internal-only mark-no-show audit metadata
    * (SEPARATE from the waive-fee reason taxonomy). Empty strings are normalised to undefined. */
   onConfirm: (payload?: { reason?: string; internalNote?: string }) => void;
+  isPending?: boolean;
 }
 
-export function NoShowModal({ isOpen, onClose, onConfirm, mode = "start" }: NoShowModalProps) {
+export function NoShowModal({ isOpen, onClose, onConfirm, mode = "start", isPending = false }: NoShowModalProps) {
   const [reason, setReason] = useState("Customer did not attend");
   const [showReasonDropdown, setShowReasonDropdown] = useState(false);
   const [internalNote, setInternalNote] = useState("");
@@ -41,39 +42,39 @@ export function NoShowModal({ isOpen, onClose, onConfirm, mode = "start" }: NoSh
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 select-none font-poppins">
       <div 
         onClick={(e) => e.stopPropagation()}
-        className="w-[515px] h-[554px] bg-white rounded-[12px] shadow-2xl flex flex-col items-center p-4 gap-3 relative animate-fadeIn"
+        className="w-full max-w-[515px] max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white rounded-[12px] shadow-2xl flex flex-col items-center p-4 gap-3 relative animate-fadeIn"
       >
         {/* Frame 2147228120 */}
-        <div className="flex flex-col items-center p-0 gap-2 w-[483px] h-[148px] shrink-0">
+        <div className="flex flex-col items-center p-0 gap-2 w-full max-w-[483px] shrink-0">
           {/* btn / danger exclamation badge */}
           <div className="w-14 h-14 bg-[#26C08F] rounded-full flex items-center justify-center text-white text-[28px] font-medium font-poppins select-none shrink-0">
             !
           </div>
 
           {/* Title */}
-          <h3 className="w-[483px] h-9 font-poppins font-medium text-[28px] leading-[36px] text-[#09090B] text-left">
+          <h3 className="w-full max-w-[483px] font-poppins font-medium text-[28px] leading-[36px] text-[#09090B] text-left">
             {mode === "cancel" ? "Cancel this no-show?" : "Start No-show timer?"}
           </h3>
 
           {/* Subtext */}
-          <p className="w-[483px] h-10 font-poppins font-normal text-[14px] leading-[20px] tracking-[0.0025em] text-[#525252] text-left">
+          <p className="w-full max-w-[483px] font-poppins font-normal text-[14px] leading-[20px] tracking-[0.0025em] text-[#525252] text-left">
             {mode === "cancel"
-              ? "This will reverse the no-show and cancel any outstanding fee. The appointment will return to its normal booking status."
-              : "A 90 min timer will start after you confirm. The customer's card will be charged after the timer expires — giving you time to reverse"}
+              ? "This will cancel the no-show and any outstanding fee. Check the updated booking status after confirmation."
+              : "A 90 minute resolution window starts after confirmation. Any applicable fee is determined by the booking policy and may require payment processing."}
           </p>
         </div>
 
         {/* Frame 2147240028 (Inputs wrapper) */}
-        {mode === "start" && <div className="flex flex-col items-center p-0 gap-5 w-[483px] h-[306px] shrink-0 relative">
+        {mode === "start" && <div className="flex flex-col items-center p-0 gap-5 w-full max-w-[483px] shrink-0 relative">
           {/* Reason Frame */}
-          <div className="flex flex-col items-start p-0 gap-2 w-[483px] h-[76px] shrink-0 relative">
-            <label className="w-[483px] h-[22px] font-poppins font-normal text-xs leading-[22px] text-[#111111] text-left">
+          <div className="flex flex-col items-start p-0 gap-2 w-full max-w-[483px] shrink-0 relative">
+            <label className="w-full max-w-[483px] h-[22px] font-poppins font-normal text-xs leading-[22px] text-[#111111] text-left">
               Reason (optional - internal only)
             </label>
             
             <div 
               onClick={() => setShowReasonDropdown(!showReasonDropdown)}
-              className="box-border flex flex-row justify-between items-center p-3 gap-2.5 w-[483px] h-[46px] border border-[#111111]/60 rounded-[12px] bg-white cursor-pointer select-none"
+              className="box-border flex flex-row justify-between items-center p-3 gap-2.5 w-full max-w-[483px] h-[46px] border border-[#111111]/60 rounded-[12px] bg-white cursor-pointer select-none"
             >
               <span className="font-poppins font-normal text-sm text-[#111111]">
                 {reason}
@@ -104,24 +105,25 @@ export function NoShowModal({ isOpen, onClose, onConfirm, mode = "start" }: NoSh
           </div>
 
           {/* Internal note Frame */}
-          <div className="flex flex-col items-start p-0 gap-2 w-[483px] h-[210px] shrink-0">
-            <label className="w-[483px] h-[22px] font-poppins font-normal text-xs leading-[22px] text-[#111111] text-left">
+          <div className="flex flex-col items-start p-0 gap-2 w-full max-w-[483px] shrink-0">
+            <label className="w-full max-w-[483px] h-[22px] font-poppins font-normal text-xs leading-[22px] text-[#111111] text-left">
               Internal note (optional)
             </label>
             <textarea
               placeholder="Add a private note about this no-show..."
               value={internalNote}
               onChange={(e) => setInternalNote(e.target.value)}
-              className="box-border w-[483px] h-[180px] border border-[#111111]/60 rounded-[12px] p-3 font-poppins font-normal text-sm text-[#111111] placeholder:text-[#111111]/40 focus:outline-none focus:border-[#26C08F] resize-none"
+              className="box-border w-full max-w-[483px] h-[180px] border border-[#111111]/60 rounded-[12px] p-3 font-poppins font-normal text-sm text-[#111111] placeholder:text-[#111111]/40 focus:outline-none focus:border-[#26C08F] resize-none"
             />
           </div>
         </div>}
 
         {/* Buttons footer */}
-        <div className="flex flex-row justify-end items-center p-0 gap-3 w-[483px] h-11 shrink-0 mt-auto">
+        <div className="flex flex-row justify-end items-center p-0 gap-3 w-full max-w-[483px] h-11 shrink-0 mt-auto">
           <button
             type="button"
             onClick={onClose}
+            disabled={isPending}
             className="box-border flex flex-row justify-center items-center px-6 py-3.5 gap-2 w-[101px] h-11 bg-[#F1F1F2] border border-[#D3D3D6] shadow-[0px_0px_2px_rgba(62,62,68,0.2)] rounded-[12px] font-poppins font-medium text-sm text-[#3E3E44] tracking-[0.03em] hover:bg-[#E4E4E6] cursor-pointer transition-all duration-200"
           >
             Cancel
@@ -130,6 +132,7 @@ export function NoShowModal({ isOpen, onClose, onConfirm, mode = "start" }: NoSh
           <button
             type="button"
             onClick={handleConfirm}
+            disabled={isPending}
             className="flex flex-row justify-center items-center px-6 py-3.5 gap-2 w-[74px] h-11 bg-[#26C08F] hover:bg-[#1fa379] rounded-[12px] font-poppins font-medium text-sm text-white tracking-[0.03em] cursor-pointer transition-all duration-200"
           >
             Yes
@@ -238,46 +241,46 @@ function OpenedCompleteModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 select-none font-poppins">
       <div 
         onClick={(e) => e.stopPropagation()}
-        className="w-[361px] bg-white rounded-xl shadow-2xl flex flex-col items-center p-4 gap-3 relative animate-fadeIn"
+        className="w-full max-w-[361px] max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white rounded-xl shadow-2xl flex flex-col items-center p-4 gap-3 relative animate-fadeIn"
       >
-        <div className="flex flex-col items-center p-0 gap-2 w-[329px]">
+        <div className="flex flex-col items-center p-0 gap-2 w-full max-w-[329px]">
           {/* Green Check Badge */}
           <div className="w-14 h-14 bg-[#1D9E75] rounded-full flex items-center justify-center text-white text-[28px] font-medium font-poppins select-none shrink-0">
             ✓
           </div>
 
           {/* Title */}
-          <h3 className="w-[329px] font-poppins font-medium text-[28px] leading-[36px] text-[#09090B] text-center">
+          <h3 className="w-full max-w-[329px] font-poppins font-medium text-[28px] leading-[36px] text-[#09090B] text-center">
             Are you sure you want to complete the booking?
           </h3>
 
           {/* Subtext */}
-          <p className="w-[329px] font-poppins font-normal text-[14px] leading-[20px] text-[#525252] text-center">
+          <p className="w-full max-w-[329px] font-poppins font-normal text-[14px] leading-[20px] text-[#525252] text-center">
             Confirm that the appointment was completed and record any payment collected at the venue. This records an off-platform payment; it does not charge the customer&apos;s saved card.
           </p>
           {isPackageOrigin && (
-            <p className="w-[329px] rounded-lg bg-[#F7F4FF] p-3 font-poppins text-[12px] leading-[18px] text-[#675A82] text-center">
+            <p className="w-full max-w-[329px] rounded-lg bg-[#F7F4FF] p-3 font-poppins text-[12px] leading-[18px] text-[#675A82] text-center">
               Remaining package sessions become schedulable only after the package balance is recorded as paid in full. Completing this appointment alone does not unlock them.
             </p>
           )}
           {isPackageSession && !isPackageOrigin && (
-            <p className="w-[329px] rounded-lg bg-[#F7F4FF] p-3 font-poppins text-[12px] leading-[18px] text-[#675A82] text-center">
+            <p className="w-full max-w-[329px] rounded-lg bg-[#F7F4FF] p-3 font-poppins text-[12px] leading-[18px] text-[#675A82] text-center">
               This completes this package appointment only; it does not charge or modify the whole package.
             </p>
           )}
         </div>
 
         {/* Inputs */}
-        <div className="flex flex-col items-center p-0 gap-4 w-[329px] relative">
+        <div className="flex flex-col items-center p-0 gap-4 w-full max-w-[329px] relative">
           {/* Dropdown */}
-          <div className="flex flex-col items-start p-0 gap-2 w-[329px] relative">
-            <label className="w-[329px] font-poppins font-normal text-[12px] leading-[22px] text-[#111111]">
+          <div className="flex flex-col items-start p-0 gap-2 w-full max-w-[329px] relative">
+            <label className="w-full max-w-[329px] font-poppins font-normal text-[12px] leading-[22px] text-[#111111]">
               Did the customer pay the remaining balance at venue
             </label>
             
             <div 
               onClick={() => setShowPayDropdown(!showPayDropdown)}
-              className="box-border flex flex-row justify-between items-center p-3 gap-2.5 w-[329px] h-[46px] border border-[#111111]/60 rounded-xl bg-white cursor-pointer select-none"
+              className="box-border flex flex-row justify-between items-center p-3 gap-2.5 w-full max-w-[329px] h-[46px] border border-[#111111]/60 rounded-xl bg-white cursor-pointer select-none"
             >
               <span className="font-poppins font-normal text-sm text-[#111111] truncate">
                 {payValue}
@@ -309,8 +312,8 @@ function OpenedCompleteModal({
               doc comment: the server never trusts this beyond it being the Business's own
               off-platform attestation). */}
           {isOtherAmount && (
-            <div className="flex flex-col items-start p-0 gap-2 w-[329px]">
-              <label className="w-[329px] font-poppins font-normal text-[12px] leading-[22px] text-[#111111]">
+            <div className="flex flex-col items-start p-0 gap-2 w-full max-w-[329px]">
+              <label className="w-full max-w-[329px] font-poppins font-normal text-[12px] leading-[22px] text-[#111111]">
                 Amount paid at venue ({currencySymbol})
               </label>
               <input
@@ -323,30 +326,30 @@ function OpenedCompleteModal({
                   if (amountError) setAmountError(undefined);
                 }}
                 placeholder="0.00"
-                className="box-border w-[329px] h-[46px] border border-[#111111]/60 rounded-xl p-3 gap-2.5 font-poppins font-normal text-sm text-[#111111] placeholder-[#111111]/40 focus:outline-none focus:border-green-500"
+                className="box-border w-full max-w-[329px] h-[46px] border border-[#111111]/60 rounded-xl p-3 gap-2.5 font-poppins font-normal text-sm text-[#111111] placeholder-[#111111]/40 focus:outline-none focus:border-green-500"
               />
               {amountError && (
-                <span className="text-xs text-red-600 w-[329px]">{amountError}</span>
+                <span className="text-xs text-red-600 w-full max-w-[329px]">{amountError}</span>
               )}
             </div>
           )}
 
           {/* Internal note */}
-          <div className="flex flex-col items-start p-0 gap-2 w-[329px]">
-            <label className="w-[329px] font-poppins font-normal text-[12px] leading-[22px] text-[#111111]">
+          <div className="flex flex-col items-start p-0 gap-2 w-full max-w-[329px]">
+            <label className="w-full max-w-[329px] font-poppins font-normal text-[12px] leading-[22px] text-[#111111]">
               Internal note (optional)
             </label>
             <textarea
               placeholder="Add a private note about this completion..."
               value={internalNote}
               onChange={(e) => setInternalNote(e.target.value)}
-              className="box-border w-[329px] h-[120px] border border-[#111111]/60 rounded-xl p-3 gap-2.5 font-poppins font-normal text-sm text-[#111111] placeholder-[#111111]/40 focus:outline-none focus:border-green-500 resize-none"
+              className="box-border w-full max-w-[329px] h-[120px] border border-[#111111]/60 rounded-xl p-3 gap-2.5 font-poppins font-normal text-sm text-[#111111] placeholder-[#111111]/40 focus:outline-none focus:border-green-500 resize-none"
             />
           </div>
         </div>
 
         {/* Buttons footer */}
-        <div className="flex flex-row justify-end items-center p-0 gap-3 w-[329px] mt-1">
+        <div className="flex flex-row justify-end items-center p-0 gap-3 w-full max-w-[329px] mt-1">
           <button
             type="button"
             onClick={onClose}
@@ -376,11 +379,10 @@ function OpenedCompleteModal({
 interface CancelBookingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** `reason` is one of the fixed dropdown options above (server does not further validate its
-   * content beyond required-non-empty); `internalNote` is optional free text. Matches
-   * bookingsApi.cancelByBusiness's own `reason` parameter. */
-  onConfirm: (reason: string, internalNote?: string) => void;
+  /** The cancellation endpoint accepts a reason, but no internal note. */
+  onConfirm: (reason: string) => void;
   packageSessionLabel?: string;
+  isPending?: boolean;
 }
 
 export function CancelBookingModal({
@@ -388,10 +390,10 @@ export function CancelBookingModal({
   onClose,
   onConfirm,
   packageSessionLabel,
+  isPending = false,
 }: CancelBookingModalProps) {
   const [cancelReason, setCancelReason] = useState("Service is not available");
   const [showReasonDropdown, setShowReasonDropdown] = useState(false);
-  const [internalNote, setInternalNote] = useState("");
 
   if (!isOpen) return null;
 
@@ -407,41 +409,41 @@ export function CancelBookingModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 select-none font-poppins">
       <div 
         onClick={(e) => e.stopPropagation()}
-        className="w-[361px] bg-white rounded-xl shadow-2xl flex flex-col items-center p-4 gap-3 relative animate-fadeIn"
+        className="w-full max-w-[361px] max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white rounded-xl shadow-2xl flex flex-col items-center p-4 gap-3 relative animate-fadeIn"
       >
-        <div className="flex flex-col items-center p-0 gap-2 w-[329px]">
+        <div className="flex flex-col items-center p-0 gap-2 w-full max-w-[329px]">
           {/* Red Exclamation Badge */}
           <div className="w-14 h-14 bg-[#D44343] rounded-full flex items-center justify-center text-white text-[28px] font-medium font-poppins select-none shrink-0">
             !
           </div>
 
           {/* Title */}
-          <h3 className="w-[329px] font-poppins font-medium text-[28px] leading-[36px] text-[#09090B] text-center">
+          <h3 className="w-full max-w-[329px] font-poppins font-medium text-[28px] leading-[36px] text-[#09090B] text-center">
             Are you sure you want to cancel the booking?
           </h3>
 
           {/* Subtext */}
-          <p className="w-[329px] font-poppins font-normal text-[14px] leading-[20px] text-[#525252] text-center">
+          <p className="w-full max-w-[329px] font-poppins font-normal text-[14px] leading-[20px] text-[#525252] text-center">
             This cancels the appointment. Any required refund is processed separately and its settlement may remain pending or fail.
           </p>
           {packageSessionLabel && (
-            <p className="w-[329px] rounded-lg bg-[#F7F4FF] p-3 font-poppins text-[12px] leading-[18px] text-[#675A82] text-center">
+            <p className="w-full max-w-[329px] rounded-lg bg-[#F7F4FF] p-3 font-poppins text-[12px] leading-[18px] text-[#675A82] text-center">
               {packageSessionLabel}: this cancels only this appointment, not the whole package. A business cancellation restores the session entitlement.
             </p>
           )}
         </div>
 
         {/* Inputs */}
-        <div className="flex flex-col items-center p-0 gap-4 w-[329px] relative">
+        <div className="flex flex-col items-center p-0 gap-4 w-full max-w-[329px] relative">
           {/* Dropdown */}
-          <div className="flex flex-col items-start p-0 gap-2 w-[329px] relative">
-            <label className="w-[329px] font-poppins font-normal text-[12px] leading-[22px] text-[#111111]">
+          <div className="flex flex-col items-start p-0 gap-2 w-full max-w-[329px] relative">
+            <label className="w-full max-w-[329px] font-poppins font-normal text-[12px] leading-[22px] text-[#111111]">
               Reason (required)
             </label>
             
             <div 
               onClick={() => setShowReasonDropdown(!showReasonDropdown)}
-              className="box-border flex flex-row justify-between items-center p-3 gap-2.5 w-[329px] h-[46px] border border-[#111111]/60 rounded-xl bg-white cursor-pointer select-none"
+              className="box-border flex flex-row justify-between items-center p-3 gap-2.5 w-full max-w-[329px] h-[46px] border border-[#111111]/60 rounded-xl bg-white cursor-pointer select-none"
             >
               <span className="font-poppins font-normal text-sm text-[#111111] truncate">
                 {cancelReason}
@@ -468,25 +470,14 @@ export function CancelBookingModal({
             )}
           </div>
 
-          {/* Internal note */}
-          <div className="flex flex-col items-start p-0 gap-2 w-[329px]">
-            <label className="w-[329px] font-poppins font-normal text-[12px] leading-[22px] text-[#111111]">
-              Internal note (optional)
-            </label>
-            <textarea
-              placeholder="Add a private note about this cancellation..."
-              value={internalNote}
-              onChange={(e) => setInternalNote(e.target.value)}
-              className="box-border w-[329px] h-[120px] border border-[#111111]/60 rounded-xl p-3 gap-2.5 font-poppins font-normal text-sm text-[#111111] placeholder-[#111111]/40 focus:outline-none focus:border-red-500 resize-none"
-            />
-          </div>
         </div>
 
         {/* Buttons footer */}
-        <div className="flex flex-row justify-end items-center p-0 gap-3 w-[329px] mt-1">
+        <div className="flex flex-row justify-end items-center p-0 gap-3 w-full max-w-[329px] mt-1">
           <button
             type="button"
             onClick={onClose}
+            disabled={isPending}
             className="box-border flex flex-row justify-center items-center px-6 py-3.5 gap-2 w-[101px] h-11 bg-[#F1F1F2] border border-[#D3D3D6] shadow-[0px_0px_2px_rgba(62,62,68,0.2)] rounded-xl font-poppins font-medium text-sm text-[#3E3E44] tracking-[0.03em] hover:bg-[#E4E4E6] cursor-pointer transition-all duration-200"
           >
             No
@@ -494,7 +485,8 @@ export function CancelBookingModal({
           
           <button
             type="button"
-            onClick={() => onConfirm(cancelReason, internalNote.trim() || undefined)}
+            onClick={() => onConfirm(cancelReason)}
+            disabled={isPending}
             className="flex flex-row justify-center items-center px-6 py-3.5 gap-2 w-[74px] h-11 bg-[#D44343] hover:bg-red-700 rounded-xl font-poppins font-medium text-sm text-white tracking-[0.03em] cursor-pointer transition-all duration-200"
           >
             Yes

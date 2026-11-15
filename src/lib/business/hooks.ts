@@ -30,10 +30,11 @@ export const businessKeys = {
 // mounts the dashboard, whose own observers would otherwise refetch it immediately (one extra
 // GET /businesses/my-profile per dashboard load). PENDING keeps staleTime 0 so focus refetch
 // behaves exactly as before; mutations still invalidate it and refetch() always fetches.
-export const useMyBusinessProfileQuery = () =>
+export const useMyBusinessProfileQuery = (enabled = true) =>
   useQuery({
     queryKey: businessKeys.profile(),
     queryFn: businessApi.getMyProfile,
+    enabled,
     staleTime: (query) => (query.state.data?.primary?.status === "PENDING" ? 0 : 30_000),
     refetchOnWindowFocus: (query) => query.state.data?.primary?.status === "PENDING",
     refetchInterval: (query) => (query.state.data?.primary?.status === "PENDING" ? 45_000 : false),
@@ -186,7 +187,7 @@ export interface ManagedBusinessContext {
 export const useManagedBusinessContext = (): ManagedBusinessContext => {
   const currentUserQuery = useCurrentUserQuery();
   const role = currentUserQuery.data?.user.role;
-  const businessProfileQuery = useMyBusinessProfileQuery();
+  const businessProfileQuery = useMyBusinessProfileQuery(role === "BUSINESS_OWNER");
 
   if (role === "BUSINESS_OWNER") {
     return {

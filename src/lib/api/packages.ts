@@ -46,7 +46,8 @@ export interface PackageProgress {
   completedSessions: number;
   status: "ACTIVE" | "AWAITING_BALANCE" | "DEPLETED" | "VOIDED";
   balanceSettled: boolean;
-  outstandingBalanceCents: number;
+  outstandingBalanceCents: number | null;
+  settlementAvailable?: boolean;
   sessions: PackageProgressSession[];
   originBookingId: string;
   purchaseSnapshot: {

@@ -5,8 +5,9 @@ import ServicesListPage from "@/components/dashboard/services/ServicesListPage";
 
 const fx = vi.hoisted(() => ({ settings: { isSuccess: true, isPending: false, isFetching: false, isError: false,
   data: { gapEliminationEnabled: true }, refetch: vi.fn() },
+  profile: { data: { primary: { id: "business" } }, isError: false, isLoading: false, isFetching: false, refetch: vi.fn() },
   services: { isLoading: false, isError: false, data: { services: [] }, refetch: vi.fn() }, save: vi.fn() }));
-vi.mock("@/lib/business/hooks", () => ({ useMyBusinessProfileQuery: () => ({ data: { primary: { id: "business" } } }), useBusinessTravelSettingsQuery: () => ({}) }));
+vi.mock("@/lib/business/hooks", () => ({ useMyBusinessProfileQuery: () => fx.profile, useBusinessTravelSettingsQuery: () => ({}) }));
 vi.mock("@/lib/business/cancellation-policy-hooks", () => ({ useCancellationPolicyQuery: () => ({}) }));
 vi.mock("@/lib/addons/hooks", () => ({ useAddonsQuery: () => ({}) }));
 vi.mock("@/lib/services/hooks", () => ({ useBookingSettingsQuery: () => fx.settings, useServicesQuery: () => fx.services,
@@ -21,6 +22,7 @@ let host: HTMLDivElement, root: Root;
 beforeEach(() => {
   host = document.createElement("div"); root = createRoot(host);
   Object.assign(fx.settings, { isSuccess: true, isPending: false, isFetching: false, isError: false, data: { gapEliminationEnabled: true } });
+  Object.assign(fx.profile, { isError: false, isLoading: false, isFetching: false });
   fx.services.isError = false; vi.clearAllMocks();
 });
 afterEach(async () => { await act(async () => root.unmount()); });
@@ -54,4 +56,15 @@ it("a failed service read shows retry instead of claiming there are no services"
   expect(host.textContent).not.toContain("No services yet");
   await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Retry services")!.click());
   expect(fx.services.refetch).toHaveBeenCalledOnce();
+});
+
+it("retries a failed business context without claiming an empty service catalogue", async () => {
+  fx.profile.isError = true;
+  await render();
+  expect(host.textContent).toContain("Services could not be loaded");
+  expect(host.textContent).not.toContain("No services yet");
+  expect(host.textContent).toContain("— Active");
+  await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Retry services")!.click());
+  expect(fx.profile.refetch).toHaveBeenCalledOnce();
+  expect(fx.services.refetch).not.toHaveBeenCalled();
 });

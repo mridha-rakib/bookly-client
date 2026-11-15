@@ -16,8 +16,8 @@ import StaffMySchedule from "@/components/dashboard/StaffMySchedule";
 
 export default function StaffDashboard() {
   const [activeTab, setActiveTab] = useState("Dashboard");
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [showFooterMenu, setShowFooterMenu] = useState(true);
+  const [isCollapsed, setIsCollapsed] = useState(true);
+  const [showFooterMenu, setShowFooterMenu] = useState(false);
   const footerMenuRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on click outside
@@ -36,7 +36,7 @@ export default function StaffDashboard() {
   // Render components mapped to Tab selections
   const renderMainContent = () => {
     if (activeTab === "Dashboard") {
-      return <StaffOverview />;
+      return <StaffOverview onNavigate={setActiveTab} />;
     }
 
     if (activeTab === "Calendar") {
@@ -84,7 +84,7 @@ export default function StaffDashboard() {
       return <ContactSupport setActiveTab={setActiveTab} />;
     }
 
-    return <StaffOverview />;
+    return <StaffOverview onNavigate={setActiveTab} />;
   };
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense } from "react";
+import React, { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 // Components
@@ -13,6 +13,7 @@ import {
   useVerifyCustomerEmailOtpMutation,
 } from "@/lib/auth/hooks";
 import { toUserMessage } from "@/lib/auth/messages";
+import { verifyRecovery, resendRecovery } from "@/lib/auth/password-recovery";
 import {
   getRegistrationSession,
   saveRegistrationSession,
@@ -28,18 +29,24 @@ function VerifyPageContent() {
   const otp = useOtpInput(4);
   const verifyEmailOtp = useVerifyCustomerEmailOtpMutation();
   const resendEmailOtp = useResendCustomerEmailOtpMutation();
-  const isSubmitting = verifyEmailOtp.isPending;
-  const isResending = resendEmailOtp.isPending;
+  const [resetPending, setResetPending] = useState(false);
+  const isSubmitting = verifyEmailOtp.isPending || resetPending;
+  const isResending = resendEmailOtp.isPending || resetPending;
 
   const getSessionId = () =>
     sessionIdParam || getRegistrationSession("customer", email)?.sessionId || "";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting || isResending) return;
     const otpValue = otp.value;
     if (otpValue.length === 4) {
       if (flow === "reset") {
-        router.push(`/customer/new-password?email=${encodeURIComponent(email)}`);
+        setResetPending(true);
+        try {
+          await verifyRecovery("customer", otpValue);
+          router.push(`/customer/new-password`);
+        } catch { toast.error("Verification failed. Check the code or request a new one."); } finally { setResetPending(false); }
       } else {
         const sessionId = getSessionId();
 
@@ -67,6 +74,14 @@ function VerifyPageContent() {
   };
 
   const handleResend = async () => {
+    if (flow === "reset") {
+      if (resetPending) return;
+      setResetPending(true);
+      try { await resendRecovery("customer"); toast.success("If eligible and the request is allowed, a code will be sent. Use your latest code and allow time between requests."); }
+      catch { toast.error("Could not request a code. Please try again."); }
+      finally { setResetPending(false); }
+      return;
+    }
     const sessionId = getSessionId();
 
     if (!sessionId) {
@@ -98,7 +113,7 @@ function VerifyPageContent() {
             Verification required
           </h2>
           <p className="text-sm text-[#707070] leading-relaxed mb-8 text-center max-w-[420px]">
-            Enter the verification code sent to your email address{" "}
+            {flow === "reset" ? "Enter the latest code sent to your email. A new code may not be sent if requested too soon" : "Enter the verification code sent to your email address"}{" "}
             <span className="font-semibold text-[#1A1A1A]">{email || "example@gmail.com"}</span>
           </p>
 

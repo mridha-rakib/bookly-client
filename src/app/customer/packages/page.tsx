@@ -37,7 +37,7 @@ function PackagesPageContent() {
       <main className="flex-1 w-full px-4 md:px-8 xl:px-[65px] flex flex-col z-10 relative items-center">
         {/* Global Search Bar */}
         <div className="w-full flex justify-center mb-8 sm:mb-12">
-          <SearchBar onSearch={() => {}} />
+          <SearchBar />
         </div>
 
         <div className="max-w-[1005px] w-full flex flex-col items-start gap-8 pb-20">

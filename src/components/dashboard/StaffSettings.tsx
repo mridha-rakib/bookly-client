@@ -57,6 +57,9 @@ export default function StaffSettings() {
           
           {/* PERSONAL INFO TAB */}
           {activeSubTab === "Personal info" && (
+            meQuery.isLoading ? <p role="status">Loading your profile…</p> : meQuery.isError ?
+              <div role="alert">Your profile could not be loaded. <button type="button" disabled={meQuery.isFetching} onClick={() => void meQuery.refetch()} className="underline disabled:opacity-50">{meQuery.isFetching ? "Retrying…" : "Retry"}</button></div> : !meQuery.data ?
+              <p role="alert">Your profile is unavailable.</p> :
             <div className="flex flex-col gap-6 w-full max-w-[640px]">
               <div className="flex flex-col gap-1">
                 <h2 className="font-poppins font-medium text-base text-[#1A1A1A]">Personal info</h2>
@@ -122,7 +125,7 @@ export default function StaffSettings() {
             <div className="flex flex-col gap-[20px] w-full">
               <div className="flex flex-col gap-1">
                 <h2 className="font-poppins font-medium text-base text-[#111111]">Notifications</h2>
-                <p className="font-poppins font-normal text-xs text-[#666666]">Control your notification</p>
+                <p className="font-poppins font-normal text-xs text-[#666666]">Notification preferences cannot be changed here yet.</p>
               </div>
 
               {/* Notification triggers section */}
@@ -130,7 +133,7 @@ export default function StaffSettings() {
                 {/* Header title */}
                 <div className="p-5 border-b border-[#F0F0EE]">
                   <h3 className="font-poppins font-medium text-sm text-[#111111]">Notification triggers</h3>
-                  <p className="font-poppins font-normal text-xs text-neutral-400 mt-0.5">Choose which events send messages</p>
+                  <p className="font-poppins font-normal text-xs text-neutral-400 mt-0.5">These controls are unavailable.</p>
                 </div>
 
                 {/* List items */}

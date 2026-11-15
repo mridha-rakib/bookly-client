@@ -68,8 +68,11 @@ export default function BookingReviewCard({
   if (bookingSource !== "BOOKLY_MANAGED" || bookingStatus !== "COMPLETED") {
     return null;
   }
+  if (stateQuery.isError) {
+    return <div role="alert" className="rounded-xl border p-6 text-sm">Your review could not be loaded. <button type="button" disabled={stateQuery.isFetching} onClick={() => void stateQuery.refetch()} className="underline disabled:opacity-50">{stateQuery.isFetching ? "Retrying..." : "Retry"}</button></div>;
+  }
   if (stateQuery.isLoading || !stateQuery.data) {
-    return null;
+    return <p role="status" className="rounded-xl border p-6 text-sm">Loading your review...</p>;
   }
   if (!stateQuery.data.eligible) {
     return null;
@@ -108,7 +111,7 @@ export default function BookingReviewCard({
             </button>
           )}
         </div>
-        <StarInput value={review.rating} onChange={() => {}} />
+        <span aria-label={`${review.rating} out of 5 stars`} className="text-[#E49D12]">{"★".repeat(review.rating)}<span className="text-[#D3D1C7]">{"★".repeat(5 - review.rating)}</span></span>
         {review.comment && <p className="text-sm text-[#111111]">{review.comment}</p>}
       </div>
     );

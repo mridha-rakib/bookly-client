@@ -20,7 +20,7 @@ vi.mock("@/lib/api/client", async (original) => ({
     return fx.respond!(request);
   },
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
 vi.mock("next/dynamic", () => ({ default: () => () => null }));
 vi.mock("next/image", () => ({ default: () => null }));
 vi.mock("@/components/Navbar", () => ({ default: () => null }));

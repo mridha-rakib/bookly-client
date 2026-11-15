@@ -44,7 +44,7 @@ export default function PlatformBankAccount() {
           </ul>
         </>
       ) : <p>Platform bank-account status has not been confirmed.</p>}
-      {summary && !query.isError && summary.state !== "NOT_CONFIGURED" && <>
+      {summary && !unavailable && summary.state !== "NOT_CONFIGURED" && <>
         {summary.payoutsEnabled === false && <p>Payouts are disabled by Stripe. Check Stripe for the reason and any required verification.</p>}
         {summary.payoutsEnabled === true && <p>Stripe reports payouts enabled. Bookly withdrawal approval remains separate.</p>}
         {summary.payoutsEnabled === null && <p>Stripe payout-enabled status is unavailable.</p>}

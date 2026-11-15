@@ -24,14 +24,13 @@ import {
   useMarkNoShowMutation,
   useWaiveFeeMutation,
 } from "@/lib/bookings/hooks";
-import type { BookingCalendarEntry } from "@/lib/api/bookings";
-import { BUSINESS_BOOKING_STATUS_LABELS as BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingMoney, formatBookingTime, formatCompactPackageSessionLabel, formatPackageSessionLabel } from "@/lib/bookings/format";
-import { formatClockTime12Hour, formatTime12Hour } from "@/lib/staff/format";
+import { BUSINESS_BOOKING_STATUS_LABELS as BOOKING_STATUS_LABELS, BOOKING_STATUS_TONE, formatBookingDate, formatBookingMoney, formatBookingTime, formatCompactPackageSessionLabel, formatPackageSessionLabel } from "@/lib/bookings/format";
+import { formatTime12Hour } from "@/lib/staff/format";
 import { toast } from "@/components/ui/sonner";
 import { toUserMessage } from "@/lib/auth/messages";
-import { bookingDayInterval, calendarDayHours, calendarDayLanes } from "@/lib/bookings/calendar-hours";
+import { bookingDayInterval, calendarDayHours, calendarDayLanes, calendarDayTimeline } from "@/lib/bookings/calendar-hours";
 import { useCalendarBlocksQuery, useChangeCalendarBlocksMutation } from "@/lib/business/availability-hooks";
-import { calendarRange, createCalendarRangeState } from "@/lib/bookings/calendar-blocks";
+import { calendarInstantRangeState, calendarRange, createCalendarRangeState } from "@/lib/bookings/calendar-blocks";
 import type { LocalCalendarRange } from "@/lib/api/business-availability";
 
 interface DashboardCalendarProps {
@@ -69,14 +68,14 @@ const startOfWeek = (date: Date): Date => {
 const isoDateOnly = (date: Date): string =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
-/** The booking's own date, in ITS OWN snapshotted timezone — never the browser's local
- * timezone (matches lib/bookings/format.ts's own convention). */
-const bookingLocalDateKey = (booking: BookingCalendarEntry): string => {
+/** A civil date in the Business timezone, represented as a browser-local calendar date. */
+const businessToday = (timezone: string | undefined): Date => {
+  if (!timezone) return new Date();
   const parts = new Intl.DateTimeFormat("en-CA", {
-    year: "numeric", month: "2-digit", day: "2-digit", timeZone: booking.schedule.timezone,
-  }).formatToParts(new Date(booking.schedule.startAt));
+    year: "numeric", month: "2-digit", day: "2-digit", timeZone: timezone,
+  }).formatToParts(new Date());
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
+  return new Date(Number(get("year")), Number(get("month")) - 1, Number(get("day")), 12);
 };
 
 export default function DashboardCalendar({
@@ -98,10 +97,11 @@ export default function DashboardCalendar({
   const [viewMode, setViewMode] = useState("Weekly");
   const [isViewDropdownOpen, setIsViewDropdownOpen] = useState(false);
 
-  const today = new Date();
-  const [currentDate, setCurrentDate] = useState(today);
+  const [currentDate, setCurrentDate] = useState(() => new Date());
+  const [navigated, setNavigated] = useState(false);
+  const initializedBusiness = useRef<string | undefined>(undefined);
 
-  const [selectedStaffFilter, setSelectedStaffFilter] = useState(isStaffDashboard ? staffName : "All Staff");
+  const [selectedStaffFilter, setSelectedStaffFilter] = useState<string | null>(null);
   const [isStaffDropdownOpen, setIsStaffDropdownOpen] = useState(false);
 
   // Modal State for Viewing Booking
@@ -112,7 +112,7 @@ export default function DashboardCalendar({
 
   // Drag to scroll states
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-  const [datePickerSelectedMonth, setDatePickerSelectedMonth] = useState(currentDate.getMonth());
+  const [datePickerMonth, setDatePickerMonth] = useState(() => new Date(currentDate.getFullYear(), currentDate.getMonth(), 1));
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [blockScope, setBlockScope] = useState<"STAFF" | "BUSINESS">("STAFF");
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -128,21 +128,35 @@ export default function DashboardCalendar({
     : viewMode === "Monthly" ? new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
     : rangeStart;
 
-  // The calendar endpoint takes full ISO instants (date-only values are rejected with 400).
-  // Columns are browser-local dates while cards bucket by each booking's own timezone
-  // (bookingLocalDateKey), so the window is padded one day either side; only visible dates are
-  // ever matched below, so a padded row can never render.
-  const queryFromDate = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate() - 1).toISOString();
-  const queryToDate = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate() + 1, 23, 59, 59, 999).toISOString();
+  // The endpoint filters by start instant. Pad civil dates in UTC to cover timezone offsets
+  // and appointments which started on the preceding day, then render only intersecting days.
+  const queryFromDate = new Date(Date.UTC(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate() - 2)).toISOString();
+  const queryToDate = new Date(Date.UTC(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate() + 3) - 1).toISOString();
   const calendarQuery = useBusinessCalendarQuery(businessId, queryFromDate, queryToDate);
   const staffListQuery = useStaffListQuery(businessId);
   const blocksQuery = useCalendarBlocksQuery(isStaffDashboard ? undefined : businessId);
   const changeBlocksMutation = useChangeCalendarBlocksMutation();
   const bookings = calendarQuery.data?.bookings ?? [];
+  const calendarTimezone = blocksQuery.data?.timezone ?? calendarQuery.data?.timezone;
+  const today = businessToday(calendarTimezone);
+  useEffect(() => {
+    if (!calendarTimezone || !businessId) return;
+    if (initializedBusiness.current !== businessId) {
+      const isNewBusiness = initializedBusiness.current !== undefined;
+      initializedBusiness.current = businessId;
+      if (isNewBusiness || !navigated) {
+        // Synchronize the initial civil date once the Business timezone is available.
+        setCurrentDate(businessToday(calendarTimezone));
+      }
+      if (isNewBusiness) { setSelectedStaffFilter(null); setSelectedSlots([]); }
+    }
+  }, [businessId, calendarTimezone, navigated]);
+  const navigateDate = (date: Date) => { setNavigated(true); setCurrentDate(date); setSelectedSlots([]); setOpenDropdownCardId(null); };
 
   const cancelByBusinessMutation = useCancelByBusinessMutation();
   const markNoShowMutation = useMarkNoShowMutation();
   const waiveFeeMutation = useWaiveFeeMutation();
+  const lifecycleActionInFlight = useRef(false);
 
   const findBooking = (id: string) => bookings.find((b) => b.id === id);
 
@@ -168,9 +182,10 @@ export default function DashboardCalendar({
     } else if (viewMode === "Weekly") {
       newDate.setDate(newDate.getDate() - 7);
     } else {
-      newDate.setMonth(newDate.getMonth() - 1);
+      const day = newDate.getDate(); newDate.setDate(1); newDate.setMonth(newDate.getMonth() - 1);
+      newDate.setDate(Math.min(day, new Date(newDate.getFullYear(), newDate.getMonth() + 1, 0).getDate()));
     }
-    setCurrentDate(newDate);
+    navigateDate(newDate);
   };
 
   const handleNextDate = () => {
@@ -180,9 +195,10 @@ export default function DashboardCalendar({
     } else if (viewMode === "Weekly") {
       newDate.setDate(newDate.getDate() + 7);
     } else {
-      newDate.setMonth(newDate.getMonth() + 1);
+      const day = newDate.getDate(); newDate.setDate(1); newDate.setMonth(newDate.getMonth() + 1);
+      newDate.setDate(Math.min(day, new Date(newDate.getFullYear(), newDate.getMonth() + 1, 0).getDate()));
     }
-    setCurrentDate(newDate);
+    navigateDate(newDate);
   };
 
   // Dropdown Actions Implementation
@@ -215,12 +231,10 @@ export default function DashboardCalendar({
     setOpenDropdownCardId(null);
   };
 
-  /** Date+time for the no-show tooltip — was a locale-default `toLocaleString()` (24h on most
-   * setups); now explicit "en-GB" date + the app's canonical 12-hour AM/PM clock, same instant,
-   * same (browser-local) zone as before. */
-  const formatNoShowTimestamp = (date: Date): string => {
-    const datePart = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(date);
-    return `${datePart}, ${formatClockTime12Hour(date)}`;
+  /** Date and time of a no-show window in the calendar's Business timezone. */
+  const formatNoShowTimestamp = (date: Date, bookingTimezone: string): string => {
+    const timezone = calendarTimezone ?? bookingTimezone;
+    return `${formatBookingDate(date.toISOString(), timezone)}, ${formatBookingTime(date.toISOString(), timezone)}`;
   };
 
   /**
@@ -240,8 +254,8 @@ export default function DashboardCalendar({
     return { state: "open", opensAt, closesAt };
   };
 
-  const renderDropdown = (cardId: string) => {
-    if (openDropdownCardId !== cardId) return null;
+  const renderDropdown = (cardId: string, instanceKey: string) => {
+    if (openDropdownCardId !== instanceKey) return null;
     const booking = findBooking(cardId);
     const isUpcoming = booking?.status === "UPCOMING";
     const noShow = noShowWindowState(booking);
@@ -263,9 +277,9 @@ export default function DashboardCalendar({
             disabled={noShow.state !== "open"}
             title={
               noShow.state === "before"
-                ? `No-show opens ${noShow.opensAt ? formatNoShowTimestamp(noShow.opensAt) : ""}`
+                ? `No-show opens ${noShow.opensAt && booking ? formatNoShowTimestamp(noShow.opensAt, booking.schedule.timezone) : ""}`
                 : noShow.state === "after"
-                  ? `No-show window closed ${noShow.closesAt ? formatNoShowTimestamp(noShow.closesAt) : ""}`
+                  ? `No-show window closed ${noShow.closesAt && booking ? formatNoShowTimestamp(noShow.closesAt, booking.schedule.timezone) : ""}`
                   : undefined
             }
             className={`px-4 py-2 text-left flex items-center gap-2 font-medium ${
@@ -330,10 +344,9 @@ export default function DashboardCalendar({
   const bookingsForStaff = (staffMembershipId: string | undefined) =>
     bookings.filter((b) => !staffMembershipId || b.staffMembershipIds.includes(staffMembershipId));
 
-  const calendarTimezone = blocksQuery.data?.timezone ?? calendarQuery.data?.timezone;
   const savedRangeState = useMemo(() => createCalendarRangeState(blocksQuery.data?.blocks ?? [], blocksQuery.data?.closedPeriods ?? [], calendarTimezone ?? "Europe/Nicosia"), [blocksQuery.data, calendarTimezone]);
   const rangeState = (key: string) => savedRangeState(JSON.parse(key) as LocalCalendarRange);
-  const canChangeBlocks = Boolean(businessId && !isStaffDashboard && blocksQuery.data && !blocksQuery.isError && !changeBlocksMutation.isPending);
+  const canChangeBlocks = Boolean(businessId && !isStaffDashboard && blocksQuery.data && !blocksQuery.isError && !changeBlocksMutation.isPending && (blockScope === "BUSINESS" || (!staffListQuery.isLoading && !staffListQuery.isError)));
   const saveBlocks = async (action: "BLOCK" | "UNBLOCK") => {
     if (!businessId || !canChangeBlocks) return;
     try {
@@ -344,21 +357,32 @@ export default function DashboardCalendar({
     } catch (error) { toast.error(toUserMessage(error)); }
   };
   const visibleDateKey = isoDateOnly(currentDate);
-  const relevantStaff = (staffListQuery.data?.members ?? []).filter(member => selectedStaffFilter === "All Staff" || member.name === selectedStaffFilter);
-  const relevantMembershipIds = staffColumns.filter(member => selectedStaffFilter === "All Staff" || member.name === selectedStaffFilter).map(member => member.membershipId);
-  const relevantBookings = bookings.filter(booking => selectedStaffFilter === "All Staff" || booking.staffMembershipIds.some(id => relevantMembershipIds.includes(id)));
+  const relevantStaff = (staffListQuery.data?.members ?? []).filter(member => selectedStaffFilter === null || member.membershipId === selectedStaffFilter);
+  const relevantMembershipIds = staffColumns.filter(member => selectedStaffFilter === null || member.membershipId === selectedStaffFilter).map(member => member.membershipId);
+  const relevantBookings = bookings.filter(booking => selectedStaffFilter === null || booking.staffMembershipIds.some(id => relevantMembershipIds.includes(id)));
   const { startHour: gridStartHour, endHour: gridEndHour } = calendarDayHours(
     visibleDateKey, relevantBookings, calendarQuery.data?.openingHours ?? [], relevantStaff.map(member => member.schedule ?? []), calendarTimezone,
   );
-  const gridHourCount = gridEndHour - gridStartHour;
-  const gridHourLabels = Array.from({ length: gridHourCount }, (_, index) => formatTime12Hour(`${String(gridStartHour + index).padStart(2, "0")}:00`));
+  const timelineTimezone = calendarTimezone ?? relevantBookings[0]?.schedule.timezone ?? "Europe/Nicosia";
+  const timeline = calendarDayTimeline(visibleDateKey, timelineTimezone);
+  const transitionDay = timeline.endAt - timeline.startAt !== 24 * 3600000;
+  const gridSlots = transitionDay ? timeline.slots : timeline.slots.filter(slot => slot.wallMinute >= gridStartHour * 60 && slot.wallMinute < gridEndHour * 60);
+  const gridStartMs = gridSlots[0]?.startAt ?? timeline.startAt;
+  const gridEndMs = gridSlots.at(-1)?.endAt ?? timeline.endAt;
+  const gridHeight = (gridEndMs - gridStartMs) / 60000 * PX_PER_MINUTE;
+  const selectedRangeBlocked = (key: string) => {
+    if (viewMode !== "Today") return rangeState(key).blocked;
+    const range = JSON.parse(key) as LocalCalendarRange;
+    const slot = gridSlots.find(item => JSON.stringify(calendarRange(range.staffMembershipId, visibleDateKey, item.wallMinute, item.wallMinute + 30)) === key);
+    return slot ? calendarInstantRangeState(slot.startAt, slot.endAt, visibleDateKey, range.staffMembershipId, blocksQuery.data?.blocks ?? [], blocksQuery.data?.closedPeriods ?? []).blocked : rangeState(key).blocked;
+  };
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] relative">
       {/* Calendar Toolbar */}
       <div className="flex flex-col sm:flex-row gap-4 py-3 sm:py-0 sm:h-16 border-b border-[#C6C6CB] bg-[#FCF8F8] px-6 items-center justify-between shrink-0 select-none">
         {/* Left side: Today & Date picker */}
-        <div className="flex items-center gap-4 relative">
+        <div className="flex flex-wrap items-center justify-center gap-4 relative">
           {/* Today View Toggle Dropdown */}
           <div className="relative">
             <button
@@ -378,6 +402,8 @@ export default function DashboardCalendar({
                     key={mode}
                     onClick={() => {
                       setViewMode(mode);
+                      setSelectedSlots([]);
+                      setOpenDropdownCardId(null);
                       setIsViewDropdownOpen(false);
                     }}
                     className="px-4 py-2 hover:bg-neutral-50 text-left text-[#111111] font-medium"
@@ -393,21 +419,24 @@ export default function DashboardCalendar({
           <div className="flex items-center border border-[#C6C6CB] rounded-lg bg-white h-9 overflow-hidden relative">
             <button
               onClick={handlePrevDate}
+              aria-label="Previous date"
               className="px-3 h-full border-r border-[#C6C6CB] hover:bg-neutral-50 transition-all text-neutral-600 flex items-center justify-center cursor-pointer"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
-            <div
-              onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
+            <button type="button"
+              aria-label="Choose date"
+              onClick={() => { setDatePickerMonth(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)); setIsDatePickerOpen(!isDatePickerOpen); }}
               className="flex items-center gap-2 px-4 h-full cursor-pointer hover:bg-neutral-50 transition-all select-none"
             >
               <HugeiconsIcon icon={Calendar03Icon} className="w-4 h-4 text-[#0C0C0C]" />
               <span className="font-poppins text-xs font-semibold text-[#1C1B1C] whitespace-nowrap">{formatDate(currentDate)}</span>
-            </div>
+            </button>
             <button
               onClick={handleNextDate}
+              aria-label="Next date"
               className="px-3 h-full border-l border-[#C6C6CB] hover:bg-neutral-50 transition-all text-neutral-600 flex items-center justify-center cursor-pointer"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -415,6 +444,7 @@ export default function DashboardCalendar({
               </svg>
             </button>
           </div>
+          <button type="button" aria-label="Go to today" onClick={() => navigateDate(businessToday(calendarTimezone))} className="rounded-md border border-[#C6C6CB] px-3 py-1.5 text-xs hover:bg-neutral-50">Today</button>
         </div>
 
         {/* Right side: Staff, New Booking, Notifications */}
@@ -429,21 +459,24 @@ export default function DashboardCalendar({
                 }}
                 className="border border-[#111111] rounded-md px-3 py-1.5 flex items-center gap-1.5 h-9 bg-white hover:bg-neutral-50 transition-all text-sm font-medium text-[#111111] cursor-pointer"
               >
-                <span>{selectedStaffFilter}</span>
+                <span>{selectedStaffFilter === null ? "All Staff" : staffColumns.find(staff => staff.membershipId === selectedStaffFilter)?.name ?? "Staff"}</span>
                 <HugeiconsIcon icon={ArrowDown01Icon} className="w-3.5 h-3.5" />
               </button>
               {isStaffDropdownOpen && (
                 <div className="absolute right-0 mt-1.5 z-50 w-40 bg-white rounded-lg shadow-xl border border-neutral-200 flex flex-col py-1 text-xs select-none">
-                  {["All Staff", ...staffColumns.map((s) => s.name)].map((staff) => (
+                  {[{ name: "All Staff", membershipId: null }, ...staffColumns.filter((s) => s.membershipId)].map((staff) => (
                     <button
-                      key={staff}
+                      key={staff.membershipId ?? "all"}
+                      aria-pressed={selectedStaffFilter === (staff.membershipId ?? null)}
                       onClick={() => {
-                        setSelectedStaffFilter(staff);
+                        setSelectedStaffFilter(staff.membershipId ?? null);
+                        setSelectedSlots([]);
+                        setOpenDropdownCardId(null);
                         setIsStaffDropdownOpen(false);
                       }}
                       className="px-4 py-2 hover:bg-neutral-50 text-left text-[#111111] font-medium cursor-pointer"
                     >
-                      {staff}
+                      {staff.name}
                     </button>
                   ))}
                 </div>
@@ -474,6 +507,8 @@ export default function DashboardCalendar({
         {blocksQuery.isError && <span role="alert">Could not load saved blocks. <button className="underline" onClick={() => void blocksQuery.refetch()}>Retry</button></span>}
         {changeBlocksMutation.isPending && <span role="status">Saving calendar blocks…</span>}
       </div>}
+      {businessId && !isStaffDashboard && staffListQuery.isLoading && <p role="status" className="px-6 py-2 text-xs">Loading staff…</p>}
+      {businessId && !isStaffDashboard && staffListQuery.isError && <p role="alert" className="px-6 py-2 text-xs text-red-700">Staff could not be loaded. <button type="button" className="underline" disabled={staffListQuery.isFetching} onClick={() => void staffListQuery.refetch()}>Retry staff</button></p>}
       {!businessId ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
           <span className="font-poppins text-sm font-semibold text-[#5F5E5A]">Booking management isn&apos;t available for your account</span>
@@ -538,7 +573,7 @@ export default function DashboardCalendar({
             ) : (
               // Today / Daily View: Staff Columns
               (() => {
-                const activeStaffList = staffColumns.filter(staff => selectedStaffFilter === "All Staff" || staff.name === selectedStaffFilter);
+                const activeStaffList = staffColumns.filter(staff => selectedStaffFilter === null || staff.membershipId === selectedStaffFilter);
                 return (
                   <div className="flex-1 grid divide-x divide-[#C6C6CB]" style={{ gridTemplateColumns: `repeat(${Math.max(activeStaffList.length, 1)}, minmax(0, 1fr))` }}>
                     {activeStaffList.map((staff, index) => (
@@ -567,6 +602,7 @@ export default function DashboardCalendar({
               <div className="flex-1 flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
                 <span className="font-poppins text-sm font-semibold text-[#BA1A1A]">Couldn&apos;t load calendar</span>
                 <span className="font-poppins text-xs text-[#ABAAA6]">Please try again in a moment.</span>
+                <button type="button" disabled={calendarQuery.isFetching} onClick={() => void calendarQuery.refetch()} className="text-xs underline disabled:opacity-50">{calendarQuery.isFetching ? "Retrying…" : "Retry calendar"}</button>
               </div>
             ) : viewMode === "Monthly" ? (
               /* MONTHLY VIEW: Calendar Dates Grid, real per-day booking summaries */
@@ -599,15 +635,23 @@ export default function DashboardCalendar({
 
                     return cells.map((cell, idx) => {
                       const dateKey = isoDateOnly(cell.date);
-                      const dayBookings = bookings.filter((b) => bookingLocalDateKey(b) === dateKey);
+                      const dayBookings = relevantBookings.filter((b) => bookingDayInterval(b, dateKey, calendarTimezone));
                       const isToday = dateKey === isoDateOnly(today);
 
                       return (
                         <div
                           key={idx}
+                          role={cell.inMonth ? "button" : undefined}
+                          tabIndex={cell.inMonth ? 0 : undefined}
+                          aria-label={cell.inMonth ? `Open ${dateKey}` : undefined}
+                          onKeyDown={(event) => {
+                            if (cell.inMonth && (event.key === "Enter" || event.key === " ")) {
+                              event.preventDefault(); navigateDate(cell.date); setViewMode("Today");
+                            }
+                          }}
                           onClick={() => {
                             if (cell.inMonth) {
-                              setCurrentDate(cell.date);
+                              navigateDate(cell.date);
                               setViewMode("Today");
                             }
                           }}
@@ -625,7 +669,7 @@ export default function DashboardCalendar({
                               {dayBookings.slice(0, 2).map((b) => (
                                 <div key={b.id} className="flex flex-col bg-[#BBEBFF] text-[#195156] text-[10px] font-semibold px-1.5 py-0.5 rounded">
                                   <span className="truncate">
-                                    {formatBookingTime(b.schedule.startAt, b.schedule.timezone)} {b.customerName}
+                                    {formatBookingTime(b.schedule.startAt, calendarTimezone ?? b.schedule.timezone)} {b.customerName}
                                   </span>
                                   {b.packageSessions.map((session, index) => (
                                     <span
@@ -660,11 +704,11 @@ export default function DashboardCalendar({
                   />
                 )}
                 {staffColumns
-                  .filter(staff => selectedStaffFilter === "All Staff" || staff.name === selectedStaffFilter)
+                  .filter(staff => selectedStaffFilter === null || staff.membershipId === selectedStaffFilter)
                   .map((staff) => {
                     const staffBookings = bookingsForStaff(staff.membershipId);
                     return (
-                      <div key={staff.name} className="flex border-b border-[#C6C6CB] min-h-[140px] relative">
+                      <div key={staff.membershipId ?? staff.name} className="flex border-b border-[#C6C6CB] min-h-[140px] relative">
                         {/* Left Staff Row Header */}
                         <div
                           className="border-r border-[#C6C6CB] bg-[#FCF8F8] p-3 flex flex-col items-center justify-center gap-1 shrink-0 z-10"
@@ -686,7 +730,7 @@ export default function DashboardCalendar({
                             const isSelected = selectedSlots.includes(slotKey);
                             const state = rangeState(slotKey);
                             const isDisabled = state.blocked || state.closed;
-                            const dayBookings = staffBookings.filter((b) => bookingLocalDateKey(b) === dateKey);
+                            const dayBookings = staffBookings.filter((b) => bookingDayInterval(b, dateKey, calendarTimezone));
                             const hasBooking = dayBookings.length > 0;
 
                             return (
@@ -726,19 +770,28 @@ export default function DashboardCalendar({
                                 )}
                                 {dayBookings.map((b) => {
                                   const tone = BOOKING_STATUS_TONE[b.status];
+                                  const instanceKey = `${dateKey}:${staff.membershipId ?? "staff"}:${b.id}`;
                                   return (
                                     <div
                                       key={b.id}
+                                      role="button"
+                                      tabIndex={0}
+                                      aria-label={`Booking ${b.reference}`}
+                                      onKeyDown={(event) => {
+                                        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                                          event.preventDefault(); setOpenDropdownCardId(openDropdownCardId === instanceKey ? null : instanceKey);
+                                        }
+                                      }}
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setOpenDropdownCardId(openDropdownCardId === b.id ? null : b.id);
+                                        setOpenDropdownCardId(openDropdownCardId === instanceKey ? null : instanceKey);
                                       }}
-                                      className={`bg-[#0CC0DF]/20 border-l-4 border-[#0CC0DF] rounded px-2 py-1.5 text-xs cursor-pointer hover:brightness-95 transition-all relative ${openDropdownCardId === b.id ? "z-40" : "z-20"}`}
+                                      className={`bg-[#0CC0DF]/20 border-l-4 border-[#0CC0DF] rounded px-2 py-1.5 text-xs cursor-pointer hover:brightness-95 transition-all relative ${openDropdownCardId === instanceKey ? "z-40" : "z-20"}`}
                                     >
                                       <div className="font-semibold text-[#020305] text-[11px] truncate flex items-center justify-between">
-                                        <span>{formatBookingTime(b.schedule.startAt, b.schedule.timezone)} {b.customerName}</span>
+                                        <span>{formatBookingTime(b.schedule.startAt, calendarTimezone ?? b.schedule.timezone)}–{formatBookingTime(b.schedule.endAt, calendarTimezone ?? b.schedule.timezone)} {b.customerName}</span>
                                       </div>
-                                      <div className="text-[10px] text-[#45474B] truncate">{b.serviceNames[0] ?? ""}</div>
+                                      <div className="text-[10px] text-[#45474B] truncate">{b.serviceNames.join(", ")}</div>
                                       {b.packageSessions.map((session, index) => (
                                         <div
                                           key={`${session.packageProgressId}-${session.sessionIndex}-${index}`}
@@ -753,7 +806,7 @@ export default function DashboardCalendar({
                                           {BOOKING_STATUS_LABELS[b.status]}
                                         </span>
                                       </div>
-                                      {renderDropdown(b.id)}
+                                      {renderDropdown(b.id, instanceKey)}
                                     </div>
                                   );
                                 })}
@@ -773,7 +826,7 @@ export default function DashboardCalendar({
               </div>
             ) : (
               /* Calendar bounds include configured shifts and actual persisted appointments. */
-              <div className="flex w-full relative shrink-0" style={{ height: gridHourCount * 160 }}>
+              <div className="flex w-full relative shrink-0" style={{ height: gridHeight }}>
                 {openDropdownCardId && (
                   <div
                     className="fixed inset-0 z-30 bg-transparent cursor-default"
@@ -782,25 +835,22 @@ export default function DashboardCalendar({
                 )}
                 {/* Background Horizontal Grid Lines */}
                 <div className="absolute left-[65px] right-0 top-0 bottom-0 pointer-events-none flex flex-col z-0">
-                  {Array.from({ length: gridHourCount }).map((_, idx) => (
-                    <div key={idx} className="h-40 w-full flex flex-col">
-                      <div className="h-20 border-b border-dashed border-[#C6C6CB]/20"></div>
-                      <div className="h-20 border-b border-[#C6C6CB]/40"></div>
-                    </div>
-                  ))}
+                  {gridSlots.map(slot => <div key={slot.startAt} className="w-full border-b border-dashed border-[#C6C6CB]/30" style={{ height: (slot.endAt - slot.startAt) / 60000 * PX_PER_MINUTE }} />)}
                 </div>
 
                 {/* Time Column (Left Side Axis) */}
                 <div className="border-r border-[#C6C6CB] bg-[#FCF8F8] flex flex-col shrink-0 relative z-10" style={{ width: "64px" }}>
-                  {gridHourLabels.map((time, idx) => (
-                    <div key={idx} className="h-40 flex justify-center items-start pt-2">
-                      <span className="font-poppins text-[11px] font-semibold text-[#45474B]">{time}</span>
+                  {gridSlots.map(slot => (
+                    <div key={slot.startAt} className="flex justify-center items-start pt-2" style={{ height: (slot.endAt - slot.startAt) / 60000 * PX_PER_MINUTE }}>
+                      {slot.wallMinute % 60 === 0 && <span className="font-poppins text-[11px] font-semibold text-[#45474B]" aria-label={`${formatTime12Hour(`${String(Math.floor(slot.wallMinute / 60)).padStart(2, "0")}:00`)} ${slot.offset}`}>
+                        {formatTime12Hour(`${String(Math.floor(slot.wallMinute / 60)).padStart(2, "0")}:00`)}{slot.ambiguous && <span className="block text-[9px]">{slot.offset}</span>}
+                      </span>}
                     </div>
                   ))}
                 </div>
 
                 {(() => {
-                  const activeStaffList = staffColumns.filter(staff => selectedStaffFilter === "All Staff" || staff.name === selectedStaffFilter);
+                  const activeStaffList = staffColumns.filter(staff => selectedStaffFilter === null || staff.membershipId === selectedStaffFilter);
                   const dateKey = isoDateOnly(currentDate);
                   return (
                     <div className="flex-1 grid divide-x divide-[#C6C6CB] relative w-full" style={{ gridTemplateColumns: `repeat(${Math.max(activeStaffList.length, 1)}, minmax(0, 1fr))` }}>
@@ -808,21 +858,21 @@ export default function DashboardCalendar({
                         const dayBookings = bookingsForStaff(staff.membershipId).filter((b) => bookingDayInterval(b, dateKey, calendarTimezone));
                         const lanes = calendarDayLanes(dayBookings, dateKey, calendarTimezone);
                         return (
-                        <div key={staff.name} className="relative h-full">
+                        <div key={staff.membershipId ?? staff.name} className="relative h-full">
                           {/* Render click-capturable empty slots behind the bookings */}
                           <div className="absolute inset-0 z-0 flex flex-col">
-                            {Array.from({ length: gridHourCount }).map((_, hourIdx) => (
-                              <div key={hourIdx} className="h-40 flex flex-col border-b border-[#C6C6CB]/20">
-                                {[0, 1].map((halfIdx) => {
-                                  const slotKey = JSON.stringify(calendarRange(blockScope === "BUSINESS" ? undefined : staff.membershipId, dateKey, (gridStartHour + hourIdx) * 60 + halfIdx * 30, (gridStartHour + hourIdx) * 60 + halfIdx * 30 + 30));
+                            {gridSlots.map((slot) => {
+                                  const targetStaff = blockScope === "BUSINESS" ? undefined : staff.membershipId;
+                                  const slotKey = JSON.stringify(calendarRange(targetStaff, dateKey, slot.wallMinute, slot.wallMinute + 30));
                                   const isSelected = selectedSlots.includes(slotKey);
-                                  const state = rangeState(slotKey);
+                                  const state = calendarInstantRangeState(slot.startAt, slot.endAt, dateKey, targetStaff, blocksQuery.data?.blocks ?? [], blocksQuery.data?.closedPeriods ?? []);
                                   const isDisabled = state.blocked || state.closed;
                                   return (
                                     <div
-                                      key={halfIdx}
+                                      key={slot.startAt}
+                                      title={slot.ambiguous || slot.discontinuous ? "This time cannot be edited because local clock changes are ambiguous." : undefined}
                                       onClick={() => {
-                                        if (!canChangeBlocks || state.closed || (blockScope === "STAFF" && state.global)) return;
+                                        if (!canChangeBlocks || slot.ambiguous || slot.discontinuous || state.closed || (blockScope === "STAFF" && state.global)) return;
                                         const isDeselect = selectedSlots.includes(slotKey);
                                         if (isDeselect) {
                                           setSelectedSlots(prev => prev.filter(k => k !== slotKey));
@@ -831,7 +881,7 @@ export default function DashboardCalendar({
 
                                         if (selectedSlots.length > 0) {
                                           const firstKey = selectedSlots[0];
-                                          const firstIsDisabled = rangeState(firstKey).blocked;
+                                          const firstIsDisabled = selectedRangeBlocked(firstKey);
                                           if (isDisabled !== firstIsDisabled) {
                                             return;
                                           }
@@ -839,7 +889,8 @@ export default function DashboardCalendar({
 
                                         setSelectedSlots(prev => [...prev, slotKey]);
                                       }}
-                                      className={`h-20 w-full relative transition-all cursor-pointer flex items-center justify-center ${
+                                      style={{ height: (slot.endAt - slot.startAt) / 60000 * PX_PER_MINUTE }}
+                                      className={`w-full relative transition-all cursor-pointer flex items-center justify-center ${
                                         isSelected
                                           ? "bg-[#2E9DA7]/15 border border-[#2E9DA7]"
                                           : isDisabled
@@ -847,6 +898,7 @@ export default function DashboardCalendar({
                                             : "hover:bg-neutral-50/50"
                                       }`}
                                     >
+                                      {(slot.ambiguous || slot.discontinuous) && !isDisabled && <span className="text-[9px] text-neutral-500">Clock change · editing unavailable</span>}
                                       {isDisabled && !isSelected && (
                                         <span className="text-[9px] font-bold tracking-wider text-[#94A3B8] uppercase pointer-events-none">Disabled</span>
                                       )}
@@ -857,9 +909,7 @@ export default function DashboardCalendar({
                                       )}
                                     </div>
                                   );
-                                })}
-                              </div>
-                            ))}
+                            })}
                           </div>
 
                           {dayBookings.map(b => {
@@ -867,25 +917,34 @@ export default function DashboardCalendar({
                             if (!interval) return null;
                             const startMin = interval.from;
                             const endMin = interval.to;
-                            const gridStartMin = gridStartHour * 60;
-                            const gridEndMin = gridEndHour * 60;
+                            const gridStartMin = (gridStartMs - timeline.startAt) / 60000;
+                            const gridEndMin = (gridEndMs - timeline.startAt) / 60000;
                             if (endMin <= gridStartMin || startMin >= gridEndMin) return null; // outside the visible grid
                             const clippedStart = Math.max(startMin, gridStartMin);
                             const clippedEnd = Math.min(endMin, gridEndMin);
                             const top = (clippedStart - gridStartMin) * PX_PER_MINUTE;
-                            const height = Math.max(24, (clippedEnd - clippedStart) * PX_PER_MINUTE);
+                            const height = (clippedEnd - clippedStart) * PX_PER_MINUTE;
                             const tone = BOOKING_STATUS_TONE[b.status];
                             const cardColors = TONE_CARD_CLASSNAMES[tone];
                             const placement = lanes.get(b.id) ?? { lane: 0, count: 1 };
+                            const instanceKey = `${dateKey}:${staff.membershipId ?? "staff"}:${b.id}`;
 
                             return (
                               <div
                                 key={b.id}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`Booking ${b.reference}`}
+                                onKeyDown={(event) => {
+                                  if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                                    event.preventDefault(); setOpenDropdownCardId(openDropdownCardId === instanceKey ? null : instanceKey);
+                                  }
+                                }}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setOpenDropdownCardId(openDropdownCardId === b.id ? null : b.id);
+                                  setOpenDropdownCardId(openDropdownCardId === instanceKey ? null : instanceKey);
                                 }}
-                                className={`absolute left-[3%] right-[3%] ${cardColors.bg} border-l-4 ${cardColors.border} rounded-md p-2 shadow-sm flex flex-col justify-between cursor-pointer hover:scale-[1.01] transition-transform ${openDropdownCardId === b.id ? "z-40" : "z-20"}`}
+                                className={`absolute left-[3%] right-[3%] ${cardColors.bg} border-l-4 ${cardColors.border} rounded-md p-2 shadow-sm flex flex-col justify-between cursor-pointer hover:scale-[1.01] transition-transform ${openDropdownCardId === instanceKey ? "z-40" : "z-20"}`}
                                 style={{ top: `${top}px`, height: `${height}px`, left: `${3 + placement.lane * 94 / placement.count}%`, right: "auto", width: `${94 / placement.count}%` }}
                               >
                                 <button className="absolute right-2 top-2 text-neutral-500 hover:text-neutral-900 select-none cursor-pointer">
@@ -896,7 +955,7 @@ export default function DashboardCalendar({
                                 <div>
                                   <div className="flex justify-between items-center pr-4">
                                     <span className="text-[9px] font-medium text-[#45474B] leading-none">
-                                      {formatBookingTime(b.schedule.startAt, b.schedule.timezone)}
+                                      {formatBookingTime(b.schedule.startAt, calendarTimezone ?? b.schedule.timezone)}–{formatBookingTime(b.schedule.endAt, calendarTimezone ?? b.schedule.timezone)}
                                     </span>
                                     <span className="bg-white/50 px-1 py-0.5 rounded text-[8px] font-semibold text-[#45474B] leading-none flex items-center gap-0.5">
                                       <span>{BOOKING_STATUS_LABELS[b.status]}</span>
@@ -918,7 +977,7 @@ export default function DashboardCalendar({
                                   ))}
                                 </div>
                                 <span className="text-[10px] font-medium text-[#45474B]">{formatBookingMoney(b.totalCents)}</span>
-                                {renderDropdown(b.id)}
+                                {renderDropdown(b.id, instanceKey)}
                               </div>
                             );
                           })}
@@ -950,7 +1009,7 @@ export default function DashboardCalendar({
           </div>
           <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto">
             {(() => {
-              const hasDisabledSelected = selectedSlots.some(key => rangeState(key).blocked);
+              const hasDisabledSelected = selectedSlots.some(selectedRangeBlocked);
 
               if (hasDisabledSelected) {
                 return (
@@ -989,27 +1048,31 @@ export default function DashboardCalendar({
       {/* Waive Charge Modal Overlay */}
       <WaiveChargeModal
         isOpen={!!waiveBookingId}
+        isPending={waiveFeeMutation.isPending}
         onClose={() => setWaiveBookingId(null)}
         onConfirm={(reason, internalNote) => {
-          if (businessId && waiveBookingId) {
+          if (businessId && waiveBookingId && !lifecycleActionInFlight.current) {
+            lifecycleActionInFlight.current = true;
             waiveFeeMutation.mutate(
               { businessId, bookingId: waiveBookingId, reason, internalNote },
               {
-                onSuccess: () => toast.success("No-show charge waived."),
-                onError: (error) => toast.error(toUserMessage(error)),
+                onSuccess: () => { setWaiveBookingId(null); toast.success("No-show charge waived."); },
+                onError: (error) => { setWaiveBookingId(null); void calendarQuery.refetch(); toast.error(`${toUserMessage(error)} Check the refreshed calendar before retrying.`); },
+                onSettled: () => { lifecycleActionInFlight.current = false; },
               },
             );
           }
-          setWaiveBookingId(null);
         }}
       />
 
       {/* No-show Confirm Modal Overlay */}
       <NoShowModal
         isOpen={!!noShowBookingId}
+        isPending={markNoShowMutation.isPending}
         onClose={() => setNoShowBookingId(null)}
         onConfirm={(payload) => {
-          if (businessId && noShowBookingId) {
+          if (businessId && noShowBookingId && !lifecycleActionInFlight.current) {
+            lifecycleActionInFlight.current = true;
             markNoShowMutation.mutate(
               {
                 businessId,
@@ -1018,12 +1081,12 @@ export default function DashboardCalendar({
                 internalNote: payload?.internalNote,
               },
               {
-                onSuccess: () => toast.success("No-show timer started."),
-                onError: (error) => toast.error(toUserMessage(error)),
+                onSuccess: () => { setNoShowBookingId(null); toast.success("No-show timer started."); },
+                onError: (error) => { setNoShowBookingId(null); void calendarQuery.refetch(); toast.error(`${toUserMessage(error)} Check the refreshed calendar before retrying.`); },
+                onSettled: () => { lifecycleActionInFlight.current = false; },
               },
             );
           }
-          setNoShowBookingId(null);
         }}
       />
 
@@ -1039,18 +1102,20 @@ export default function DashboardCalendar({
       {/* Cancel Booking Confirm Modal Overlay */}
       <CancelBookingModal
         isOpen={!!cancelBookingId}
+        isPending={cancelByBusinessMutation.isPending}
         onClose={() => setCancelBookingId(null)}
         onConfirm={(reason) => {
-          if (businessId && cancelBookingId) {
+          if (businessId && cancelBookingId && !lifecycleActionInFlight.current) {
+            lifecycleActionInFlight.current = true;
             cancelByBusinessMutation.mutate(
               { businessId, bookingId: cancelBookingId, reason },
               {
-                onSuccess: () => toast.success("Booking cancelled."),
-                onError: (error) => toast.error(toUserMessage(error)),
+                onSuccess: () => { setCancelBookingId(null); toast.success("Booking cancelled."); },
+                onError: (error) => { setCancelBookingId(null); void calendarQuery.refetch(); toast.error(`${toUserMessage(error)} Check the refreshed calendar before retrying.`); },
+                onSettled: () => { lifecycleActionInFlight.current = false; },
               },
             );
           }
-          setCancelBookingId(null);
         }}
       />
 
@@ -1070,9 +1135,9 @@ export default function DashboardCalendar({
                   <button
                     key={label}
                     onClick={() => {
-                      const futureDate = new Date();
+                      const futureDate = businessToday(calendarTimezone);
                       futureDate.setDate(futureDate.getDate() + (idx + 1) * 7);
-                      setCurrentDate(futureDate);
+                      navigateDate(futureDate);
                       setIsDatePickerOpen(false);
                     }}
                     className="px-4 py-1.5 border border-neutral-200 hover:border-neutral-800 rounded-full text-xs font-semibold whitespace-nowrap text-[#1C1B1C] transition-colors cursor-pointer"
@@ -1093,11 +1158,11 @@ export default function DashboardCalendar({
             {(() => {
               const monthsList = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-              const m1Index = datePickerSelectedMonth;
-              const m2Index = (datePickerSelectedMonth + 1) % 12;
-              const baseYear = currentDate.getFullYear();
-              const m1Year = baseYear;
-              const m2Year = m2Index === 0 ? baseYear + 1 : baseYear;
+              const m1Index = datePickerMonth.getMonth();
+              const m1Year = datePickerMonth.getFullYear();
+              const secondMonth = new Date(m1Year, m1Index + 1, 1);
+              const m2Index = secondMonth.getMonth();
+              const m2Year = secondMonth.getFullYear();
 
               const getDaysInMonth = (month: number, year: number) => new Date(year, month + 1, 0).getDate();
               const getFirstDayOffset = (month: number, year: number) => {
@@ -1117,7 +1182,8 @@ export default function DashboardCalendar({
                   <div className="flex-1">
                     <div className="flex justify-between items-center mb-3">
                       <button
-                        onClick={() => setDatePickerSelectedMonth(prev => prev === 0 ? 11 : prev - 1)}
+                        aria-label="Previous picker month"
+                        onClick={() => setDatePickerMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
                         className="text-neutral-600 hover:text-neutral-900 font-bold p-1 px-2 hover:bg-neutral-100 rounded cursor-pointer"
                       >
                         &larr;
@@ -1139,7 +1205,7 @@ export default function DashboardCalendar({
                           <button
                             key={`m1-d-${dayNum}`}
                             onClick={() => {
-                              setCurrentDate(new Date(m1Year, m1Index, dayNum));
+                              navigateDate(new Date(m1Year, m1Index, dayNum));
                               setViewMode("Today");
                               setIsDatePickerOpen(false);
                             }}
@@ -1160,7 +1226,8 @@ export default function DashboardCalendar({
                       <span className="w-8"></span>
                       <span className="font-semibold text-sm text-[#1C1B1C]"> {monthsList[m2Index]} {m2Year}</span>
                       <button
-                        onClick={() => setDatePickerSelectedMonth(prev => (prev + 1) % 12)}
+                        aria-label="Next picker month"
+                        onClick={() => setDatePickerMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
                         className="text-neutral-600 hover:text-neutral-900 font-bold p-1 px-2 hover:bg-neutral-100 rounded cursor-pointer"
                       >
                         &rarr;
@@ -1180,7 +1247,7 @@ export default function DashboardCalendar({
                           <button
                             key={`m2-d-${dayNum}`}
                             onClick={() => {
-                              setCurrentDate(new Date(m2Year, m2Index, dayNum));
+                              navigateDate(new Date(m2Year, m2Index, dayNum));
                               setViewMode("Today");
                               setIsDatePickerOpen(false);
                             }}
@@ -1202,8 +1269,7 @@ export default function DashboardCalendar({
             {(() => {
               const monthsList = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
               const generatedMonths = Array.from({ length: 12 }, (_, i) => {
-                const now = new Date();
-                now.setMonth(now.getMonth() + i);
+                const now = new Date(currentDate.getFullYear(), currentDate.getMonth() + i, 1);
                 return {
                   monthIndex: now.getMonth(),
                   year: now.getFullYear()
@@ -1234,7 +1300,7 @@ export default function DashboardCalendar({
                               <button
                                 key={`mob-d-${dayNum}`}
                                 onClick={() => {
-                                  setCurrentDate(new Date(year, monthIndex, dayNum));
+                                  navigateDate(new Date(year, monthIndex, dayNum));
                                   setViewMode("Today");
                                   setIsDatePickerOpen(false);
                                 }}

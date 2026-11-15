@@ -43,6 +43,21 @@ const render = async (node: React.ReactNode) => { await act(async () => root.ren
 const click = async (node: Element | null) => { if (!node) throw Error("Missing control"); await act(async () => (node as HTMLElement).click()); };
 
 describe("Super Admin Customers component interactions", () => {
+  it("switches Customer details without stale identity and resets detail pagination", async () => {
+    vi.mocked(useSuperAdminCustomerDetailQuery).mockImplementation((id) => ({
+      data: { ...customer, id, firstName: id === "a" ? "Alice" : "Bob" },
+      isLoading: false, isError: false, refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useSuperAdminCustomerDetailQuery>));
+    await render(<SuperAdminCustomers viewingCustomerId="a" setViewingCustomerId={vi.fn()} />);
+    expect(host.textContent).toContain("Alice");
+    await click(host.querySelector('[aria-label="Customer booking history pagination"] button:last-child'));
+    expect(useSuperAdminCustomerDetailQuery).toHaveBeenLastCalledWith("a", 2, 1);
+    await render(<SuperAdminCustomers viewingCustomerId="b" setViewingCustomerId={vi.fn()} />);
+    expect(useSuperAdminCustomerDetailQuery).toHaveBeenLastCalledWith("b", 1, 1);
+    expect(host.textContent).toContain("Bob");
+    expect(host.textContent).not.toContain("Alice");
+  });
+
   it("shows one identity with actual indicators and opens the selected Customer", async () => {
     function Screen() {
       const [id, setId] = useState<string | null>(null);

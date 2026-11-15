@@ -17,9 +17,9 @@ import {
   useSuperAdminPlatformTransactionsQuery,
 } from "@/lib/superAdminFinance/hooks";
 
-type TabType = "No-show & late cancel" | "Activation fees" | "Refunds issued" | "SEPA sent";
+type TabType = "No-show & late cancel" | "Activation fees" | "Refunds issued" | "Payout records";
 
-const TAB_TYPES: Record<Exclude<TabType, "SEPA sent">, PlatformTransactionType[]> = {
+const TAB_TYPES: Record<Exclude<TabType, "Payout records">, PlatformTransactionType[]> = {
   "No-show & late cancel": ["NO_SHOW_FEE", "CANCELLATION_FEE"],
   "Activation fees": ["PLATFORM_FEE"],
   "Refunds issued": ["REFUND"],
@@ -44,7 +44,7 @@ const rowStatusLabel = (row: PlatformTransactionRow): string => {
   if (row.status === "PENDING") return "Pending";
   if (row.type === "REFUND") return "Refunded";
   if (row.type === "PLATFORM_FEE") return "Settled";
-  return row.payoutId ? "Payout sent" : "Pending payout";
+  return row.payoutId ? "Payout recorded" : "Pending payout";
 };
 
 const statusBadgeStyle = (label: string): string => {
@@ -52,7 +52,7 @@ const statusBadgeStyle = (label: string): string => {
     case "Pending payout":
     case "Pending":
       return "bg-amber-50 text-amber-600 border border-amber-200";
-    case "Payout sent":
+    case "Payout recorded":
     case "Settled":
       return "bg-emerald-50 text-emerald-600 border border-emerald-200";
     case "Refunded":
@@ -92,7 +92,7 @@ export default function SuperAdminFinanceLog() {
     return { from: appliedFromDate || fallback.fromDate, to: appliedToDate || fallback.toDate };
   }, [appliedFromDate, appliedToDate]);
 
-  const isPayoutsTab = activeTab === "SEPA sent";
+  const isPayoutsTab = activeTab === "Payout records";
 
   const transactionsQuery = useSuperAdminPlatformTransactionsQuery(
     isPayoutsTab ? undefined : period,
@@ -100,6 +100,7 @@ export default function SuperAdminFinanceLog() {
     isPayoutsTab ? undefined : TAB_TYPES[activeTab],
   );
   const payoutsQuery = useSuperAdminPlatformPayoutHistoryQuery({ page, limit: 20 });
+  const activeQuery = isPayoutsTab ? payoutsQuery : transactionsQuery;
 
   const rows = transactionsQuery.data?.transactions ?? [];
   const payoutRows = payoutsQuery.data?.payouts ?? [];
@@ -172,7 +173,7 @@ export default function SuperAdminFinanceLog() {
 
       {!isCollapsed && (
         <>
-          {/* Sub-Filters: Date selectors (ignored for the "SEPA sent" tab — payout history is
+          {/* Sub-Filters: Date selectors (ignored for the payout records tab — payout history is
               its own always-full list) */}
           {!isPayoutsTab ? (
           <div className="p-4 border-b border-gray-100 bg-gray-50/50">
@@ -214,7 +215,7 @@ export default function SuperAdminFinanceLog() {
 
           {/* Sub-Tabs Navigation */}
           <div className="flex items-center gap-6 px-5 border-b border-gray-100 overflow-x-auto bg-white pt-2.5">
-            {(["No-show & late cancel", "Activation fees", "Refunds issued", "SEPA sent"] as const).map((tab) => {
+            {(["No-show & late cancel", "Activation fees", "Refunds issued", "Payout records"] as const).map((tab) => {
               const isActive = activeTab === tab;
               return (
                 <button
@@ -236,8 +237,13 @@ export default function SuperAdminFinanceLog() {
           </div>
 
           {/* Data Grid Table */}
-          {isPayoutsTab ? (
+          {activeQuery.isError ? (
+            <div role="alert" className="p-8 text-center text-rose-600">Could not load finance records. <button type="button" disabled={activeQuery.isFetching} onClick={() => void activeQuery.refetch()} className="underline">Retry</button></div>
+          ) : activeQuery.isLoading ? (
+            <div role="status" className="p-8 text-center text-gray-500">Loading finance records…</div>
+          ) : isPayoutsTab ? (
             <div className="overflow-x-auto w-full">
+              <p className="px-5 pt-4 text-xs text-gray-500">Payouts are self-attested records; Bookly does not execute or verify the external transfer.</p>
               <table className="w-full text-left font-sans text-xs border-collapse">
                 <thead>
                   <tr className="bg-[#F9FAFB] border-b border-gray-100 text-gray-700 font-semibold">
@@ -266,8 +272,8 @@ export default function SuperAdminFinanceLog() {
                         {formatBookingMoney(p.netPayoutCents)}
                       </td>
                       <td className="p-4 text-center whitespace-nowrap">
-                        <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full ${statusBadgeStyle(p.status === "PAID" ? "Payout sent" : "Pending")}`}>
-                          {p.status === "PAID" ? "Payout sent" : "Pending"}
+                        <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full ${statusBadgeStyle(p.status === "PAID" ? "Payout recorded" : "Pending")}`}>
+                          {p.status === "PAID" ? "Payout recorded" : "Pending"}
                         </span>
                       </td>
                     </tr>
@@ -275,7 +281,7 @@ export default function SuperAdminFinanceLog() {
                   {payoutRows.length === 0 && (
                     <tr>
                       <td colSpan={6} className="p-8 text-center text-gray-500 font-medium">
-                        No payouts have been sent yet.
+                        No payout records yet.
                       </td>
                     </tr>
                   )}
@@ -343,7 +349,7 @@ export default function SuperAdminFinanceLog() {
           )}
 
           {/* Pagination Footer */}
-          <div className="flex items-center justify-between border-t border-gray-100 px-6 py-4 bg-white text-xs text-gray-500">
+          {!activeQuery.isError && !activeQuery.isLoading && <div className="flex items-center justify-between border-t border-gray-100 px-6 py-4 bg-white text-xs text-gray-500">
             <span>Page {page} · {total} total</span>
             <div className="flex items-center gap-3">
               <button
@@ -361,7 +367,7 @@ export default function SuperAdminFinanceLog() {
                 Next →
               </button>
             </div>
-          </div>
+          </div>}
         </>
       )}
     </div>

@@ -57,6 +57,7 @@ function FavoritesPageContent() {
   const total = favoritesQuery.data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const items = favorites.map(cardToRecommendation);
+  if (favoritesQuery.isSuccess && currentPage > totalPages) setCurrentPage(totalPages);
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= totalPages) {
@@ -90,7 +91,7 @@ function FavoritesPageContent() {
 
         {/* Reusable Search Bar with same dropdown behavior and styling */}
         <div className="w-full flex justify-center mb-[72px]">
-          <SearchBar onSearch={() => router.push("/explore")} />
+          <SearchBar />
         </div>
 
         {/* Title and Subtitle */}
@@ -120,6 +121,7 @@ function FavoritesPageContent() {
         ) : favoritesQuery.isError ? (
           <div className="w-full text-center py-20">
             <p className="text-[#757575] text-lg font-medium">Your favorites could not be loaded right now.</p>
+            <button type="button" disabled={favoritesQuery.isFetching} onClick={() => void favoritesQuery.refetch()} className="mt-3 underline disabled:opacity-50">{favoritesQuery.isFetching ? "Retrying…" : "Retry"}</button>
           </div>
         ) : items.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-x-4 sm:gap-x-6 gap-y-[20px] justify-items-start w-full mt-8">

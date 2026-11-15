@@ -30,3 +30,13 @@ export function createCalendarRangeState(blocks: CalendarBlock[], closedPeriods:
 export function calendarRangeState(range: LocalCalendarRange, blocks: CalendarBlock[], closedPeriods: ClosedPeriod[], timezone: string) {
   return createCalendarRangeState(blocks, closedPeriods, timezone)(range);
 }
+
+/** For the day grid, compare saved blocks against real instants, including repeated hours. */
+export function calendarInstantRangeState(startAt: number, endAt: number, date: string, staffMembershipId: string | undefined, blocks: CalendarBlock[], closedPeriods: ClosedPeriod[]) {
+  const matches = blocks.filter(block => (!block.staffMembershipId || block.staffMembershipId === staffMembershipId) && Date.parse(block.startAt) < endAt && startAt < Date.parse(block.endAt))
+    .sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
+  let covered = startAt;
+  for (const block of matches) { const start = Date.parse(block.startAt), end = Date.parse(block.endAt); if (start > covered) break; covered = Math.max(covered, end); }
+  return { blocked: matches.length > 0, fullyBlocked: covered >= endAt, global: matches.some(block => !block.staffMembershipId),
+    closed: closedPeriods.some(period => period.startDate <= date && period.endDate >= date) };
+}

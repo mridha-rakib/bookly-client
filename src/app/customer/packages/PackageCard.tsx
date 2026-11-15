@@ -144,18 +144,14 @@ export default function PackageCard({
           </dd>
         </div>
 
-        {!pkg.balanceSettled && pkg.status !== "VOIDED" ? (
-          <div className="flex items-start justify-between gap-4 text-[#92400E] font-bold">
-            <dt>Outstanding purchase balance</dt>
-            <dd className="shrink-0 font-bold">
-              {formatBookingMoney(pkg.outstandingBalanceCents)} due at venue
-            </dd>
-          </div>
+        {pkg.settlementAvailable === false || pkg.outstandingBalanceCents == null ? (
+          <div className="flex justify-between gap-4"><dt>Balance status</dt><dd>Balance unavailable</dd></div>
+        ) : pkg.balanceSettled ? (
+          <div className="flex justify-between gap-4 text-emerald-800 font-bold"><dt>Balance status</dt><dd>Settled</dd></div>
+        ) : pkg.status === "VOIDED" ? (
+          <div className="flex justify-between gap-4"><dt>Balance status</dt><dd>Settlement not confirmed</dd></div>
         ) : (
-          <div className="flex items-center justify-between gap-4 text-emerald-800 font-bold">
-            <dt>Balance status</dt>
-            <dd className="shrink-0 font-bold">Settled</dd>
-          </div>
+          <div className="flex items-start justify-between gap-4 text-[#92400E] font-bold"><dt>Outstanding purchase balance</dt><dd className="shrink-0">{formatBookingMoney(pkg.outstandingBalanceCents)} due at venue</dd></div>
         )}
       </dl>
 

@@ -4,7 +4,7 @@ import type { BookingPackageSessionIdentity } from "@/lib/api/bookings";
 /**
  * Matches api/src/modules/dashboard-overview/dashboard-overview.dto.ts exactly. Replaces the
  * mock data previously in utils/dashboardMockData.ts for DashboardOverview/SupervisorOverview/
- * StaffOverview. Owner/Supervisor get `scope: "FULL"` (financials populated); Staff get
+ * StaffOverview. Owner/Supervisor get `scope: "FULL"` (only Owners receive financials); Staff get
  * `scope: "STAFF_SCOPED"` (own bookings only, financials always null).
  */
 
@@ -73,6 +73,7 @@ export interface DashboardOverview {
   todayDateStr: string;
   todayBookingsCount: number;
   todayRemainingCount: number;
+  noShowCount?: number;
   schedule: DashboardOverviewScheduleRow[];
   timeline: DashboardOverviewTimelineEntry[];
   financials: DashboardOverviewFinancials | null;

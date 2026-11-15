@@ -51,7 +51,8 @@ export const useCreateStaffMutation = () => {
   return useMutation({
     mutationFn: ({ businessId, input }: { businessId: string; input: CreateStaffInput }) =>
       staffApi.createStaff(businessId, input),
-    onSuccess: (_invitation, variables) => {
+    // The server can persist a pending invitation even if delivery fails or the response is lost.
+    onSettled: (_invitation, _error, variables) => {
       void invalidateStaffSchedulingViews(queryClient, variables.businessId);
     },
   });

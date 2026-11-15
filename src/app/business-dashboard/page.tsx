@@ -3,18 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  BellIcon,
-  ArrowLeft02Icon,
-  User02Icon,
-  PencilEdit02Icon,
-  Search01Icon,
-  Mail01Icon,
-  Calendar03Icon,
-  ScissorIcon,
-  Calendar02Icon,
-  Location05Icon
-} from "@hugeicons/core-free-icons";
+import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 
 // Reused component
 import RequireBusinessOwner from "@/components/auth/RequireBusinessOwner";
@@ -25,7 +14,6 @@ import {
   useBookingDetailQuery,
   useCancelByBusinessMutation,
   useCancelNoShowMutation,
-  useCompleteBookingMutation,
   useRescheduleByOwnerMutation,
   useWaiveFeeMutation,
 } from "@/lib/bookings/hooks";
@@ -38,6 +26,7 @@ import DashboardBookingsList from "@/components/dashboard/DashboardBookingsList"
 import DashboardBookingForm from "@/components/dashboard/DashboardBookingForm";
 import ClientsPage from "@/components/clients/ClientsPage";
 import ClientBookingHistoryCard from "@/components/clients/ClientBookingHistoryCard";
+import BookingDetailReadError from "@/components/dashboard/BookingDetailReadError";
 import DashboardBusinessProfile from "@/components/dashboard/DashboardBusinessProfile";
 import DashboardCreateBusiness from "@/components/dashboard/DashboardCreateBusiness";
 import ServicesListPage from "@/components/dashboard/services/ServicesListPage";
@@ -52,8 +41,11 @@ import DashboardAnalytics from "@/components/dashboard/DashboardAnalytics";
 import DashboardSettings from "@/components/dashboard/DashboardSettings";
 import BookingCalendarSyncPanel from "@/components/dashboard/BookingCalendarSyncPanel";
 import ContactSupport from "@/components/support/ContactSupport";
-import { CancelBookingModal, CompleteModal, NoShowModal } from "@/components/dashboard/CalendarActionModals";
+import { CancelBookingModal, NoShowModal } from "@/components/dashboard/CalendarActionModals";
+import CalendarBookingCompletion from "@/components/dashboard/CalendarBookingCompletion";
 import WaiveChargeModal from "@/components/dashboard/WaiveChargeModal";
+import { toast } from "@/components/ui/sonner";
+import { toUserMessage } from "@/lib/auth/messages";
 import {
   DEFAULT_DASHBOARD_SECTION,
   dashboardSectionToSlug,
@@ -220,11 +212,11 @@ function BusinessDashboardContent() {
   // Bookings — the SAME resolved businessId every Booking screen on this page uses (Batch 6).
   const { businessId: bookingsBusinessId } = useManagedBusinessContext();
   const bookingDetailQuery = useBookingDetailQuery(bookingsBusinessId, viewingBookingId ?? undefined);
-  const completeBookingMutation = useCompleteBookingMutation();
   const cancelByBusinessMutation = useCancelByBusinessMutation();
   const rescheduleByOwnerMutation = useRescheduleByOwnerMutation();
   const waiveFeeMutation = useWaiveFeeMutation();
   const cancelNoShowMutation = useCancelNoShowMutation();
+  const lifecycleActionInFlight = useRef(false);
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.innerWidth < 768) {
@@ -249,7 +241,7 @@ function BusinessDashboardContent() {
   // Main UI router switch helper
   const renderMainContent = () => {
     if (activeTab === "Dashboard") {
-      return <DashboardOverview />;
+      return <DashboardOverview onViewCalendar={() => setActiveTab("Calendar")} />;
     }
 
     if (activeTab === "Calendar") {
@@ -270,6 +262,9 @@ function BusinessDashboardContent() {
     }
 
     if (activeTab === "Clients") {
+      if (businessProfileQuery.isError) return <main className="p-8" role="alert">Business details could not be loaded. <button type="button" className="underline" disabled={businessProfileQuery.isFetching} onClick={() => void businessProfileQuery.refetch()}>Retry business details</button></main>;
+      if (businessProfileQuery.isLoading) return <main className="p-8" role="status">Loading business details…</main>;
+      if (!clientsBusinessId) return <main className="p-8">No owned business is available for client management.</main>;
       return <ClientsPage businessId={clientsBusinessId} />;
     }
 
@@ -317,7 +312,7 @@ function BusinessDashboardContent() {
               {bookingDetailQuery.isLoading ? (
                 <span className="font-poppins text-sm text-neutral-400">Loading booking…</span>
               ) : bookingDetailQuery.isError || !bookingDetailQuery.data ? (
-                <span className="font-poppins text-sm text-[#BA1A1A]">Couldn&apos;t load this booking.</span>
+                <BookingDetailReadError pending={bookingDetailQuery.isFetching} retry={() => void bookingDetailQuery.refetch()} />
               ) : (
                 <ClientBookingHistoryCard
                   booking={bookingDetailQuery.data}
@@ -476,52 +471,50 @@ function BusinessDashboardContent() {
       {renderMainContent()}
 
       {/* Complete Booking Modal Overlay */}
-      <CompleteModal
-        isOpen={showCompleteModalForBooking}
+      {showCompleteModalForBooking && bookingsBusinessId && viewingBookingId && <CalendarBookingCompletion
+        key={`${bookingsBusinessId}:${viewingBookingId}`}
+        businessId={bookingsBusinessId}
+        bookingId={viewingBookingId}
         onClose={() => setShowCompleteModalForBooking(false)}
-        defaultBalanceDueCents={bookingDetailQuery.data?.financials.balanceDueCents}
-        isPackageSession={Boolean(
-          bookingDetailQuery.data?.serviceLines.some((line) => line.packageProgressId),
-        )}
-        isPackageOrigin={Boolean(
-          bookingDetailQuery.data?.packageSessions.some((session) => session.isOriginSession),
-        )}
-        onConfirm={(venuePayment) => {
-          if (bookingsBusinessId && viewingBookingId) {
-            completeBookingMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, venuePayment });
-          }
-          setShowCompleteModalForBooking(false);
-        }}
-      />
+      />}
 
       {/* Waive Fee Modal Overlay */}
       <WaiveChargeModal
         isOpen={showWaiveFeeModal}
+        isPending={waiveFeeMutation.isPending}
         onClose={() => setShowWaiveFeeModal(false)}
         onConfirm={(reason, internalNote) => {
-          if (bookingsBusinessId && viewingBookingId) {
-            waiveFeeMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, reason, internalNote });
-          }
-          setShowWaiveFeeModal(false);
+          if (!bookingsBusinessId || !viewingBookingId || lifecycleActionInFlight.current) return;
+          lifecycleActionInFlight.current = true;
+          waiveFeeMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, reason, internalNote }, {
+            onSuccess: () => { setShowWaiveFeeModal(false); toast.success("No-show charge waived."); },
+            onError: (error) => { setShowWaiveFeeModal(false); void bookingDetailQuery.refetch(); toast.error(`${toUserMessage(error)} Check the refreshed booking before retrying.`); },
+            onSettled: () => { lifecycleActionInFlight.current = false; },
+          });
         }}
       />
 
       {/* Cancel No-show Confirm Modal Overlay */}
       <NoShowModal
         isOpen={showNoShowModal}
+        isPending={cancelNoShowMutation.isPending}
         mode="cancel"
         onClose={() => setShowNoShowModal(false)}
         onConfirm={() => {
-          if (bookingsBusinessId && viewingBookingId) {
-            cancelNoShowMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId });
-          }
-          setShowNoShowModal(false);
+          if (!bookingsBusinessId || !viewingBookingId || lifecycleActionInFlight.current) return;
+          lifecycleActionInFlight.current = true;
+          cancelNoShowMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId }, {
+            onSuccess: () => { setShowNoShowModal(false); toast.success("No-show cancelled."); },
+            onError: (error) => { setShowNoShowModal(false); void bookingDetailQuery.refetch(); toast.error(`${toUserMessage(error)} Check the refreshed booking before retrying.`); },
+            onSettled: () => { lifecycleActionInFlight.current = false; },
+          });
         }}
       />
 
       {/* Cancel Booking Modal Overlay */}
       <CancelBookingModal
         isOpen={showCancelBookingModal}
+        isPending={cancelByBusinessMutation.isPending}
         onClose={() => setShowCancelBookingModal(false)}
         packageSessionLabel={(() => {
           const line = bookingDetailQuery.data?.serviceLines.find(
@@ -534,10 +527,13 @@ function BusinessDashboardContent() {
               : undefined;
         })()}
         onConfirm={(reason) => {
-          if (bookingsBusinessId && viewingBookingId) {
-            cancelByBusinessMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, reason });
-          }
-          setShowCancelBookingModal(false);
+          if (!bookingsBusinessId || !viewingBookingId || lifecycleActionInFlight.current) return;
+          lifecycleActionInFlight.current = true;
+          cancelByBusinessMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, reason }, {
+            onSuccess: () => { setShowCancelBookingModal(false); toast.success("Booking cancelled."); },
+            onError: (error) => { setShowCancelBookingModal(false); void bookingDetailQuery.refetch(); toast.error(`${toUserMessage(error)} Check the refreshed booking before retrying.`); },
+            onSettled: () => { lifecycleActionInFlight.current = false; },
+          });
         }}
       />
     </div>

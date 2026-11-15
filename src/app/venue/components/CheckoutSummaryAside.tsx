@@ -113,6 +113,16 @@ export default function CheckoutSummaryAside({
   // decides the wording, never a client-side classification or calculation.
   const nothingDueNow = preview?.dueNowCents === 0;
 
+  const renderQuotedServices = () => preview && preview.serviceLines.length > 1 ? (
+    <section aria-label="Quoted services" className="flex flex-col gap-3 border-t border-[#E5E5E5] pt-4">
+      {preview.serviceLines.map((line, index) => <div key={`${line.serviceId}:${index}`} className="flex flex-col gap-1 text-sm">
+        <div className="flex justify-between gap-4 font-semibold"><span>{line.serviceSnapshot.name}</span><span>{formatBookingMoney(line.amountCents)}</span></div>
+        <span className="text-xs text-[#4E5F78]">{line.serviceSnapshot.durationMin} min · Professional: {line.staffSnapshot ? [line.staffSnapshot.firstName, line.staffSnapshot.lastName].filter(Boolean).join(" ") : "Information unavailable"}</span>
+        {line.addons.map((addon, addonIndex) => <div key={`${addon.addonId}:${addonIndex}`} className="flex justify-between gap-4 text-xs text-[#4E5F78]"><span>Add-on · {addon.name}</span><span>{formatBookingMoney(addon.priceCents)}</span></div>)}
+      </div>)}
+    </section>
+  ) : null;
+
   const renderPromoField = () => {
     if (bookingStep !== "payment" || !setPromoCodeInput || !onApplyPromo) return null;
     return (
@@ -223,6 +233,8 @@ export default function CheckoutSummaryAside({
       </div>
 
       <div className="border-t border-[#E5E5E5] w-full" />
+
+      {financials && financials.serviceDiscountCents > 0 && <div className="flex justify-between items-center py-2.5 text-[#0CA678]"><span>Service discount</span><span>-{formatBookingMoney(financials.serviceDiscountCents)}</span></div>}
 
       {/* P2 — the promo lowers the booking price itself; every figure below is the server's
           post-promo value (never recomputed here). */}
@@ -355,7 +367,7 @@ export default function CheckoutSummaryAside({
         ) : null}
 
         {/* Booking Item Summary Details */}
-        {!selection && <div className="flex flex-col gap-4">
+        {!selection && (preview?.serviceLines.length ?? 0) <= 1 && <div className="flex flex-col gap-4">
           <div className="flex justify-between items-start gap-4">
             <div className="flex flex-col gap-1 min-w-0">
               <h4 className="font-semibold text-sm text-[#1C1B1C] truncate">
@@ -409,6 +421,7 @@ export default function CheckoutSummaryAside({
           ) : null}
         </div>}
 
+        {renderQuotedServices()}
         {renderPriceBreakdown()}
         {!hidePolicy && renderPolicy("aside")}
 
@@ -446,6 +459,7 @@ export default function CheckoutSummaryAside({
                 </button>
               </div>
               {selection && <BookingSelectionSummary selection={selection} />}
+              {renderQuotedServices()}
               {renderPriceBreakdown()}
               {!hidePolicy && renderPolicy("drawer")}
             </div>

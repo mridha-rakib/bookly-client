@@ -94,6 +94,8 @@ export default function SuperAdminSidebar({
           </div>
           {/* Collapse icon */}
           <button
+            type="button"
+            aria-label={isCollapsed ? "Expand navigation" : "Collapse navigation"}
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="w-6 h-6 flex items-center justify-center cursor-pointer text-[#757575] hover:bg-gray-100 rounded transition-colors"
           >
@@ -108,6 +110,9 @@ export default function SuperAdminSidebar({
             return (
               <button
                 key={item.name}
+                type="button"
+                aria-label={item.name}
+                aria-current={isActive ? "page" : undefined}
                 onClick={() => setActiveTab(item.name)}
                 title={isCollapsed ? item.name : undefined}
                 className={`flex items-center rounded-lg w-full transition-all duration-150 ${
@@ -139,6 +144,8 @@ export default function SuperAdminSidebar({
       >
         <button
           type="button"
+          aria-label="Account menu"
+          aria-expanded={showFooterMenu}
           onClick={() => setShowFooterMenu(!showFooterMenu)}
           className={`flex items-center gap-3 w-full cursor-pointer ${isCollapsed ? "justify-center" : ""}`}
         >

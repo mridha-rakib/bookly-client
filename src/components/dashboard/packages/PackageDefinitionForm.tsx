@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowLeft02Icon,
@@ -126,6 +126,7 @@ function DefinitionEditor({
   const [loadingConflict, setLoadingConflict] = useState(false);
   const [addingService, setAddingService] = useState("");
   const mutation = useDefinitionMutation(props.businessId);
+  const submitting = useRef(false);
   const readOnly = props.mode === "view";
   const archived = definition?.status === "ARCHIVED";
   const disabled = readOnly || mutation.isPending || loadingConflict;
@@ -146,7 +147,9 @@ function DefinitionEditor({
   const currentIds = new Set(form.items.map((item) => item.serviceId));
   const choices = services.filter(
     (service) =>
-      !service.isPackageDeal && service.pricingMode === "FIXED" && !currentIds.has(service.id),
+      !service.isPackageDeal && !currentIds.has(service.id) &&
+      (service.pricingMode === "FIXED" ||
+        (service.pricingMode === "PER_PERSON" && service.perPersonPricing?.minPersons === 1 && service.perPersonPricing.maxPersons >= 2)),
   );
 
   const loadConflict = async () => {
@@ -162,7 +165,8 @@ function DefinitionEditor({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (disabled || reviewRequired) return;
+    if (disabled || reviewRequired || submitting.current) return;
+    submitting.current = true;
     setError(undefined);
     try {
       const input = formToDefinition(form);
@@ -183,6 +187,8 @@ function DefinitionEditor({
         setReviewRequired(true);
         await loadConflict();
       }
+    } finally {
+      submitting.current = false;
     }
   };
 
@@ -361,7 +367,7 @@ function DefinitionEditor({
               Included Services
             </h3>
             <p className="mt-1 text-xs leading-5 text-[#757575]">
-              Choose ordinary FIXED Services. The server checks provider, status and travel
+              Choose ordinary fixed-price or eligible one-seat group Services. The server checks provider, status and travel
               eligibility. Reference prices are for comparison only.
             </p>
           </div>
@@ -443,7 +449,7 @@ function DefinitionEditor({
             <div className="rounded-xl border border-dashed border-[#D3D1C7] bg-[#FAFAF8] p-4">
               <div className="flex flex-col sm:flex-row sm:items-end gap-3">
                 <div className="flex-1 min-w-0">
-                  <Field label="Add a FIXED Service">
+                  <Field label="Add an eligible Service">
                     <select
                       className={selectClass}
                       style={selectArrowStyle}

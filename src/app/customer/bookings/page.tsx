@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useState } from "react";
+import React, { Suspense, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -57,6 +57,7 @@ function BookingsPageContent() {
   const [cancelBookingId, setCancelBookingId] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | undefined>(undefined);
   const cancelMutation = useCancelByCustomerMutation();
+  const cancelInFlight = useRef(false);
   const financialCustomerId = useAuthStore((state) => state.user?.id);
   const financialEpoch = useAuthStore((state) => state.cacheEpoch);
   const [cancelResult, setCancelResult] = useState<{ booking: BookingDetail; customerId: string | undefined; epoch: number } | undefined>(
@@ -64,7 +65,8 @@ function BookingsPageContent() {
   );
 
   const handleConfirmCancel = async () => {
-    if (!cancelBookingId) return;
+    if (!cancelBookingId || cancelInFlight.current) return;
+    cancelInFlight.current = true;
     setCancelError(undefined);
     const session = useAuthStore.getState();
     try {
@@ -74,6 +76,8 @@ function BookingsPageContent() {
       setCancelResult({ booking, customerId: session.user?.id, epoch: session.cacheEpoch });
     } catch (error) {
       setCancelError(toUserMessage(error));
+    } finally {
+      cancelInFlight.current = false;
     }
   };
 
@@ -90,7 +94,7 @@ function BookingsPageContent() {
 
       <main className="flex-1 w-full px-4 md:px-8 xl:px-[65px] flex flex-col z-10 relative items-center">
         <div className="w-full flex justify-center mb-8 sm:mb-12">
-          <SearchBar onSearch={() => {}} />
+          <SearchBar />
         </div>
 
         <div className="max-w-[1005px] w-full flex flex-col items-start gap-8 pb-20">
@@ -164,6 +168,7 @@ function BookingsPageContent() {
                 ) : bookingsQuery.isError ? (
                   <div className="w-full rounded-2xl border border-[#E2E1E6] bg-white py-20 text-center shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
                     <p className="text-base font-medium text-[#45474B]">Your bookings could not be loaded right now.</p>
+                    <button type="button" disabled={bookingsQuery.isFetching} onClick={() => void bookingsQuery.refetch()} className="mt-3 underline disabled:opacity-50">{bookingsQuery.isFetching ? "Retrying…" : "Retry"}</button>
                   </div>
                 ) : bookings.length > 0 ? (
                   bookings.map((booking) => (

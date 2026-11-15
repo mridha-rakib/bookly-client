@@ -72,6 +72,7 @@ describe("F2B authentic landing Book Again", () => {
     await render();
     await waitFor(() => expect(host.textContent).toContain(candidate.primaryServiceName));
     expect(host.textContent).toContain(candidate.businessName);
+    expect(host.textContent).toContain("Rebooking starts with this service. You can add other services");
     expect(host.textContent).toContain("Last paid 49.00 EUR");
     expect(host.textContent).not.toContain("4.9"); // no invented review aggregate or badge
     expect(historyRequests()).toHaveLength(1);

@@ -78,3 +78,16 @@ it("normal and legacy confirmation keep their explicit View Booking and wizard e
   expect(navigation.push).not.toHaveBeenCalled(); await click("View Booking");
   expect(close).toHaveBeenCalledExactlyOnceWith(null); expect(navigation.push).toHaveBeenCalledExactlyOnceWith("/customer/bookings/view?id=normal");
 });
+
+it("confirmation displays recorded service and promo discounts without altering final total", async () => {
+  const value = booking("discount");
+  value.financials.serviceDiscountCents = 2000;
+  value.financials.promoDiscountCents = 1000;
+  value.financials.totalCents = 7500;
+  await render(<ConfirmedStep booking={value} />);
+  const summary = host.querySelector('[aria-label="Appointment payment summary"]');
+  expect(summary?.textContent).toContain("Service discount");
+  expect(summary?.textContent).toContain("€-20.00");
+  expect(summary?.textContent).toContain("Promo discount");
+  expect(summary?.textContent).toContain("€75.00");
+});

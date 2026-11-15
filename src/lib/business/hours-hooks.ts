@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { invalidateBusinessAvailability } from "@/lib/business/availability-hooks";
 
 import {
   businessHoursApi,
@@ -27,8 +28,9 @@ export const useUpdateBusinessHoursMutation = () => {
   return useMutation({
     mutationFn: ({ businessId, days }: { businessId: string; days: BusinessHoursDay[] }) =>
       businessHoursApi.put(businessId, { days }),
-    onSuccess: (hours) => {
+    onSuccess: async (hours) => {
       queryClient.setQueryData(businessHoursKeys.detail(hours.businessId), hours);
+      await invalidateBusinessAvailability(queryClient, hours.businessId);
     },
   });
 };

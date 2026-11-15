@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import AdminAccountSettings from "./AdminAccountSettings";
 import PlatformConfigurationSettings from "./PlatformConfigurationSettings";
 import { useCurrentUserQuery, useChangeMyPasswordMutation, useUpdateMyProfileMutation } from "@/lib/auth/hooks";
@@ -55,6 +55,7 @@ export default function SuperAdminSettings() {
   const [tempOpens, setTempOpens] = useState(15);
   const [tempCloses, setTempCloses] = useState(120);
   const [platformError, setPlatformError] = useState<string | undefined>(undefined);
+  const platformSubmitting = useRef(false);
 
   // --- Admin Account Actions ---
   const startEditingName = () => {
@@ -148,6 +149,7 @@ export default function SuperAdminSettings() {
   };
 
   const handleSaveMaxServices = () => {
+    if (platformSubmitting.current) return;
     const value = Number(tempMaxServices);
     const ceiling = platformSettings?.editable.structuralMaxServicesPerBooking ?? 20;
     if (!Number.isInteger(value) || value < 1 || value > ceiling) {
@@ -155,6 +157,7 @@ export default function SuperAdminSettings() {
       return;
     }
     setPlatformError(undefined);
+    platformSubmitting.current = true;
     updatePlatformSettings.mutate(
       { maxServicesPerBooking: value },
       {
@@ -163,6 +166,7 @@ export default function SuperAdminSettings() {
           setAlertModal({ isOpen: true, message: "Platform setting updated successfully." });
         },
         onError: (error) => setPlatformError(toUserMessage(error)),
+        onSettled: () => { platformSubmitting.current = false; },
       },
     );
   };
@@ -180,7 +184,7 @@ export default function SuperAdminSettings() {
   };
 
   const handleSaveRow = (index: number) => {
-    if (!platformSettings) return;
+    if (!platformSettings || platformSubmitting.current) return;
     const opens = Number(tempOpens);
     const closes = Number(tempCloses);
     if (
@@ -193,6 +197,7 @@ export default function SuperAdminSettings() {
       return;
     }
     setPlatformError(undefined);
+    platformSubmitting.current = true;
     const next = platformSettings.editable.noShowCategoryWindows.map((row, idx) =>
       idx === index
         ? { ...row, opensAfterMinutes: opens, closesAfterMinutes: closes }
@@ -206,6 +211,7 @@ export default function SuperAdminSettings() {
           setAlertModal({ isOpen: true, message: "No-show window updated successfully." });
         },
         onError: (error) => setPlatformError(toUserMessage(error)),
+        onSettled: () => { platformSubmitting.current = false; },
       },
     );
   };

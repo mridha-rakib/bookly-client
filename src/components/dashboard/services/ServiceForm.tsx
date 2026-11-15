@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 
@@ -299,6 +299,18 @@ const buildServiceInput = (form: FormState, status: ServiceInput["status"]): Ser
     base.description = form.description.trim();
   }
 
+  // A draft may omit pricing entirely; do not send fabricated negative prices or zero durations.
+  if (status === "DRAFT") {
+    const pricingFields = form.isPackageDeal
+      ? [form.packageServicesName, form.packageDuration, form.packageBookingInterval, form.packageBuffer, form.packageProcessing, form.packageSessions, form.packageNormalPricePerSession, form.packageBundlePrice, form.packageDiscount]
+      : form.pricingMode === "FIXED"
+        ? [form.fixedPrice, form.fixedDuration, form.fixedBookingInterval, form.fixedBuffer, form.fixedProcessing, form.fixedDiscount]
+        : form.pricingMode === "HOURLY"
+          ? [form.hourlyRate, form.hourlyMin, form.hourlyMax, form.hourlyBuffer]
+          : [form.perPersonRate, form.perPersonMin, form.perPersonMax, form.perPersonDuration, form.perPersonBookingInterval, form.perPersonBuffer];
+    if (pricingFields.every((value) => !value.trim())) return base;
+  }
+
   if (form.isPackageDeal) {
     base.packageServicesName = form.packageServicesName.trim();
     base.packagePricing = {
@@ -336,8 +348,8 @@ const buildServiceInput = (form: FormState, status: ServiceInput["status"]): Ser
         ...(toIntOrUndefined(form.fixedProcessing) !== undefined
           ? { processingTimeMin: toIntOrUndefined(form.fixedProcessing) }
           : {}),
-        ...(toIntOrUndefined(form.fixedDiscount) !== undefined
-          ? { discountPercent: toIntOrUndefined(form.fixedDiscount) }
+        ...(form.fixedDiscount.trim()
+          ? { discountPercent: Number(form.fixedDiscount) }
           : {})
       };
     } else if (form.pricingMode === "HOURLY") {
@@ -437,6 +449,7 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
   const [form, setForm] = useState<FormState>(initialFormState);
   const [errors, setErrors] = useState<ServiceFormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   const businessQuery = useBusinessQuery(businessId || undefined);
   const travelSettingsQuery = useBusinessTravelSettingsQuery(
@@ -570,6 +583,7 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
   // cross-field "required for publish" rules for status "DRAFT" (see lib/services/schema.ts),
   // so this single validator naturally enforces full requiredness only for ACTIVE/INACTIVE.
   const handleSave = async (status: ServiceInput["status"]) => {
+    if (submittingRef.current) return;
     const input = buildServiceInput(form, status);
     const validation = validateServiceInput(input, { isNewPackage: mode === "create" && form.isPackageDeal });
     if (!validation.success) {
@@ -578,6 +592,7 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
       return;
     }
     setErrors({});
+    submittingRef.current = true;
     setIsSubmitting(true);
     try {
       if (mode === "create") {
@@ -597,11 +612,16 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
       }
       toast.error(toUserMessage(error));
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
 
   const noCategoriesAvailable = !categoriesQuery.isLoading && activeCategories.length === 0;
+
+  if (mode !== "create" && (serviceQuery.isError || !serviceQuery.data)) {
+    return <main className="p-8"><button type="button" onClick={onDone} className="underline">Back to services</button>{serviceQuery.isError ? <div role="alert" className="mt-4">Service details could not be loaded. <button type="button" disabled={serviceQuery.isFetching} onClick={() => void serviceQuery.refetch()} className="underline disabled:opacity-50">{serviceQuery.isFetching ? "Retrying…" : "Retry"}</button></div> : <p role="status" className="mt-4">Loading service details…</p>}</main>;
+  }
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] md: select-none font-poppins relative">
@@ -1009,7 +1029,7 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
                 <NumField label="Duration (min)" required disabled={isReadOnly} value={form.packageDuration} onChange={(v) => setField("packageDuration", v)} placeholder="Duration of each session (min)" error={errors["packagePricing.durationMin"]} />
                 <NumField label="Booking interval (min)" disabled={isReadOnly} value={form.packageBookingInterval} onChange={(v) => setField("packageBookingInterval", v)} placeholder="How often a new slot appears" />
                 <NumField label="Buffer time after service (min)" disabled={isReadOnly} value={form.packageBuffer} onChange={(v) => setField("packageBuffer", v)} placeholder="Hidden break after each appointment" />
-                <NumField label="Processing time (min)" disabled={isReadOnly} value={form.packageProcessing} onChange={(v) => setField("packageProcessing", v)} placeholder="Free time mid-appointment" />
+                <NumField label="Processing time (min)" disabled={isReadOnly} value={form.packageProcessing} onChange={(v) => setField("packageProcessing", v)} placeholder="Additional reserved time" />
                 <MoneyField
                   label="Normal price per session (€)"
                   required={mode === "create"}
@@ -1052,8 +1072,8 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
                 <NumField label="Duration (min)" required disabled={isReadOnly} value={form.fixedDuration} onChange={(v) => setField("fixedDuration", v)} placeholder="Duration of whole service" error={errors["fixedPricing.durationMin"]} />
                 <NumField label="Booking interval (min)" disabled={isReadOnly} value={form.fixedBookingInterval} onChange={(v) => setField("fixedBookingInterval", v)} placeholder="How often a new slot appears" />
                 <NumField label="Buffer time after service (min)" disabled={isReadOnly} value={form.fixedBuffer} onChange={(v) => setField("fixedBuffer", v)} placeholder="Hidden break after each appointment" />
-                <NumField label="Processing time (min)" disabled={isReadOnly} value={form.fixedProcessing} onChange={(v) => setField("fixedProcessing", v)} placeholder="Free time mid-appointment" />
-                <NumField label="Discount (%)" disabled={isReadOnly} value={form.fixedDiscount} onChange={(v) => setField("fixedDiscount", v)} placeholder="e.g. 10" error={errors["fixedPricing.discountPercent"]} />
+                <NumField label="Processing time (min)" disabled={isReadOnly} value={form.fixedProcessing} onChange={(v) => setField("fixedProcessing", v)} placeholder="Additional reserved time" />
+                <NumField label="Discount (%)" decimal disabled={isReadOnly} value={form.fixedDiscount} onChange={(v) => setField("fixedDiscount", v)} placeholder="e.g. 10" error={errors["fixedPricing.discountPercent"]} />
                 <span className="text-xs text-neutral-500 sm:col-span-2">Travel fee is added automatically at checkout.</span>
               </div>
             ) : form.pricingMode === "HOURLY" ? (
@@ -1137,7 +1157,7 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
               Which staff members can perform this service?
             </span>
             <div className="flex flex-wrap gap-4 mt-2">
-              {assignableStaff.map((member) => {
+              {!staffListQuery.isError && !staffListQuery.isLoading && assignableStaff.map((member) => {
                 const isSelected = form.assignedStaffMembershipIds.includes(member.membershipId as string);
                 return (
                   <button
@@ -1160,15 +1180,17 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
                   </button>
                 );
               })}
-              {assignableStaff.length === 0 && (
+              {!staffListQuery.isError && !staffListQuery.isLoading && assignableStaff.length === 0 && (
                 <span className="text-xs text-neutral-500">No active staff yet.</span>
               )}
+              {staffListQuery.isLoading && <span role="status" className="text-xs text-neutral-500">Loading staff…</span>}
+              {staffListQuery.isError && <span role="alert" className="text-xs text-red-700">Staff could not be loaded. <button type="button" disabled={staffListQuery.isFetching} onClick={() => void staffListQuery.refetch()} className="underline disabled:opacity-50">{staffListQuery.isFetching ? "Retrying…" : "Retry staff"}</button></span>}
             </div>
             <span className="text-xs text-neutral-500 font-normal mt-1">
               Manage your team under Staff → Add / edit staff members.
             </span>
 
-            {staleAssignedStaff.length > 0 && (
+            {!staffListQuery.isError && !staffListQuery.isLoading && staleAssignedStaff.length > 0 && (
               <div className="flex flex-col gap-2 mt-3">
                 <span className="text-xs text-neutral-500 font-normal">
                   Previously assigned staff who are no longer active. They can&apos;t be
@@ -1239,7 +1261,9 @@ export default function ServiceForm({ businessId, mode, serviceId, onDone }: Ser
                     )}
                   </div>
                 ))}
-                {!assignedAddonsQuery.isLoading && (assignedAddonsQuery.data ?? []).length === 0 && (
+                {assignedAddonsQuery.isLoading && <span role="status" className="text-xs text-neutral-500">Loading add-ons…</span>}
+                {assignedAddonsQuery.isError && <span role="alert" className="text-xs text-red-700">Assigned add-ons could not be loaded. <button type="button" disabled={assignedAddonsQuery.isFetching} onClick={() => void assignedAddonsQuery.refetch()} className="underline">Retry add-ons</button></span>}
+                {!assignedAddonsQuery.isLoading && !assignedAddonsQuery.isError && (assignedAddonsQuery.data ?? []).length === 0 && (
                   <span className="text-xs text-neutral-500">No add-ons attached yet.</span>
                 )}
               </div>
@@ -1298,6 +1322,7 @@ const toFieldErrorId = (label: string) => `${label.toLowerCase().replace(/[^a-z0
 const NumField = ({
   label,
   required,
+  decimal,
   disabled,
   value,
   onChange,
@@ -1306,6 +1331,7 @@ const NumField = ({
 }: {
   label: string;
   required?: boolean;
+  decimal?: boolean;
   disabled?: boolean;
   value: string;
   onChange: (value: string) => void;
@@ -1318,10 +1344,10 @@ const NumField = ({
     </span>
     <input
       type="text"
-      inputMode="numeric"
+      inputMode={decimal ? "decimal" : "numeric"}
       disabled={disabled}
       value={value}
-      onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ""))}
+      onChange={(e) => onChange(e.target.value.replace(decimal ? /[^\d.]/g : /[^\d]/g, ""))}
       placeholder={placeholder}
       className={inputClass}
       aria-invalid={Boolean(error)}

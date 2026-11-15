@@ -8,6 +8,8 @@ interface SuperAdminBusinessReviewProps {
   onBack: () => void;
   onApprove: (id: string) => void;
   onReject: (id: string, reason?: string) => void;
+  isMutating?: boolean;
+  actionError?: string | null;
 }
 
 export default function SuperAdminBusinessReview({
@@ -15,20 +17,21 @@ export default function SuperAdminBusinessReview({
   onBack,
   onApprove,
   onReject,
+  isMutating = false,
+  actionError,
 }: SuperAdminBusinessReviewProps) {
-  const { data: detail, isLoading, isError } = useSuperAdminBusinessDetailQuery(businessId);
+  const { data: detail, isLoading, isError, isFetching, refetch } = useSuperAdminBusinessDetailQuery(businessId);
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectForm, setShowRejectForm] = useState(false);
 
+  if (isError) return <div role="alert" className="p-8 text-center text-rose-500">Failed to load this application. <button type="button" disabled={isFetching} onClick={() => void refetch()} className="underline">Retry</button></div>;
   if (isLoading || !detail) {
     return <div className="p-8 text-center text-gray-400">Loading application…</div>;
-  }
-  if (isError) {
-    return <div className="p-8 text-center text-rose-500">Failed to load this application.</div>;
   }
 
   return (
     <div className="flex flex-col gap-6 w-full max-w-none pb-12 font-sans">
+      {actionError && <p role="alert" className="text-rose-600">{actionError}</p>}
       {/* Breadcrumbs */}
       <div className="flex items-center gap-2 text-[13px] text-[#6B7280]">
         <button onClick={onBack} className="hover:text-gray-900 cursor-pointer bg-transparent border-none p-0">
@@ -53,6 +56,7 @@ export default function SuperAdminBusinessReview({
 
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
           <button
+            disabled={isMutating}
             onClick={() => setShowRejectForm((v) => !v)}
             className="flex items-center justify-center gap-2 border border-[#DC2626] bg-[#F5EEEE] text-[#DC2626] rounded-full text-xs font-semibold py-2 px-5 cursor-pointer hover:bg-red-50 transition-colors w-full sm:w-auto"
           >
@@ -68,6 +72,7 @@ export default function SuperAdminBusinessReview({
           </button>
 
           <button
+            disabled={isMutating}
             onClick={() => onApprove(detail.id)}
             className="flex items-center justify-center gap-2 bg-[#16A34A] text-white rounded-full text-xs font-semibold py-2 px-5 cursor-pointer hover:bg-[#16A34A]/90 transition-colors w-full sm:w-auto"
           >
@@ -93,6 +98,7 @@ export default function SuperAdminBusinessReview({
           />
           <div className="flex justify-end">
             <button
+              disabled={isMutating}
               onClick={() => onReject(detail.id, rejectReason.trim() || undefined)}
               className="bg-[#DC2626] text-white rounded-full text-xs font-semibold py-2 px-5 hover:bg-[#DC2626]/90 transition-colors"
             >

@@ -28,7 +28,7 @@ import {
 } from "@/lib/bookings/hooks";
 import { usePublicBookingConfigQuery } from "@/lib/superAdminSettings/hooks";
 import type { CreateManualBookingInput } from "@/lib/api/bookings";
-import { useAvailabilityQuery } from "@/lib/availability/hooks";
+import { useAvailabilityQuery, useCompositeAvailabilityQuery } from "@/lib/availability/hooks";
 import type { AvailabilitySlot } from "@/lib/api/availability";
 import type { CatalogService } from "@/lib/api/catalog";
 import { formatEuro, formatServiceDuration, formatServicePrice } from "@/lib/services/format";
@@ -158,14 +158,19 @@ export default function DashboardBookingForm({
 
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [pricingInputByService, setPricingInputByService] = useState<Record<string, PricingInput>>({});
-  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+  const [addonsByService, setAddonsByService] = useState<Record<string, Array<{ id: string; name: string; priceCents?: number }>>>({});
+  const [addonServiceOverride, setAddonServiceOverride] = useState<string | undefined>();
+  const [staffByService, setStaffByService] = useState<Record<string, string>>({});
 
   const selectedServices = selectedServiceIds
     .map((id) => bookableServices.find((s) => s.id === id))
     .filter((s): s is CatalogService => Boolean(s));
   const primaryServiceId = selectedServiceIds[0];
 
-  const addonsQuery = useBookableAddonsForServiceQuery(businessId, primaryServiceId);
+  const addonServiceId = addonServiceOverride && selectedServiceIds.includes(addonServiceOverride) ? addonServiceOverride : primaryServiceId;
+  const selectedAddons = addonServiceId ? addonsByService[addonServiceId] ?? [] : [];
+  const selectedAddonIds = selectedAddons.map((addon) => addon.id);
+  const addonsQuery = useBookableAddonsForServiceQuery(businessId, addonServiceId);
   const activeAddons = addonsQuery.data?.addons ?? [];
 
   // A real data-load failure (e.g. an authorization mismatch) must never be indistinguishable
@@ -184,12 +189,12 @@ export default function DashboardBookingForm({
   // Server-authoritative product limit on service lines per booking (Batch 21). The backend
   // re-validates on create regardless; this only stops the UI going over.
   const bookingConfigQuery = usePublicBookingConfigQuery();
-  const maxServicesPerBooking = bookingConfigQuery.data?.maxServicesPerBooking ?? 5;
-  const atServiceLimit = selectedServiceIds.length >= maxServicesPerBooking;
-
+  const maxServicesPerBooking = bookingConfigQuery.data?.maxServicesPerBooking;
+  const configReady = maxServicesPerBooking !== undefined && !bookingConfigQuery.isError;
+  const atServiceLimit = !configReady || selectedServiceIds.length >= maxServicesPerBooking;
   const addService = (serviceId: string) => {
     if (!serviceId || selectedServiceIds.includes(serviceId)) return;
-    if (selectedServiceIds.length >= maxServicesPerBooking) return;
+    if (!configReady || selectedServiceIds.length >= maxServicesPerBooking) return;
     const service = bookableServices.find((s) => s.id === serviceId);
     setSelectedServiceIds((prev) => [...prev, serviceId]);
     if (service?.pricingMode === "HOURLY" && service.hourlyPricing) {
@@ -209,11 +214,8 @@ export default function DashboardBookingForm({
       delete next[serviceId];
       return next;
     });
-    // Add-ons are always scoped to the FIRST selected service (see the section below) — removing
-    // it invalidates any add-ons already picked against it.
-    if (serviceId === primaryServiceId) {
-      setSelectedAddonIds([]);
-    }
+    setAddonsByService((prev) => { const next = { ...prev }; delete next[serviceId]; return next; });
+    setStaffByService((prev) => { const next = { ...prev }; delete next[serviceId]; return next; });
   };
 
   const estimatePriceCents = (service: CatalogService, input: PricingInput): number => {
@@ -231,26 +233,17 @@ export default function DashboardBookingForm({
     (sum, s) => sum + estimatePriceCents(s, pricingInputByService[s.id] ?? {}),
     0,
   );
-  const selectedAddons = activeAddons.filter((a) => selectedAddonIds.includes(a.id));
-  const addonsTotalCents = selectedAddons.reduce((sum, a) => sum + (a.priceCents ?? 0), 0);
+  const addonsTotalCents = Object.values(addonsByService).flat().reduce((sum, a) => sum + (a.priceCents ?? 0), 0);
   const totalCents = servicesTotalCents + addonsTotalCents;
 
   // --- Staff ---------------------------------------------------------------------------------
-  // Eligible staff = active staff assigned to EVERY currently-selected Service (one staff
-  // performs the whole appointment — matches the existing single-staff-selector design; the
-  // backend still independently validates eligibility per line, this is only a helpful filter).
-  const eligibleStaff = selectedServices.length
-    ? selectedServices
-        .reduce<{ membershipId: string; name: string }[] | undefined>((acc, service) => {
-          const active = service.assignedStaffMembershipIds
-            .map((id) => staffById.get(id))
-            .filter((m): m is NonNullable<typeof m> => m !== undefined && m.employmentActive);
-          if (!acc) return active.map((m) => ({ membershipId: m.membershipId, name: m.name }));
-          return acc.filter((m) => active.some((a) => a.membershipId === m.membershipId));
-        }, undefined) ?? []
-    : [];
-
-  const [selectedStaffId, setSelectedStaffId] = useState<string | undefined>(undefined);
+  const eligibleFor = (service: CatalogService) => service.assignedStaffMembershipIds
+    .map((id) => staffById.get(id))
+    .filter((member): member is NonNullable<typeof member> => Boolean(member?.employmentActive));
+  const selectedStaffId = primaryServiceId ? staffByService[primaryServiceId] : undefined;
+  const allStaffAssigned = selectedServices.length === selectedServiceIds.length && selectedServices.every((service) => eligibleFor(service).some((member) => member.membershipId === staffByService[service.id]));
+  const distinctStaff = new Set(selectedServiceIds.map((id) => staffByService[id])).size === selectedServiceIds.length;
+  const isStaffEligible = allStaffAssigned && distinctStaff;
 
   // --- Date & time -----------------------------------------------------------------------------
   const [visibleMonthOverride, setVisibleMonthOverride] = useState<Date | undefined>(undefined);
@@ -275,32 +268,39 @@ export default function DashboardBookingForm({
     customerCity: visitType === "TRAVEL_TO_CUSTOMER" && addressState.city ? addressState.city : undefined,
   };
 
-  const availabilityQuery = useAvailabilityQuery(
+  const singleAvailabilityQuery = useAvailabilityQuery(
     businessId,
     primaryServiceId,
     availabilityParams,
-    Boolean(primaryServiceId) && Boolean(selectedStaffId),
+    selectedServiceIds.length === 1 && isStaffEligible,
   );
+
+  const compositeInput = {
+    fromDate, toDate,
+    ...(visitType === "TRAVEL_TO_CUSTOMER" && addressState.city ? { customerCity: addressState.city } : {}),
+    lines: selectedServices.map((service) => ({
+      serviceId: service.id, staffMembershipId: staffByService[service.id] ?? "",
+      ...(service.pricingMode === "HOURLY" ? { hours: pricingInputByService[service.id]?.hours ?? service.hourlyPricing?.minHours } : {}),
+      ...(service.pricingMode === "PER_PERSON" ? { partySize: pricingInputByService[service.id]?.personCount ?? service.perPersonPricing?.minPersons } : {}),
+    })),
+  };
+  const compositeAvailabilityQuery = useCompositeAvailabilityQuery("business", businessId, compositeInput, selectedServiceIds.length > 1 && isStaffEligible);
+  const availabilityQuery = selectedServiceIds.length > 1 ? compositeAvailabilityQuery : singleAvailabilityQuery;
 
   // Keep an explicit staff choice while quantities change; fresh server slots determine whether
   // that professional can serve the full interval/group. Never carry a slot across inputs,
   // even if the new response offers the same start with a different end or eligible staff.
-  const slotRequestKey = JSON.stringify([businessId, selectedServiceIds, pricingInputByService, availabilityParams]);
+  const slotRequestKey = JSON.stringify([businessId, selectedServiceIds, pricingInputByService, staffByService, addonsByService, availabilityParams]);
   const [previousSlotRequestKey, setPreviousSlotRequestKey] = useState(slotRequestKey);
   if (previousSlotRequestKey !== slotRequestKey) {
     setPreviousSlotRequestKey(slotRequestKey);
-    if (selectedSlot) setSelectedSlot(undefined);
-  }
-  const isStaffEligible = eligibleStaff.some((staff) => staff.membershipId === selectedStaffId);
-  if (selectedStaffId && !staffListQuery.isLoading && !servicesQuery.isLoading && !isStaffEligible) {
-    setSelectedStaffId(undefined);
     if (selectedSlot) setSelectedSlot(undefined);
   }
   const isSelectedSlotValid = Boolean(
     selectedSlot && selectedStaffId && isStaffEligible &&
     availabilityQuery.data?.days.find((day) => day.date === selectedDateIso)?.slots.some((slot) =>
       slot.startAt === selectedSlot.startAt && slot.endAt === selectedSlot.endAt &&
-      slot.eligibleStaffMembershipIds.includes(selectedStaffId),
+      selectedServiceIds.every((id) => slot.eligibleStaffMembershipIds.includes(staffByService[id] ?? "")),
     ),
   );
   if (selectedSlot && availabilityQuery.data && !availabilityQuery.isFetching && !isSelectedSlotValid) {
@@ -314,6 +314,7 @@ export default function DashboardBookingForm({
   // regenerated on a simple error (see BookingCreationClaimRepository's own contract: retrying
   // with the same key safely resolves to the same booking, never a duplicate).
   const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const submittedBookingInput = useRef<string | null>(null);
   const [submitError, setSubmitError] = useState<string | undefined>(undefined);
 
   const createManualBookingMutation = useCreateManualBookingMutation();
@@ -342,8 +343,8 @@ export default function DashboardBookingForm({
 
   const canSubmit =
     (Boolean(selectedClient) || isAddingNewClient) &&
-    selectedServiceIds.length > 0 &&
-    Boolean(selectedStaffId) &&
+    configReady && selectedServiceIds.length > 0 && selectedServiceIds.length <= maxServicesPerBooking &&
+    isStaffEligible && Boolean(selectedStaffId) &&
     isSelectedSlotValid &&
     !availabilityQuery.isLoading &&
     !availabilityQuery.isFetching &&
@@ -385,8 +386,8 @@ export default function DashboardBookingForm({
       businessClientId,
       serviceLines: selectedServiceIds.map((serviceId) => ({
         serviceId,
-        staffMembershipId: selectedStaffId,
-        addonIds: serviceId === primaryServiceId ? selectedAddonIds : [],
+        staffMembershipId: staffByService[serviceId] ?? "",
+        addonIds: (addonsByService[serviceId] ?? []).map((addon) => addon.id),
         pricingInput: pricingInputByService[serviceId] ?? {},
       })),
       startAt: selectedSlot.startAt,
@@ -409,6 +410,12 @@ export default function DashboardBookingForm({
         : {}),
     };
 
+    const requestSnapshot = JSON.stringify([businessId, input]);
+    if (submittedBookingInput.current && submittedBookingInput.current !== requestSnapshot) {
+      setSubmitError("The previous booking request may have been saved. Check the booking list before starting a different booking, or restore the original details to retry it safely.");
+      return;
+    }
+    submittedBookingInput.current = requestSnapshot;
     try {
       const booking = await createManualBookingMutation.mutateAsync({ businessId, input });
       onCreated(booking.id);
@@ -826,6 +833,7 @@ export default function DashboardBookingForm({
               </div>
             </div>
 
+            {bookingConfigQuery.isError && <div role="alert" className="text-xs text-red-700">Could not load booking limits. <button type="button" onClick={() => void bookingConfigQuery.refetch()} className="underline">Retry</button></div>}
             {/* Added services list */}
             {selectedServices.map((svc) => {
               const input = pricingInputByService[svc.id] ?? {};
@@ -918,19 +926,17 @@ export default function DashboardBookingForm({
             <span className="font-poppins text-xs font-semibold text-[#5F5E5A] tracking-[0.06em] uppercase">
               Add-ons
             </span>
-            {selectedServiceIds.length > 1 && (
-              <p className="text-[10px] text-neutral-400 font-poppins -mt-2">
-                Add-ons apply to the first selected service ({selectedServices[0]?.name}).
-              </p>
-            )}
+            {selectedServiceIds.length > 1 && <label className="text-xs">Service for add-ons <select value={addonServiceId} onChange={(event) => setAddonServiceOverride(event.target.value)} className="ml-2 border rounded p-1">{selectedServices.map((service) => <option value={service.id} key={service.id}>{service.name}</option>)}</select></label>}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-[#5F5E5A] font-poppins">Select add-ons</label>
               <div className="relative w-full h-9">
                 <select
+                  disabled={addonsQuery.isLoading || addonsQuery.isError || addonsQuery.isFetching}
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val && !selectedAddonIds.includes(val)) {
-                      setSelectedAddonIds([...selectedAddonIds, val]);
+                      const addon = activeAddons.find((item) => item.id === val);
+                      if (addon && addonServiceId) setAddonsByService((prev) => ({ ...prev, [addonServiceId]: [...(prev[addonServiceId] ?? []), addon] }));
                     }
                     e.target.value = "";
                   }}
@@ -938,7 +944,7 @@ export default function DashboardBookingForm({
                   className="w-full h-full px-3 pr-8 appearance-none bg-white border border-[#E8E8E4] rounded-lg text-xs font-poppins focus:outline-none focus:border-neutral-800 cursor-pointer text-[#ABAAA6] font-medium"
                 >
                   <option value="">
-                    {addonsQuery.isLoading ? "Loading add-ons…" : activeAddons.length === 0 ? "No add-ons available" : "Choose add-ons..."}
+                    {addonsQuery.isError ? "Add-ons unavailable" : addonsQuery.isLoading ? "Loading add-ons…" : activeAddons.length === 0 ? "No add-ons available" : "Choose add-ons..."}
                   </option>
                   {activeAddons
                     .filter((a) => !selectedAddonIds.includes(a.id))
@@ -950,6 +956,7 @@ export default function DashboardBookingForm({
                 </select>
                 <HugeiconsIcon icon={ArrowDown01Icon} className="w-3.5 h-3.5 absolute right-2.5 top-2.5 text-neutral-500 pointer-events-none" />
               </div>
+              {addonsQuery.isError && <div role="alert" className="text-xs text-red-700">Add-ons could not be loaded. <button type="button" disabled={addonsQuery.isFetching} onClick={() => void addonsQuery.refetch()} className="underline disabled:opacity-50">{addonsQuery.isFetching ? "Retrying…" : "Retry add-ons"}</button></div>}
             </div>
 
             {selectedAddons.map((addon) => (
@@ -960,7 +967,7 @@ export default function DashboardBookingForm({
                     {addon.priceCents !== undefined ? formatEuro(addon.priceCents) : "—"}
                   </span>
                   <button
-                    onClick={() => setSelectedAddonIds(selectedAddonIds.filter((id) => id !== addon.id))}
+                    onClick={() => addonServiceId && setAddonsByService((prev) => ({ ...prev, [addonServiceId]: (prev[addonServiceId] ?? []).filter((item) => item.id !== addon.id) }))}
                     className="w-6 h-6 rounded-full hover:bg-neutral-100 flex items-center justify-center transition-all"
                   >
                     <HugeiconsIcon icon={Cancel01Icon} className="w-4 h-4 text-[#0C0C0C]" />
@@ -975,35 +982,22 @@ export default function DashboardBookingForm({
             <span className="font-poppins text-xs font-semibold text-[#5F5E5A] tracking-[0.06em] uppercase">
               Staff
             </span>
-            {selectedServiceIds.length === 0 ? (
-              <p className="text-xs text-neutral-400 font-poppins">Select a service first to see eligible staff.</p>
-            ) : eligibleStaff.length === 0 ? (
-              <p className="text-xs text-neutral-400 font-poppins">No single staff member can perform all selected services.</p>
-            ) : (
-              <div className="flex flex-wrap gap-4 select-none">
-                {eligibleStaff.map((staff) => {
-                  const isSelected = selectedStaffId === staff.membershipId;
-                  return (
-                    <button
-                      key={staff.membershipId}
-                      onClick={() => {
-                        setSelectedStaffId(staff.membershipId);
-                        setSelectedDateIso(undefined);
-                        setSelectedSlot(undefined);
-                      }}
-                      className={`bg-white px-3 py-2 border rounded-xl flex items-center gap-3 transition-all min-w-[120px] shadow-sm ${
-                        isSelected ? "border-[#000000] ring-1 ring-black" : "border-neutral-200 hover:border-neutral-400"
-                      }`}
-                    >
-                      <div className="w-6 h-6 rounded-full bg-[#D9D9D9] flex items-center justify-center text-[10px] font-bold text-neutral-600 shrink-0">
-                        {staff.name.charAt(0)}
-                      </div>
-                      <span className="text-[13px] font-semibold text-[#0D0D0D]">{staff.name}</span>
-                    </button>
-                  );
-                })}
+            {staffListQuery.isError ? <div role="alert" className="text-xs text-red-700">Professionals could not be loaded. <button type="button" disabled={staffListQuery.isFetching} onClick={() => void staffListQuery.refetch()} className="underline disabled:opacity-50">{staffListQuery.isFetching ? "Retrying…" : "Retry professionals"}</button></div> : staffListQuery.isLoading ? <p className="text-xs">Loading professionals…</p> : selectedServices.length === 0 ? <p className="text-xs text-neutral-400">Select a service first to see eligible staff.</p> : selectedServices.map((service) => (
+              <div key={service.id} className="flex flex-col gap-2">
+                {selectedServices.length > 1 && <span className="text-xs font-semibold">{service.name}</span>}
+                <div className="flex flex-wrap gap-4">{eligibleFor(service).map((staff) => {
+                  const isSelected = staffByService[service.id] === staff.membershipId;
+                  const usedElsewhere = selectedServiceIds.some((id) => id !== service.id && staffByService[id] === staff.membershipId);
+                  return <button type="button" key={staff.membershipId} disabled={usedElsewhere} aria-pressed={isSelected} onClick={() => {
+                    setStaffByService((prev) => ({ ...prev, [service.id]: staff.membershipId }));
+                    setSelectedDateIso(undefined); setSelectedSlot(undefined);
+                  }} className={`bg-white px-3 py-2 border rounded-xl flex items-center gap-3 transition-all min-w-[120px] shadow-sm disabled:opacity-40 ${isSelected ? "border-black ring-1 ring-black" : "border-neutral-200 hover:border-neutral-400"}`}>
+                    <div className="w-6 h-6 rounded-full bg-[#D9D9D9] flex items-center justify-center text-[10px] font-bold text-neutral-600 shrink-0">{staff.name.charAt(0)}</div><span className="text-[13px] font-semibold text-[#0D0D0D]">{staff.name}</span>
+                  </button>;
+                })}</div>
+                {eligibleFor(service).length === 0 && <p className="text-xs text-neutral-400">No eligible professionals available.</p>}
               </div>
-            )}
+            ))}
           </div>
 
           {/* 6. Date & Time Section */}
@@ -1011,7 +1005,7 @@ export default function DashboardBookingForm({
             <span className="font-poppins text-xs font-semibold text-[#5F5E5A] tracking-[0.06em] uppercase">
               Date &amp; Time
             </span>
-            {!primaryServiceId || !selectedStaffId ? (
+            {!primaryServiceId || !isStaffEligible ? (
               <p className="text-xs text-neutral-400 font-poppins">Select a service and staff member to see real availability.</p>
             ) : (
               <TimeStep
@@ -1141,7 +1135,7 @@ export default function DashboardBookingForm({
                 <div className="flex flex-col leading-none">
                   <span className="text-[10px] uppercase font-semibold text-neutral-400 font-poppins">Staff</span>
                   <span className="text-xs font-semibold text-[#1A1A1A] mt-1">
-                    {eligibleStaff.find((s) => s.membershipId === selectedStaffId)?.name ?? "—"}
+                    {selectedServices.map((service) => staffById.get(staffByService[service.id])?.name).filter(Boolean).join(", ") || "—"}
                   </span>
                 </div>
               </div>

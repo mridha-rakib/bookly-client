@@ -263,6 +263,27 @@ describe("F2D financial presentation", () => {
     await act(async () => authenticate("customer-b"));
     expect(host.textContent).not.toContain("Cancellation Confirmed");
   });
+  it("prevents simultaneous cancellation submissions and keeps an error retryable", async () => {
+    detail.status = "UPCOMING"; delete detail.cancellationOutcome;
+    const item = { ...detail, primaryServiceName: "Recorded service", serviceCount: 1, staffNames: [], totalCents: 4000, depositCents: 800, currency: "EUR", platformFeeCents: 800, firstClassPackage: false };
+    let reject!: (error: Error) => void;
+    fx.respond = (req) => {
+      if (req.url === "/me/bookings") return { bookings: [item], pagination: { page: 1, limit: 50, total: 1 } };
+      if (req.url.endsWith("/cancel")) return new Promise((_, fail) => { reject = fail; });
+      if (req.url === "/me/bookings/recovery-inbox") return { requests: [], resolved: [], hasMore: false, scanned: 0 };
+      return {};
+    };
+    await render(<BookingsPage />);
+    await waitFor(() => expect(host.textContent).toContain("Recorded service"));
+    const cancel = [...host.querySelectorAll("button")].find(node => node.textContent?.trim() === "Cancel")!;
+    await act(async () => cancel.click());
+    const confirm = [...host.querySelectorAll("button")].find(node => node.textContent?.trim() === "Yes, cancel")!;
+    await act(async () => { confirm.click(); confirm.click(); });
+    expect(fx.requests.filter(req => req.url.endsWith("/cancel"))).toHaveLength(1);
+    await act(async () => reject(new Error("offline")));
+    await waitFor(() => expect(host.textContent).toContain("Yes, cancel"));
+    expect(host.textContent).not.toContain("Cancellation Confirmed");
+  });
   it("history details remain lazy across many cards, with no financial request fan-out", async () => {
     const item = { ...detail, primaryServiceName: "Recorded service", serviceCount: 1, staffNames: [],
       customerName: [detail.customer.firstName, detail.customer.lastName].filter(Boolean).join(" "),

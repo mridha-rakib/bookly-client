@@ -15,11 +15,11 @@ const PAGE_SIZE = 20;
 
 const formatPeriod = (fromIso: string) => {
   const from = new Date(fromIso);
-  return new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" }).format(from);
+  return new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(from);
 };
 
 const formatDate = (iso: string) =>
-  new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
+  new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(iso));
 
 const statusBadgeClass: Record<FinancePayoutHistoryItem["status"], string> = {
   PENDING: "bg-[#F3E7C4] text-[#93723D]",
@@ -61,7 +61,7 @@ export default function PayoutsHistory({ businessId }: PayoutsHistoryProps) {
             Payout history
           </h3>
           <span className="font-poppins font-medium text-xs leading-[18px] text-[#686B64]">
-            Money already paid out to you, by settlement period
+            Payouts by settlement period, including pending payouts (UTC)
           </span>
         </div>
 
@@ -84,7 +84,7 @@ export default function PayoutsHistory({ businessId }: PayoutsHistoryProps) {
       ) : query.isError ? (
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
           <span className="font-poppins text-sm font-semibold text-[#BA1A1A]">Couldn&apos;t load payout history</span>
-          <span className="font-poppins text-xs text-[#ABAAA6]">Please try again in a moment.</span>
+          <button type="button" disabled={query.isFetching} onClick={() => void query.refetch()} className="text-xs font-semibold underline disabled:opacity-50">{query.isFetching ? "Retrying..." : "Retry"}</button>
         </div>
       ) : items.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-center px-6">

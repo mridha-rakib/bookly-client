@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { discoverySearchHref } from "@/lib/discovery/search-handoff";
+import { platformToday } from "@/lib/superAdminDashboard/period";
 import { useLocationStore, resolveBusinessCity } from "@/lib/location/store";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -8,7 +11,6 @@ import {
   Location05Icon,
   Clock01Icon,
   ArrowRight02Icon,
-  ArrowLeft02Icon,
 } from "@hugeicons/core-free-icons";
 
 interface SearchBarProps {
@@ -17,6 +19,8 @@ interface SearchBarProps {
 }
 
 export default function SearchBar({ onSearch, className = "" }: SearchBarProps) {
+  const router = useRouter();
+  const [searchError, setSearchError] = useState("");
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [locationQuery, setLocationQuery] = useState("");
@@ -29,9 +33,9 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
   // Time selector states
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedTime, setSelectedTime] = useState("Any Time");
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date(2026, 7, 17)); // Default to Aug 17, 2026
-  const [currentYear, setCurrentYear] = useState(2026);
-  const [currentMonth, setCurrentMonth] = useState(7); // August (0-indexed)
+  const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+  const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(() => new Date().getMonth());
   const [selectedTimeOption, setSelectedTimeOption] = useState<"Any time" | "Morning" | "Afternoon" | "Evening" | "Custom">("Any time");
   const [customStartTime, setCustomStartTime] = useState("04:00");
   const [customStartAmPm, setCustomStartAmPm] = useState<"AM" | "PM">("PM");
@@ -151,6 +155,42 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
     } else {
       setSelectedTime(`${formattedDate}, ${option}`);
     }
+  };
+
+  const submitSearch = () => {
+    const city = resolveBusinessCity(locationQuery);
+    if (searchQuery.trim().length > 100) {
+      setSearchError("Search terms must be 100 characters or fewer.");
+      return;
+    }
+    if (locationQuery.trim() && !city) {
+      setSearchError("Choose a listed city to search by location.");
+      setShowSearchDropdown(false); setShowTimePicker(false); setActiveSegment(null);
+      return;
+    }
+    if (selectedTime !== "Any Time" && selectedTimeOption === "Custom") {
+      setSearchError("Custom time ranges are not available for search. Choose a listed time of day.");
+      setShowSearchDropdown(false); setShowTimePicker(false); setActiveSegment(null);
+      return;
+    }
+    if (selectedTime !== "Any Time") {
+      const today = platformToday();
+      const start = Date.UTC(today.year, today.month - 1, today.day);
+      const picked = Date.UTC(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+      if (picked < start - 86400000 || picked > start + 180 * 86400000) {
+        setSearchError("Choose an appointment date within the next 180 days.");
+        setShowSearchDropdown(false); setShowTimePicker(false); setActiveSegment(null);
+        return;
+      }
+    }
+    setSearchError("");
+    if (onSearch) onSearch(searchQuery, locationQuery, selectedTime);
+    else {
+      const date = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, "0")}-${String(selectedDate.getDate()).padStart(2, "0")}`;
+      const window = selectedTimeOption === "Any time" ? "ANY" : selectedTimeOption.toUpperCase() as "MORNING" | "AFTERNOON" | "EVENING";
+      router.push(discoverySearchHref(searchQuery, city, selectedTime === "Any Time" ? null : { date, window }));
+    }
+    setShowSearchDropdown(false); setShowTimePicker(false); setActiveSegment(null);
   };
 
   return (
@@ -434,20 +474,20 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
                 <div className="flex flex-row items-center justify-between w-full">
                   <span className="font-roboto font-bold text-sm text-[#111111] shrink-0">Select time</span>
                   <div className="flex flex-row items-center justify-between flex-1 ml-10">
-                    {[
+                    {([
                       { id: "Any time", label: "Any time", sub: "" },
-                      { id: "Morning", label: "Morning", sub: "9am - 12pm" },
+                      { id: "Morning", label: "Morning", sub: "6am - 12pm" },
                       { id: "Afternoon", label: "Afternoon", sub: "12pm - 5pm" },
                       { id: "Evening", label: "Evening", sub: "5pm - 12am" }
-                    ].map((opt) => {
+                    ] as const).map((opt) => {
                       const isActive = selectedTimeOption === opt.id;
                       return (
                         <button
                           key={opt.id}
                           type="button"
                           onClick={() => {
-                            setSelectedTimeOption(opt.id as any);
-                            updateSelectedTimeDisplay(selectedDate, opt.id as any);
+                            setSelectedTimeOption(opt.id);
+                            updateSelectedTimeDisplay(selectedDate, opt.id);
                           }}
                           className={`flex flex-col items-center justify-center transition-all ${isActive
                               ? "border border-[#3A506B] rounded-xl px-5 py-2.5 bg-white text-[#111111] font-bold shadow-sm"
@@ -566,14 +606,7 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
         <button
           type="button"
           className="w-full md:w-auto bg-[#1C1B1C] hover:bg-black text-white px-6 py-3 rounded-xl md:rounded-full flex items-center justify-center gap-2 text-sm font-semibold transition-all duration-200 cursor-pointer shrink-0 active:scale-95"
-          onClick={() => {
-            if (onSearch) {
-              onSearch(searchQuery, locationQuery, selectedTime);
-            }
-            setShowSearchDropdown(false);
-            setShowTimePicker(false);
-            setActiveSegment(null);
-          }}
+          onClick={submitSearch}
         >
           <span>Search</span>
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -582,6 +615,7 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
         </button>
 
 
+      {searchError && <p role="alert" className="px-4 py-2 text-sm text-red-700">{searchError}</p>}
       {/* Search Results Dropdown Overlay */}
       {showSearchDropdown && (
         <>
@@ -904,20 +938,20 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
                 <div className="flex flex-col items-start gap-4 w-full mt-6 pt-4 border-t border-neutral-100 shrink-0">
                   <span className="font-roboto font-bold text-sm text-[#111111]">Select time</span>
                   <div className="flex flex-col gap-3 w-full">
-                    {[
+                    {([
                       { id: "Any time", label: "Any time", sub: "" },
-                      { id: "Morning", label: "Morning", sub: "9am - 12pm" },
+                      { id: "Morning", label: "Morning", sub: "6am - 12pm" },
                       { id: "Afternoon", label: "Afternoon", sub: "12pm - 5pm" },
                       { id: "Evening", label: "Evening", sub: "5pm - 12am" }
-                    ].map((opt) => {
+                    ] as const).map((opt) => {
                       const isActive = selectedTimeOption === opt.id;
                       return (
                         <button
                           key={opt.id}
                           type="button"
                           onClick={() => {
-                            setSelectedTimeOption(opt.id as any);
-                            updateSelectedTimeDisplay(selectedDate, opt.id as any);
+                            setSelectedTimeOption(opt.id);
+                            updateSelectedTimeDisplay(selectedDate, opt.id);
                           }}
                           className={`w-full flex flex-row items-center justify-between py-3 px-4 border rounded-xl text-left ${isActive
                               ? "border-[#3A506B] bg-[#E8EAEF]/30 text-[#111111] font-bold"
@@ -1071,14 +1105,7 @@ export default function SearchBar({ onSearch, className = "" }: SearchBarProps) 
             <div className="w-full pt-4 mt-auto border-t border-neutral-100 shrink-0">
               <button
                 type="button"
-                onClick={() => {
-                  if (onSearch) {
-                    onSearch(searchQuery, locationQuery, selectedTime);
-                  }
-                  setShowSearchDropdown(false);
-                  setShowTimePicker(false);
-                  setActiveSegment(null);
-                }}
+                onClick={submitSearch}
                 className="w-full py-3.5 bg-[#1C1B1C] hover:bg-black text-white rounded-full font-poppins font-semibold text-sm flex items-center justify-center gap-2"
               >
                 <span>Search</span>

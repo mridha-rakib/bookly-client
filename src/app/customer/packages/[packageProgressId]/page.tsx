@@ -10,6 +10,7 @@ import RequireCustomer from "@/components/auth/RequireCustomer";
 import PackageAppointmentHistory from "@/components/packages/PackageAppointmentHistory";
 import { useAuthStore } from "@/lib/auth/store";
 import { formatBookingMoney } from "@/lib/bookings/format";
+import { BooklyApiError } from "@/lib/api/client";
 import { usePackageDetailQuery, useVoidPackageMutation } from "@/lib/packages/hooks";
 import { usePackageView } from "@/lib/packages/view-hooks";
 import type { OwnedPackageView } from "@/lib/api/package-views";
@@ -106,6 +107,7 @@ function LegacyPackageDetailView({ packageProgressId }: { packageProgressId: str
 
   const detailQuery = usePackageDetailQuery(packageProgressId);
   const pkg = detailQuery.data;
+  const notFound = detailQuery.error instanceof BooklyApiError && detailQuery.error.status === 404;
   const voidPackageMutation = useVoidPackageMutation();
 
   const scheduledCount =
@@ -177,8 +179,9 @@ function LegacyPackageDetailView({ packageProgressId }: { packageProgressId: str
                   Package unavailable
                 </h1>
                 <p className="mt-3 text-sm leading-6 text-[#5F5E5A]">
-                  This package could not be found, or it may not belong to your account.
+                  {notFound ? "This package could not be found or is not available to your account." : "Package details could not be loaded. Please try again."}
                 </p>
+                {!notFound && <button type="button" disabled={detailQuery.isFetching} onClick={() => void detailQuery.refetch()} className="mt-4 block w-full text-sm font-semibold underline disabled:opacity-50">{detailQuery.isFetching ? "Retrying…" : "Retry"}</button>}
                 <Link
                   href="/customer/packages"
                   className="mt-6 inline-flex rounded-xl bg-[#0D0D0D] px-5 py-2.5 text-sm font-semibold text-white hover:bg-black transition-colors"
@@ -286,11 +289,11 @@ function LegacyPackageDetailView({ packageProgressId }: { packageProgressId: str
                       Outstanding purchase balance
                     </p>
                     <p className="mt-2 font-semibold text-[#020305]">
-                      {pkg.balanceSettled
-                        ? "Settled"
-                        : `${formatBookingMoney(pkg.outstandingBalanceCents)} due at venue`}
+                      {pkg.settlementAvailable === false || pkg.outstandingBalanceCents == null
+                        ? "Balance unavailable"
+                        : pkg.balanceSettled ? "Settled" : pkg.status === "VOIDED" ? "Settlement not confirmed" : `${formatBookingMoney(pkg.outstandingBalanceCents)} due at venue`}
                     </p>
-                    {!pkg.balanceSettled ? (
+                    {!pkg.balanceSettled && pkg.status !== "VOIDED" && pkg.settlementAvailable !== false && pkg.outstandingBalanceCents != null ? (
                       <p className="mt-1 text-xs leading-5 text-[#5F5E5A]">
                         Includes any applicable add-ons and travel charges from the original
                         package purchase, less any deposit paid online.

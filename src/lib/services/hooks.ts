@@ -59,6 +59,11 @@ const invalidateServiceCaches = (queryClient: ReturnType<typeof useQueryClient>,
   void queryClient.invalidateQueries({ queryKey: [...serviceKeys.all, "list", businessId] });
   void queryClient.invalidateQueries({ queryKey: [...serviceKeys.all, "detail", businessId] });
   void queryClient.invalidateQueries({ queryKey: [...availabilityKeys.all, businessId] });
+  void queryClient.invalidateQueries({ queryKey: [...availabilityKeys.all, "composite"], predicate: (query) => query.queryKey[3] === businessId });
+  void queryClient.invalidateQueries({ queryKey: bookingKeys.bookableServices(businessId) });
+  void queryClient.invalidateQueries({ queryKey: ["staff", "my-services", businessId] });
+  void queryClient.invalidateQueries({ queryKey: catalogKeys.business(businessId) });
+  void queryClient.invalidateQueries({ queryKey: [...catalogKeys.all, "availability", businessId] });
 };
 
 export const useCreateServiceMutation = () => {
@@ -205,6 +210,7 @@ export const useUpdateBookingSettingsMutation = () => {
       queryClient.setQueryData(bookingSettingsKeys.detail(settings.businessId), settings);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: [...availabilityKeys.all, settings.businessId] }),
+        queryClient.invalidateQueries({ queryKey: [...availabilityKeys.all, "composite"], predicate: (query) => query.queryKey[3] === settings.businessId }),
         queryClient.invalidateQueries({ queryKey: [...catalogKeys.all, "availability", settings.businessId] }),
         queryClient.invalidateQueries({ queryKey: bookingKeys.rescheduleAvailability,
           predicate: (query) => query.queryKey[2] === settings.businessId }),

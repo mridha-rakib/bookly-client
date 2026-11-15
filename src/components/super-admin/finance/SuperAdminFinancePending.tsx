@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Download01Icon, ArrowDown01Icon, ArrowUp01Icon } from "@hugeicons/core-free-icons";
 
@@ -27,6 +27,7 @@ export default function SuperAdminFinancePending({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [selectedPayout, setSelectedPayout] = useState<BusinessPayableSummary | null>(null);
   const [providerReference, setProviderReference] = useState("");
+  const submitting = useRef(false);
 
   const query = useSuperAdminPendingPayoutsQuery();
   const executeMutation = useExecutePayoutMutation();
@@ -57,7 +58,8 @@ export default function SuperAdminFinancePending({
   };
 
   const handleConfirmTransfer = () => {
-    if (!selectedPayout || !canConfirmTransfer) return;
+    if (!selectedPayout || !canConfirmTransfer || submitting.current) return;
+    submitting.current = true;
     executeMutation.mutate(
       { businessId: selectedPayout.businessId, providerReference: providerReference || undefined },
       {
@@ -65,6 +67,7 @@ export default function SuperAdminFinancePending({
           setSelectedPayout(null);
           setProviderReference("");
         },
+        onSettled: () => { submitting.current = false; },
       },
     );
   };
@@ -75,10 +78,10 @@ export default function SuperAdminFinancePending({
       <div className="bg-[#F5F5F5] p-5 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 border-b border-gray-200 w-full">
         <div className="flex flex-col gap-1 w-full sm:w-auto">
           <h3 className="font-semibold text-base text-[#111111] leading-tight">
-            Pending SEPA payouts - {items.length} businesses
+            Pending SEPA payouts{query.data && !query.isError ? ` - ${items.length} businesses` : ""}
           </h3>
           <p className="text-xs text-gray-500 font-normal">
-            Each payout requires individual confirmation before executing
+            Each payout requires an individual record of a transfer made outside Bookly.
           </p>
         </div>
 
@@ -112,6 +115,7 @@ export default function SuperAdminFinancePending({
         ) : query.isError ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
             <span className="text-sm font-semibold text-rose-600">Couldn&apos;t load pending payouts</span>
+            <button type="button" disabled={query.isFetching} onClick={() => void query.refetch()} className="underline text-sm">Retry</button>
           </div>
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
@@ -206,7 +210,7 @@ export default function SuperAdminFinancePending({
             <p className="text-sm text-gray-600 leading-relaxed">
               Confirm that you have sent <strong className="text-gray-900">{formatBookingMoney(selectedPayout.netCents)}</strong> to <strong className="text-gray-900">{selectedPayout.businessName}</strong> via your own bank/Stripe transfer.
               <br />
-              <span className="text-gray-500 text-xs mt-1 block">Bookly does not hold this Business&apos;s bank details or execute the transfer — this records your own attestation that the transfer was made.</span>
+              <span className="text-gray-500 text-xs mt-1 block">Bookly does not execute this transfer. This records your attestation that you made it using the configured destination.</span>
               <span className="text-rose-600 font-semibold text-xs mt-2 block">⚠️ This action is irreversible</span>
             </p>
 

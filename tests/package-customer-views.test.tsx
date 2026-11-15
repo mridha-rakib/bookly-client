@@ -102,7 +102,8 @@ describe("S6 truthful package presentation", () => {
     expect(checkout.className).not.toContain("240183");
     await act(async () => checkout.click()); expect(host.textContent).toContain("No purchase, charge or booking will be made");
     await render(<OfferCard offer={offer} />);
-    expect(host.querySelector("a")?.className).toContain("text-[#240183]");
+    expect(host.querySelector("a")?.getAttribute("href")).toBe(`/customer/package-consent/${offer.businessId}/${offer.id}`);
+    expect(host.querySelector("a")?.className).toContain("underline");
   });
   it("S6-V2: session primary is teal; cancellation and settlement alternatives stay secondary", async () => {
     await render(<SessionReview remainingItems={[]} />);

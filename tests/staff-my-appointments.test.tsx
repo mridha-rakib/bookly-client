@@ -26,6 +26,7 @@ import { BooklyApiError } from "@/lib/api/client";
 import { staffAppointmentsApi, type StaffAppointment, type StaffAppointmentDetail } from "@/lib/api/staff-appointments";
 import { useAuthStore } from "@/lib/auth/store";
 import { formatBookingDate, formatBookingTimeRange } from "@/lib/bookings/format";
+import { invalidateBusinessBookingViews } from "@/lib/bookings/dashboard-cache";
 
 // P4C-1 — Staff read-only appointments (Owner decision D-S1).
 
@@ -219,6 +220,20 @@ it("P4D clears sensitive detail when revalidation fails without an HTTP response
   await flush();
   expect(host.querySelector("[role=alert]")).toBeTruthy();
   expect(host.textContent).not.toContain("Destination");
+});
+
+it("refreshes open detail after same-business booking invalidation and clears stale results", async () => {
+  vi.spyOn(staffAppointmentsApi, "listMine").mockResolvedValue(page([appointment()]));
+  const get = vi.spyOn(staffAppointmentsApi, "getMine").mockResolvedValueOnce(travelDetail())
+    .mockResolvedValueOnce(appointment({ status: "CANCELLED_BY_BUSINESS" }));
+  await mount();
+  await click("Haircut");
+  expect(host.textContent).toContain("Destination");
+  await act(async () => { await invalidateBusinessBookingViews(client, businessId); });
+  await flush();
+  expect(get).toHaveBeenCalledTimes(2);
+  expect(host.textContent).not.toContain("Destination");
+  expect(host.textContent).toContain("Cancelled by business");
 });
 
 it("P4D reauthorizes at appointment end and removes the expired destination", async () => {

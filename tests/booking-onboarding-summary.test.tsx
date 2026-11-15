@@ -30,6 +30,26 @@ async function render(props: Partial<React.ComponentProps<typeof CheckoutSummary
 }
 
 describe("progressive booking summary", () => {
+  it("shows every quoted service, professional and service-specific add-on", async () => {
+    const preview = {
+      finalizable: true, isFirstBooking: true,
+      business: { id: "business", name: "Venue", timezone: "UTC" },
+      schedule: { startAt: "2026-11-06T08:30:00.000Z", endAt: "2026-11-06T09:30:00.000Z", timezone: "UTC" },
+      serviceLines: [
+        { serviceId: "one", serviceSnapshot: { name: "Hair", durationMin: 30 }, staffSnapshot: { firstName: "Alice" }, addons: [{ addonId: "a", name: "Colour", priceCents: 200 }], amountCents: 1000 },
+        { serviceId: "two", serviceSnapshot: { name: "Nails", durationMin: 60 }, staffSnapshot: { firstName: "Bob" }, addons: [{ addonId: "b", name: "Polish", priceCents: 300 }], amountCents: 2000 },
+      ],
+      financials: { servicesSubtotalCents: 3000, addonsSubtotalCents: 500, travelFeeCents: 0, totalCents: 3500 },
+      preTaxChargeCents: 1000, dueNowCents: 1000, balanceDueCents: 2500, taxMode: "PRE_ACTIVATION", taxCents: 0,
+    } as unknown as BookingCreationPreview;
+    await render({ bookingStep: "payment", preview });
+    const quoted = host.querySelector('[aria-label="Quoted services"]');
+    expect(quoted?.textContent).toContain("Hair"); expect(quoted?.textContent).toContain("Nails");
+    expect(quoted?.textContent).toContain("Alice"); expect(quoted?.textContent).toContain("Bob");
+    expect(quoted?.textContent).toContain("Colour"); expect(quoted?.textContent).toContain("Polish");
+    expect(host.textContent).toContain("€35.00");
+  });
+
   it("shows known selections and catalogue amounts before a quote without displaying unknown amounts as zero", async () => {
     await render();
     expect(host.textContent).toContain("Hair appointment");

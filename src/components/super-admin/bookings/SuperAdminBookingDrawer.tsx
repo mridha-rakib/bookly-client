@@ -26,7 +26,7 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
 
 export default function SuperAdminBookingDrawer({ bookingId, businessName, onClose }: SuperAdminBookingDrawerProps) {
   const isOpen = bookingId !== null;
-  const { data: booking } = useSuperAdminBookingDetailQuery(bookingId ?? undefined);
+  const { data: booking, isError, isFetching, refetch } = useSuperAdminBookingDetailQuery(bookingId ?? undefined);
 
   const customerInitials = booking?.customer.firstName
     ? `${booking.customer.firstName[0]}${booking.customer.lastName?.[0] ?? ""}`.toUpperCase()
@@ -71,9 +71,9 @@ export default function SuperAdminBookingDrawer({ bookingId, businessName, onClo
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-6 text-sm">
-              {!booking && <div className="text-center text-gray-400 py-8">Loading…</div>}
+              {isError ? <div role="alert" className="text-center text-rose-600 py-8">Could not load booking. <button type="button" disabled={isFetching} onClick={() => void refetch()} className="underline">Retry</button></div> : !booking && <div role="status" className="text-center text-gray-400 py-8">Loading…</div>}
 
-              {booking && (
+              {booking && !isError && (
                 <>
                   <div className="flex flex-col gap-2">
                     <span className="text-[11px] font-semibold tracking-wider text-gray-400 uppercase">Customer</span>
@@ -101,11 +101,15 @@ export default function SuperAdminBookingDrawer({ bookingId, businessName, onClo
                     <span className="text-[11px] font-semibold tracking-wider text-gray-400 uppercase">Session</span>
                     <div className="space-y-2.5 text-[13px]">
                       {booking.serviceLines.map((line, idx) => (
-                        <div key={idx} className="flex items-start">
+                        <div key={`${line.serviceId}-${idx}`} className="flex items-start">
                           <span className="w-28 text-gray-400 shrink-0">Service</span>
-                          <span className="font-medium text-[#111827]">
+                          <span className="font-medium text-[#111827] flex flex-col">
+                            <span>
                             {line.name}
                             {line.staffName ? ` — ${line.staffName}` : ""}
+                            </span>
+                            {line.addons.length > 0 && <span>Add-ons: {line.addons.map(addon => addon.name).join(", ")}</span>}
+                            {line.packageProgressId && <span>{line.packageName ?? "Package"}{line.packageRole ? ` · ${line.packageRole === "PURCHASE" ? "Purchase" : "Redemption"}` : ""}{line.sessionIndex && line.sessionsInPackage ? ` · Session ${line.sessionIndex} of ${line.sessionsInPackage}` : " · Package-linked appointment"}</span>}
                           </span>
                         </div>
                       ))}
@@ -129,7 +133,8 @@ export default function SuperAdminBookingDrawer({ bookingId, businessName, onClo
                   </div>
 
                   <div className="flex flex-col gap-3 border-t border-gray-100 pt-5">
-                    <span className="text-[11px] font-semibold tracking-wider text-gray-400 uppercase">Payment</span>
+                    <span className="text-[11px] font-semibold tracking-wider text-gray-400 uppercase">Booking amounts</span>
+                    <p className="text-xs text-gray-500">Amounts are booking terms; they do not by themselves confirm payment or refund settlement.</p>
                     <div className="space-y-2.5 text-[13px]">
                       <div className="flex items-start">
                         <span className="w-28 text-gray-400 shrink-0">Total</span>

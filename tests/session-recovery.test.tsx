@@ -95,6 +95,19 @@ const rejectRefresh = (status: number, code?: string) => {
 };
 
 describe("refresh and session recovery", () => {
+  it("an expired Admin session hides protected content and returns to Admin login", async () => {
+    store.getState().setAuth({ ...auth, user: { ...auth.user, role: "SUPER_ADMIN" } });
+    const Guard = (await import("@/components/auth/RequireSuperAdmin")).default;
+    root = createRoot(container);
+    await act(async () => root?.render(createElement(Guard, null, createElement("div", null, "Private Admin detail"))));
+    expect(container.textContent).toContain("Private Admin detail");
+    rejectRefresh(401, "SESSION_EXPIRED");
+    await act(async () => { await expect(api.apiClient.get("/super-admin/dashboard/summary")).rejects.toMatchObject({ status: 401 }); });
+    expect(store.getState().status).toBe("unauthenticated");
+    expect(container.textContent).not.toContain("Private Admin detail");
+    expect(replace).toHaveBeenCalledWith("/super-admin/login");
+  });
+
   it("retains usable auth on restore 429 without logout or broadcasts", async () => {
     signIn();
     rejectRefresh(429);

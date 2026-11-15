@@ -13,11 +13,10 @@ import type { OverviewRange } from "@/lib/api/dashboardOverview";
 import OverviewRangeToolbar from "@/components/dashboard/OverviewRangeToolbar";
 import OverviewRequestState, { resolveOverviewViewState } from "@/components/dashboard/OverviewRequestState";
 import { formatEuro } from "@/lib/services/format";
-import { describeActivity } from "@/utils/dashboardActivity";
 import { formatTime12Hour } from "@/lib/staff/format";
 import { formatPackageSessionLabel } from "@/lib/bookings/format";
 
-export default function SupervisorOverview() {
+export default function SupervisorOverview({ onNavigate }: { onNavigate: (tab: string) => void }) {
   // P1.9 — the applied range is sent to the API (Business-timezone presets / inclusive Custom).
   const [range, setRange] = useState<OverviewRange>({ range: "Today" });
   const [scheduleFilter, setScheduleFilter] = useState("All");
@@ -30,7 +29,6 @@ export default function SupervisorOverview() {
   const viewState = resolveOverviewViewState(currentUserQuery, overviewQuery);
   // Failed, loading or unauthorized reads never render as zero counts or zero money.
   const overview = viewState === "ready" ? overviewQuery.data : undefined;
-  const financials = overview?.financials ?? null;
 
   const scheduleData = useMemo(() => {
     if (!overview) return [];
@@ -42,10 +40,6 @@ export default function SupervisorOverview() {
     });
   }, [overview, scheduleFilter]);
   const timelineEvents = overview?.timeline ?? [];
-  const activityFeed = useMemo(
-    () => (financials?.recentActivity ?? []).map((entry) => ({ id: entry.id, ...describeActivity(entry) })),
-    [financials],
-  );
 
   return (
     <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#FCF8F8] select-none">
@@ -80,10 +74,10 @@ export default function SupervisorOverview() {
             <span className="text-[11px] font-normal text-[#888780] font-poppins">No-shows in range</span>
             <div className="flex flex-col mt-0.5">
               <span className="text-3xl font-semibold text-[#E24B4A] leading-none">
-                {financials ? financials.noShowMonthCount : "—"}
+                {overview?.noShowCount ?? "—"}
               </span>
               <span className="text-xs text-[#757575] mt-1.5 font-poppins">
-                {financials ? `${formatEuro(financials.noShowMonthChargedCents)} charged` : ""}
+                {overview?.noShowCount !== undefined ? "Booking status count" : ""}
               </span>
             </div>
           </div>
@@ -101,12 +95,10 @@ export default function SupervisorOverview() {
                 <Image src="/businessDashboard/Metric 5 Star.svg" alt="5 Stars" className="w-5 h-5 object-contain" width={20} height={20} />
               )}
             </div>
-            <div className="flex items-center text-[11px] text-[#757575] hover:text-[#111111] cursor-pointer mt-0.5 font-poppins whitespace-nowrap select-none">
-              <span>
-                {ratingSummary
-                  ? `${ratingSummary.reviewCount} verified review${ratingSummary.reviewCount === 1 ? "" : "s"}`
-                  : "No reviews yet"}
-              </span>
+            <div className="flex items-center text-[11px] text-[#757575] mt-0.5 font-poppins whitespace-nowrap select-none">
+              {ratingSummaryQuery.isError ? <button type="button" onClick={() => void ratingSummaryQuery.refetch()} disabled={ratingSummaryQuery.isFetching} className="underline">{ratingSummaryQuery.isFetching ? "Retrying reviews…" : "Reviews unavailable — retry"}</button> : <button type="button" onClick={() => onNavigate("Reviews")} className="hover:text-[#111111]">
+                {ratingSummary ? `${ratingSummary.reviewCount} verified review${ratingSummary.reviewCount === 1 ? "" : "s"}` : "Loading reviews…"}
+              </button>}
               <svg className="w-3.5 h-3.5 ml-1.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M9 5l7 7-7 7" />
               </svg>
@@ -203,7 +195,7 @@ export default function SupervisorOverview() {
             </div>
 
             <div className="mt-4">
-              <button className="text-xs font-medium text-[#1D9E75] hover:opacity-85 transition-opacity flex items-center gap-1.5 font-poppins">
+              <button type="button" onClick={() => onNavigate("Calendar")} className="text-xs font-medium text-[#1D9E75] hover:opacity-85 transition-opacity flex items-center gap-1.5 font-poppins">
                 <span>View full calendar</span>
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7-7 7M3 12h18" />
@@ -239,29 +231,6 @@ export default function SupervisorOverview() {
               </div>
             </div>
 
-            <div className="bg-white border border-[#E8E8E6] rounded-xl p-5 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <Image src="/businessDashboard/Activity.svg" alt="Activity Trend" className="w-8 h-4 object-contain opacity-95" width={32} height={16} />
-                <h3 className="text-sm font-semibold text-[#0F1E35] font-poppins">Recent activity in range</h3>
-              </div>
-
-              <div className="space-y-4">
-                {activityFeed.map((act) => (
-                  <div key={act.id} className="flex gap-3 items-start">
-                    <div className={`w-8 h-8 rounded-full ${act.bg} flex items-center justify-center shrink-0`}>
-                      <HugeiconsIcon icon={act.icon} className={`w-4 h-4 ${act.color}`} />
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-xs text-neutral-700 font-poppins leading-normal">{act.text}</span>
-                      <span className="text-[10px] text-neutral-400 font-poppins mt-0.5">{act.time}</span>
-                    </div>
-                  </div>
-                ))}
-                {overview && activityFeed.length === 0 && (
-                  <span className="text-xs text-[#888780] font-poppins">No activity in this range.</span>
-                )}
-              </div>
-            </div>
           </div>
         </div>
 

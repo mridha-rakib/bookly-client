@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Mail01Icon,
@@ -53,6 +53,7 @@ interface ClientBookingHistoryCardProps {
   /** Business Booking Detail-only operational context. Client-history cards keep their existing
    * density while the dedicated detail view gets persistent payment/package truth. */
   showOperationalContext?: boolean;
+  hidePackageFinancials?: boolean;
   onViewRelatedBooking?: (bookingId: string) => void;
   onCompleteBooking?: () => void;
   /** Fires with a real, chosen ISO `startAt` — the caller is responsible for calling
@@ -133,6 +134,7 @@ export default function ClientBookingHistoryCard({
   showNotesDetails = true,
   showFooterActions = false,
   showOperationalContext = false,
+  hidePackageFinancials = false,
   onViewRelatedBooking,
   onCompleteBooking,
   onReschedule,
@@ -381,14 +383,14 @@ export default function ClientBookingHistoryCard({
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 font-poppins">
                     <OperationalValue label={aggregate.packageStatus === "VOIDED" ? "Historical remaining" : "Remaining sessions"} value={String(aggregate.remainingSessions)} />
                     <OperationalValue label="Completed" value={String(aggregate.completedSessions)} />
-                    <OperationalValue
+                    {!hidePackageFinancials && <OperationalValue
                       label="Package balance"
                       value={
                         aggregate.balanceSettled
                           ? "Paid in full"
                           : `${formatBookingMoney(aggregate.outstandingBalanceCents)} outstanding`
                       }
-                    />
+                    />}
                     <OperationalValue
                       label="Future scheduling"
                       value={aggregate.schedulingUnlocked ? "Unlocked" : "Locked"}
@@ -582,6 +584,7 @@ export default function ClientBookingHistoryCard({
                   <div key={line.serviceId} className="flex justify-between items-start">
                     <div className="flex flex-col gap-1">
                       <span className="font-poppins font-medium text-sm text-[#1C1B1C]">{line.name}</span>
+                      {showOperationalContext && line.staffName && <span className="text-xs text-neutral-500 font-poppins">Professional: {line.staffName}</span>}
                       {line.addons.length > 0 && (
                         <span className="text-xs text-[#4E5F78] font-poppins mt-0.5">
                           {line.addons.map((a) => a.name).join(" • ")}
@@ -793,6 +796,7 @@ function RescheduleModal({
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null);
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
+  const submitting = useRef(false);
 
   const monthStart = new Date(viewYear, viewMonth, 1);
   const monthEnd = new Date(viewYear, viewMonth + 1, 0);
@@ -812,7 +816,8 @@ function RescheduleModal({
   const ready = !availabilityQuery.isLoading && !availabilityQuery.isFetching && !availabilityQuery.isError && slotValid;
   if (selectedSlot && !availabilityQuery.isFetching && availabilityQuery.data && !slotValid) setSelectedSlot(null);
   const handleSave = async () => {
-    if (!selectedSlot || !ready || isPending) return;
+    if (!selectedSlot || !ready || isPending || submitting.current) return;
+    submitting.current = true;
     setSaveError(undefined);
     try {
       await onConfirm(selectedSlot.startAt);
@@ -820,6 +825,8 @@ function RescheduleModal({
       setSaveError(toUserMessage(error));
       setSelectedSlot(null);
       void availabilityQuery.refetch();
+    } finally {
+      submitting.current = false;
     }
   };
 

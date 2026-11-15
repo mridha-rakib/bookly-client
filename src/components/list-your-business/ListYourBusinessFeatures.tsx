@@ -33,7 +33,6 @@ function BusinessFeatureCard({
 
   useEffect(() => {
     if (!isMobile) {
-      setInView(globalVisible);
       return;
     }
     const el = ref.current;
@@ -51,7 +50,7 @@ function BusinessFeatureCard({
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [isMobile, globalVisible]);
+  }, [isMobile]);
 
   const delay = isMobile ? 0 : index * 100;
 
@@ -60,7 +59,7 @@ function BusinessFeatureCard({
       ref={ref}
       style={{ transitionDelay: `${delay}ms` }}
       className={`group flex flex-col items-start p-6 gap-6 bg-white border border-[#E8E6FF] rounded-2xl hover:shadow-lg hover:-translate-y-2 hover:scale-[1.01] hover:border-[#2E9DA7]/30 transition-all duration-[1400ms] ease-in-out ${
-        inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+        (isMobile ? inView : globalVisible) ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
       }`}
     >
       <div className="w-12 h-12 bg-[#2E9DA7] text-[#111111] rounded-xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-6">
@@ -127,7 +126,7 @@ export default function ListYourBusinessFeatures({
           index={4}
           icon={<HugeiconsIcon icon={Calendar03Icon} className="w-6 h-6" />}
           title="Google Calendar Sync"
-          description="Two-way sync with Google Calendar. Bookly appointments appear automatically, and calendar blocks prevent double bookings."
+          description="Keep your Google Calendar updated with appointments from Bookly."
           globalVisible={featuresVisible}
         />
         <BusinessFeatureCard

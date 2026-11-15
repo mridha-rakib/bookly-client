@@ -2,30 +2,22 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  BellIcon,
-  ArrowLeft02Icon,
-  User02Icon,
-  PencilEdit02Icon,
-  Search01Icon,
-  Mail01Icon,
-  Calendar03Icon,
-  ScissorIcon,
-  Calendar02Icon,
-  Location05Icon
-} from "@hugeicons/core-free-icons";
+import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 
 // Reused components
-import { CancelBookingModal, CompleteModal, NoShowModal } from "@/components/dashboard/CalendarActionModals";
+import { CancelBookingModal, NoShowModal } from "@/components/dashboard/CalendarActionModals";
+import CalendarBookingCompletion from "@/components/dashboard/CalendarBookingCompletion";
 import WaiveChargeModal from "@/components/dashboard/WaiveChargeModal";
+import { toast } from "@/components/ui/sonner";
+import { toUserMessage } from "@/lib/auth/messages";
 import ClientBookingHistoryCard from "@/components/clients/ClientBookingHistoryCard";
+import BookingDetailReadError from "@/components/dashboard/BookingDetailReadError";
 import { useCurrentUserQuery } from "@/lib/auth/hooks";
 import { useManagedBusinessContext } from "@/lib/business/hooks";
 import {
   useBookingDetailQuery,
   useCancelByBusinessMutation,
   useCancelNoShowMutation,
-  useCompleteBookingMutation,
   useRescheduleByOwnerMutation,
   useWaiveFeeMutation,
 } from "@/lib/bookings/hooks";
@@ -46,9 +38,10 @@ import SupervisorStaffSchedule from "@/components/dashboard/SupervisorStaffSched
 
 export default function SupervisorDashboard() {
   const [activeTab, setActiveTab] = useState("Calendar");
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [showFooterMenu, setShowFooterMenu] = useState(true);
+  const [isCollapsed, setIsCollapsed] = useState(true);
+  const [showFooterMenu, setShowFooterMenu] = useState(false);
   const footerMenuRef = useRef<HTMLDivElement>(null);
+  const lifecycleActionInFlight = useRef(false);
 
   // Manual Booking creation state (Batch 10) — real, backend-driven, no mock scratch state.
   const [isCreatingBooking, setIsCreatingBooking] = useState(false);
@@ -69,7 +62,6 @@ export default function SupervisorDashboard() {
   // Bookings — the SAME resolved businessId every Booking screen on this page uses (Batch 6).
   const { businessId: bookingsBusinessId } = useManagedBusinessContext();
   const bookingDetailQuery = useBookingDetailQuery(bookingsBusinessId, viewingBookingId ?? undefined);
-  const completeBookingMutation = useCompleteBookingMutation();
   const cancelByBusinessMutation = useCancelByBusinessMutation();
   const rescheduleByOwnerMutation = useRescheduleByOwnerMutation();
   const waiveFeeMutation = useWaiveFeeMutation();
@@ -106,7 +98,7 @@ export default function SupervisorDashboard() {
     }
 
     if (activeTab === "Dashboard") {
-      return <SupervisorOverview />;
+      return <SupervisorOverview onNavigate={setActiveTab} />;
     }
 
     if (activeTab === "Calendar") {
@@ -127,6 +119,9 @@ export default function SupervisorDashboard() {
     }
 
     if (activeTab === "Clients") {
+      if (currentUserQuery.isLoading) return <main className="flex-1 p-6" role="status">Loading business details…</main>;
+      if (currentUserQuery.isError) return <main className="flex-1 p-6" role="alert">Business details could not be loaded. <button type="button" onClick={() => void currentUserQuery.refetch()} disabled={currentUserQuery.isFetching}>Retry business details</button></main>;
+      if (!clientsBusinessId) return <main className="flex-1 p-6" role="status">No active business membership is available.</main>;
       return <ClientsPage businessId={clientsBusinessId} />;
     }
 
@@ -159,13 +154,14 @@ export default function SupervisorDashboard() {
               {bookingDetailQuery.isLoading ? (
                 <span className="font-poppins text-sm text-neutral-400">Loading booking…</span>
               ) : bookingDetailQuery.isError || !bookingDetailQuery.data ? (
-                <span className="font-poppins text-sm text-[#BA1A1A]">Couldn&apos;t load this booking.</span>
+                <BookingDetailReadError pending={bookingDetailQuery.isFetching} retry={() => void bookingDetailQuery.refetch()} />
               ) : (
                 <ClientBookingHistoryCard
                   booking={bookingDetailQuery.data}
                   businessId={bookingsBusinessId ?? ""}
                   showFooterActions={true}
                   showOperationalContext={true}
+                  hidePackageFinancials={true}
                   onViewRelatedBooking={(bookingId) => {
                     setViewingBookingId(bookingId);
                     setIsViewingBookingDetails(true);
@@ -222,7 +218,7 @@ export default function SupervisorDashboard() {
       return <ContactSupport setActiveTab={setActiveTab} />;
     }
 
-    return <SupervisorOverview />;
+    return <SupervisorOverview onNavigate={setActiveTab} />;
   };
 
   return (
@@ -232,7 +228,7 @@ export default function SupervisorDashboard() {
         isCollapsed={isCollapsed}
         setIsCollapsed={setIsCollapsed}
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={(tab) => { setIsCreatingBooking(false); setIsViewingBookingDetails(false); setViewingBookingId(null); setActiveTab(tab); }}
         showFooterMenu={showFooterMenu}
         setShowFooterMenu={setShowFooterMenu}
         footerMenuRef={footerMenuRef}
@@ -242,50 +238,45 @@ export default function SupervisorDashboard() {
       {renderMainContent()}
 
       {/* Floating Action Modals */}
-      <CompleteModal
-        isOpen={showCompleteModalForBooking}
-        onClose={() => setShowCompleteModalForBooking(false)}
-        defaultBalanceDueCents={bookingDetailQuery.data?.financials.balanceDueCents}
-        isPackageSession={Boolean(
-          bookingDetailQuery.data?.serviceLines.some((line) => line.packageProgressId),
-        )}
-        isPackageOrigin={Boolean(
-          bookingDetailQuery.data?.packageSessions.some((session) => session.isOriginSession),
-        )}
-        onConfirm={(venuePayment) => {
-          if (bookingsBusinessId && viewingBookingId) {
-            completeBookingMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, venuePayment });
-          }
-          setShowCompleteModalForBooking(false);
-        }}
-      />
+      {showCompleteModalForBooking && bookingsBusinessId && viewingBookingId && <CalendarBookingCompletion
+        key={`${bookingsBusinessId}:${viewingBookingId}`} businessId={bookingsBusinessId}
+        bookingId={viewingBookingId} onClose={() => setShowCompleteModalForBooking(false)} />}
 
       {/* Cancel No-show */}
       <NoShowModal
         isOpen={showNoShowModal}
+        isPending={cancelNoShowMutation.isPending}
         mode="cancel"
         onClose={() => setShowNoShowModal(false)}
         onConfirm={() => {
-          if (bookingsBusinessId && viewingBookingId) {
-            cancelNoShowMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId });
-          }
-          setShowNoShowModal(false);
+          if (!bookingsBusinessId || !viewingBookingId || lifecycleActionInFlight.current) return;
+          lifecycleActionInFlight.current = true;
+          cancelNoShowMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId }, {
+            onSuccess: () => { setShowNoShowModal(false); toast.success("No-show cancelled."); },
+            onError: (error) => { setShowNoShowModal(false); void bookingDetailQuery.refetch(); toast.error(`${toUserMessage(error)} Check the refreshed booking before retrying.`); },
+            onSettled: () => { lifecycleActionInFlight.current = false; },
+          });
         }}
       />
 
       <WaiveChargeModal
         isOpen={showWaiveFeeModal}
+        isPending={waiveFeeMutation.isPending}
         onClose={() => setShowWaiveFeeModal(false)}
         onConfirm={(reason, internalNote) => {
-          if (bookingsBusinessId && viewingBookingId) {
-            waiveFeeMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, reason, internalNote });
-          }
-          setShowWaiveFeeModal(false);
+          if (!bookingsBusinessId || !viewingBookingId || lifecycleActionInFlight.current) return;
+          lifecycleActionInFlight.current = true;
+          waiveFeeMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, reason, internalNote }, {
+            onSuccess: () => { setShowWaiveFeeModal(false); toast.success("No-show charge waived."); },
+            onError: (error) => { setShowWaiveFeeModal(false); void bookingDetailQuery.refetch(); toast.error(`${toUserMessage(error)} Check the refreshed booking before retrying.`); },
+            onSettled: () => { lifecycleActionInFlight.current = false; },
+          });
         }}
       />
 
       <CancelBookingModal
         isOpen={showCancelBookingModal}
+        isPending={cancelByBusinessMutation.isPending}
         onClose={() => setShowCancelBookingModal(false)}
         packageSessionLabel={(() => {
           const line = bookingDetailQuery.data?.serviceLines.find(
@@ -298,10 +289,13 @@ export default function SupervisorDashboard() {
               : undefined;
         })()}
         onConfirm={(reason) => {
-          if (bookingsBusinessId && viewingBookingId) {
-            cancelByBusinessMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, reason });
-          }
-          setShowCancelBookingModal(false);
+          if (!bookingsBusinessId || !viewingBookingId || lifecycleActionInFlight.current) return;
+          lifecycleActionInFlight.current = true;
+          cancelByBusinessMutation.mutate({ businessId: bookingsBusinessId, bookingId: viewingBookingId, reason }, {
+            onSuccess: () => { setShowCancelBookingModal(false); toast.success("Booking cancelled."); },
+            onError: (error) => { setShowCancelBookingModal(false); void bookingDetailQuery.refetch(); toast.error(`${toUserMessage(error)} Check the refreshed booking before retrying.`); },
+            onSettled: () => { lifecycleActionInFlight.current = false; },
+          });
         }}
       />
     </div>
