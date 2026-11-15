@@ -66,7 +66,7 @@ function ForgotPasswordContent() {
             disabled={pending}
             className="w-full max-w-[520px] h-12 bg-[#1A1A1A] hover:bg-black text-white font-semibold rounded-xl text-sm transition-all duration-200 cursor-pointer"
           >
-            {pending ? "Sending…" : "Next"}
+            {pending ? "Sendingâ€¦" : "Next"}
           </button>
 
           {/* Back to Login link */}
