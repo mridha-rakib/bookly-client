@@ -5,6 +5,7 @@ import React, { useMemo, useState } from "react";
 
 // Modular Subcomponents
 import PayoutsBanner from "../payouts/PayoutsBanner";
+import PayoutsBalance from "../payouts/PayoutsBalance";
 import PayoutsBreakdown from "../payouts/PayoutsBreakdown";
 import PayoutsHistory from "../payouts/PayoutsHistory";
 
@@ -66,6 +67,9 @@ export default function DashboardPayoutsList({ businessId }: DashboardPayoutsLis
             summary ? formatBookingMoney(summary.protectedEarningsAllTimeCents) : "—"
           }
         />
+
+        {/* All-time balance: earned / recorded as paid / outstanding (not month-filtered) */}
+        <PayoutsBalance businessId={businessId} />
 
         {/* Filters Row */}
         <div className="pt-[32px] flex flex-row items-start gap-[12px] w-full h-[48px]">

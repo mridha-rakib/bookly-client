@@ -13,22 +13,32 @@ import type { FinancePayoutHistoryItem } from "@/lib/api/finance";
 
 const PAGE_SIZE = 20;
 
-const formatPeriod = (fromIso: string) => {
-  const from = new Date(fromIso);
-  return new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(from);
-};
-
 const formatDate = (iso: string) =>
   new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(iso));
+
+/** The earnings a record covers: first to last settled ledger entry (not a calendar month). */
+const formatCovers = (fromIso: string, toIso?: string) => {
+  const from = formatDate(fromIso);
+  const to = toIso ? formatDate(toIso) : from;
+  return from === to ? from : `${from} – ${to}`;
+};
+
+/** Refunds plus net dispute effect; a negative total (reinstatement returned) is an addition. */
+const formatDeductions = (item: FinancePayoutHistoryItem) => {
+  const cents = (item.refundsCents ?? 0) + (item.disputeAdjustmentsCents ?? 0);
+  if (cents === 0) return formatBookingMoney(0);
+  return cents > 0 ? `-${formatBookingMoney(cents)}` : `+${formatBookingMoney(-cents)}`;
+};
 
 const statusBadgeClass: Record<FinancePayoutHistoryItem["status"], string> = {
   PENDING: "bg-[#F3E7C4] text-[#93723D]",
   PAID: "bg-[#D9EEE5] text-[#4D9A7A]",
 };
 
+/** PAID is a Super Admin's record of an external bank transfer, not a bank confirmation. */
 const statusLabel: Record<FinancePayoutHistoryItem["status"], string> = {
   PENDING: "Pending",
-  PAID: "Paid",
+  PAID: "Transfer recorded",
 };
 
 interface PayoutsHistoryProps {
@@ -61,7 +71,7 @@ export default function PayoutsHistory({ businessId }: PayoutsHistoryProps) {
             Payout history
           </h3>
           <span className="font-poppins font-medium text-xs leading-[18px] text-[#686B64]">
-            Payouts by settlement period, including pending payouts (UTC)
+            Bank transfers Bookly recorded as paid to you, including any pending records (UTC)
           </span>
         </div>
 
@@ -90,7 +100,7 @@ export default function PayoutsHistory({ businessId }: PayoutsHistoryProps) {
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
           <span className="font-poppins text-sm font-semibold text-[#5F5E5A]">No payouts yet</span>
           <span className="font-poppins text-xs text-[#ABAAA6] max-w-sm">
-            Once a settlement period closes and a payout is issued, it will appear here.
+            When Bookly&apos;s team sends your outstanding balance by bank transfer and records it, it will appear here.
           </span>
         </div>
       ) : (
@@ -98,22 +108,29 @@ export default function PayoutsHistory({ businessId }: PayoutsHistoryProps) {
         <table className="w-full text-left border-collapse min-w-[800px]">
           <thead>
             <tr className="bg-[#EFEEE9] text-[11px] font-medium text-[#797A73] tracking-[0.66px] uppercase border-b border-[#ECE9E2]">
-              <th className="py-3 px-4">PERIOD</th>
+              <th className="py-3 px-4">EARNINGS COVERED</th>
               <th className="py-3 px-4">GROSS COLLECTED</th>
               <th className="py-3 px-4">PROCESSING FEES</th>
-              <th className="py-3 px-4">NET PAYOUT</th>
-              <th className="py-3 px-4">PAID DATE</th>
+              <th className="py-3 px-4">REFUNDS &amp; DISPUTES</th>
+              <th className="py-3 px-4">AMOUNT RECORDED AS PAID</th>
+              <th className="py-3 px-4">RECORDED ON</th>
               <th className="py-3 px-4">STATUS</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#ECE9E2] text-xs font-poppins text-[#4B4D47]">
             {items.map((item) => (
               <tr key={item.id} className="hover:bg-neutral-50/50">
-                <td className="py-3.5 px-4 font-medium">{formatPeriod(item.periodStart)}</td>
+                <td className="py-3.5 px-4 font-medium">{formatCovers(item.periodStart, item.periodEnd)}</td>
                 <td className="py-3.5 px-4">{formatBookingMoney(item.grossBusinessOwnedCents)}</td>
                 <td className="py-3.5 px-4 text-[#BD5148] font-medium">-{formatBookingMoney(item.processingFeesCents)}</td>
+                <td className="py-3.5 px-4 text-[#BD5148] font-medium">{formatDeductions(item)}</td>
                 <td className="py-3.5 px-4 text-[#3D9E77] font-semibold">{formatBookingMoney(item.netPayoutCents)}</td>
-                <td className="py-3.5 px-4 text-[#4B4D47] font-medium">{item.paidAt ? formatDate(item.paidAt) : "—"}</td>
+                <td className="py-3.5 px-4 text-[#4B4D47] font-medium">
+                  {item.paidAt ? formatDate(item.paidAt) : "—"}
+                  {item.providerReference ? (
+                    <span className="block text-[11px] text-[#686B64] font-normal">Ref: {item.providerReference}</span>
+                  ) : null}
+                </td>
                 <td className="py-3.5 px-4">
                   <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${statusBadgeClass[item.status]}`}>
                     {statusLabel[item.status]}

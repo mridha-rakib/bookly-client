@@ -24,6 +24,7 @@ vi.mock("@/lib/finance/hooks", () => ({
   useFinanceSummaryQuery: () => ({}),
   useFinanceTransactionsQuery: (id: string, period: object, pagination: object) => { fx.transactions(id, period, pagination); return { data: { transactions: [], pagination: { total: 100 } } }; },
   usePayoutHistoryQuery: () => ({ data: { payouts: [], pagination: { total: 0 } } }),
+  useFinanceBalanceQuery: () => ({}),
 }));
 let host: HTMLDivElement, root: Root;
 beforeEach(() => {

@@ -20,6 +20,7 @@ export const financeKeys = {
     period: FinancePeriodParams,
     pagination: { page?: number; limit?: number },
   ) => [...financeKeys.transactionsLists(businessId), period, pagination] as const,
+  balance: (businessId: string) => [...financeKeys.all, "balance", businessId] as const,
   payoutHistories: (businessId: string) => [...financeKeys.all, "payouts", businessId] as const,
   payoutHistory: (businessId: string, pagination: { page?: number; limit?: number }) =>
     [...financeKeys.payoutHistories(businessId), pagination] as const,
@@ -45,6 +46,14 @@ export const useFinanceTransactionsQuery = (
     queryFn: () =>
       financeApi.listTransactions(businessId as string, period as FinancePeriodParams, pagination),
     enabled: Boolean(businessId) && Boolean(period),
+  });
+
+/** Finance Gap 01 — all-time earned / recorded as paid / outstanding (never month-filtered). */
+export const useFinanceBalanceQuery = (businessId: string | undefined) =>
+  useQuery({
+    queryKey: financeKeys.balance(businessId ?? ""),
+    queryFn: () => financeApi.getBalance(businessId as string),
+    enabled: Boolean(businessId),
   });
 
 export const usePayoutHistoryQuery = (

@@ -54,11 +54,39 @@ export interface FinancePayoutHistoryItem {
   periodEnd: string;
   grossBusinessOwnedCents: number;
   processingFeesCents: number;
+  /** Business-owned refund reversals settled by this record (absent from older API builds). */
+  refundsCents?: number;
+  /** Net dispute effect settled by this record; negative when a reinstatement was returned. */
+  disputeAdjustmentsCents?: number;
   netPayoutCents: number;
   currency: "EUR";
   status: BusinessPayoutStatus;
+  /** When the Super Admin recorded the external transfer as paid (not a bank confirmation). */
   paidAt?: string;
+  /** Optional reference the Super Admin typed when recording the transfer. */
   providerReference?: string;
+}
+
+/**
+ * Finance Gap 01 — all-time balance with Bookly (api finance.types.ts BusinessFinanceBalance).
+ * `recordedPaid` is Bookly's own record of external transfers, not a bank confirmation.
+ */
+export interface FinanceBalance {
+  currency: "EUR";
+  earned: {
+    grossCents: number;
+    depositCents: number;
+    feeRecoveryCents: number;
+    promoSubsidyCents: number;
+    processingFeesCents: number;
+    refundsCents: number;
+    disputeAdjustmentsCents: number;
+    netCents: number;
+  };
+  recordedPaid: { amountCents: number; payoutCount: number; lastRecordedAt?: string };
+  outstanding: { netCents: number; payableCents: number; transactionCount: number };
+  reconciled: boolean;
+  reconciliationDifferenceCents: number;
 }
 
 export interface FinancePayoutHistoryResponse {
@@ -77,6 +105,12 @@ export const financeApi = {
       method: "GET",
       url: `/businesses/${businessId}/finance/summary`,
       params: period,
+    }),
+
+  getBalance: (businessId: string) =>
+    apiRequest<FinanceBalance>({
+      method: "GET",
+      url: `/businesses/${businessId}/finance/balance`,
     }),
 
   listTransactions: (

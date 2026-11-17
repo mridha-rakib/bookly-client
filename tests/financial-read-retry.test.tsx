@@ -8,10 +8,10 @@ import PayoutsBreakdown from "@/components/payouts/PayoutsBreakdown";
 import DashboardPayoutsList from "@/components/dashboard/DashboardPayoutsList";
 import { packagesApi } from "@/lib/api/packages";
 
-const fx = vi.hoisted(() => ({ role: "CUSTOMER", query: { isLoading: false, isError: false, isFetching: false, data: undefined as unknown, refetch: vi.fn() } }));
+const fx = vi.hoisted(() => ({ role: "CUSTOMER", query: { isLoading: false, isError: false, isFetching: false, data: undefined as unknown, refetch: vi.fn() }, balance: { isLoading: false, isError: false, isFetching: false, data: undefined as unknown, refetch: vi.fn() } }));
 vi.mock("@/lib/auth/store", () => ({ useAuthStore: (select: (state: unknown) => unknown) => select({ user: { role: fx.role } }) }));
 vi.mock("@/lib/packages/hooks", () => ({ usePackageDetailQuery: () => fx.query, useBusinessPackageDetailQuery: () => fx.query }));
-vi.mock("@/lib/finance/hooks", () => ({ usePayoutHistoryQuery: () => fx.query, useFinanceTransactionsQuery: () => fx.query, useFinanceSummaryQuery: () => fx.query }));
+vi.mock("@/lib/finance/hooks", () => ({ usePayoutHistoryQuery: () => fx.query, useFinanceTransactionsQuery: () => fx.query, useFinanceSummaryQuery: () => fx.query, useFinanceBalanceQuery: () => fx.balance }));
 vi.mock("@/components/dashboard/DashboardHeader", () => ({ default: () => null }));
 vi.mock("@hugeicons/react", () => ({ HugeiconsIcon: () => null }));
 
@@ -23,7 +23,9 @@ describe("financial read retry controls", () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     fx.role = "CUSTOMER";
     Object.assign(fx.query, { isLoading: false, isError: false, isFetching: false, data: undefined });
+    Object.assign(fx.balance, { isLoading: false, isError: false, isFetching: false, data: undefined });
     fx.query.refetch.mockReset();
+    fx.balance.refetch.mockReset();
     cache = new QueryClient();
     host = document.createElement("div");
     document.body.append(host);
@@ -91,7 +93,34 @@ describe("financial read retry controls", () => {
     expect(host.textContent).toContain("Charge in progress"); expect(host.textContent).toContain("Charge failed — not collected"); expect(host.textContent).toContain("Waived — not collected");
     fx.query.data = { payouts: [{ id: "p", periodStart: "2026-01-01T00:00:00Z", grossBusinessOwnedCents: 1000, processingFeesCents: 0, netPayoutCents: 1000, status: "PENDING" }], pagination: { total: 1 } };
     render(<PayoutsHistory businessId="business" />);
-    expect(host.textContent).toContain("including pending payouts"); expect(host.textContent).toContain("Pending");
+    expect(host.textContent).toContain("including any pending records"); expect(host.textContent).toContain("Pending"); expect(host.textContent).not.toContain("Transfer recorded");
+  });
+  it("labels recorded transfers as Bookly's record and shows refund and dispute deductions", () => {
+    fx.query.data = { payouts: [{ id: "p", periodStart: "2026-01-03T09:00:00Z", periodEnd: "2026-01-20T09:00:00Z", grossBusinessOwnedCents: 5000, processingFeesCents: 200, refundsCents: 1500, disputeAdjustmentsCents: 300, netPayoutCents: 3000, status: "PAID", paidAt: "2026-02-01T10:00:00Z", providerReference: "BANK-123" }], pagination: { total: 1 } };
+    render(<PayoutsHistory businessId="business" />);
+    const text = host.textContent ?? "";
+    expect(text).toContain("Transfer recorded"); expect(text).not.toMatch(/\bPaid\b(?! )/);
+    expect(text).toContain("AMOUNT RECORDED AS PAID"); expect(text).toContain("RECORDED ON");
+    expect(text).toContain("3 Jan 2026 – 20 Jan 2026"); expect(text).toContain("-€18.00"); expect(text).toContain("€30.00"); expect(text).toContain("Ref: BANK-123");
+  });
+  it("shows all-time earned, recorded as paid and outstanding without implying bank verification", async () => {
+    const { default: PayoutsBalance } = await import("@/components/payouts/PayoutsBalance");
+    fx.balance.data = { currency: "EUR", earned: { grossCents: 10700, depositCents: 8000, feeRecoveryCents: 2300, promoSubsidyCents: 400, processingFeesCents: 300, refundsCents: 3000, disputeAdjustmentsCents: 0, netCents: 7400 }, recordedPaid: { amountCents: 6300, payoutCount: 1, lastRecordedAt: "2026-11-01T10:00:00Z" }, outstanding: { netCents: 1100, payableCents: 1100, transactionCount: 7 }, reconciled: true, reconciliationDifferenceCents: 0 };
+    render(<PayoutsBalance businessId="business" />);
+    let text = host.textContent ?? "";
+    expect(text).toContain("EARNED THROUGH BOOKLY · ALL TIME"); expect(text).toContain("€74.00");
+    expect(text).toContain("RECORDED AS PAID · ALL TIME"); expect(text).toContain("€63.00"); expect(text).toContain("1 transfer recorded · last 1 Nov 2026");
+    expect(text).toContain("OUTSTANDING · STILL PAYABLE"); expect(text).toContain("€11.00");
+    expect(text).toContain("not a confirmation from your bank"); expect(text).toContain("Payments customers made to you directly are not included");
+    expect(text).not.toContain("differ by");
+    fx.balance.data = { ...(fx.balance.data as object), outstanding: { netCents: -500, payableCents: 0, transactionCount: 1 }, reconciled: false, reconciliationDifferenceCents: -250 };
+    render(<PayoutsBalance businessId="business" />);
+    text = host.textContent ?? "";
+    expect(text).toContain("€5.00 deduction carried to future earnings"); expect(text).toContain("differ by €2.50");
+    Object.assign(fx.balance, { data: undefined, isError: true });
+    render(<PayoutsBalance businessId="business" />);
+    act(() => [...host.querySelectorAll("button")].find((button) => button.textContent === "Retry balance")!.click());
+    expect(fx.balance.refetch).toHaveBeenCalledOnce();
   });
   it("retries the finance summary", () => {
     fx.query.isError = true;
