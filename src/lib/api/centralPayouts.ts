@@ -52,7 +52,7 @@ export interface CentralProviderPayout {
   livemode?: boolean;
   failureCode?: string | null;
   destinationLast4?: string | null;
-  origin?: "BOOKLY_WITHDRAWAL" | "NOT_VERIFIED";
+  origin?: "BOOKLY_WITHDRAWAL" | "LINKAGE_UNRESOLVED" | "NOT_VERIFIED";
   booklyOperationId?: string | null;
 }
 
@@ -74,6 +74,50 @@ export interface CentralPayoutOverview {
   recentStripePayouts: CentralProviderPayout[];
   recentStripePayoutsScope?: RecentStripePayoutsScope;
   businessAttributedUnpaid: { currency: string; amountCents: number } | null;
+  /** FG03B-1 — absent from older API builds. Never a permission to withdraw. */
+  reconciliation?: ReconciliationReadiness;
+}
+
+export type HistoryCoverageState = "NEVER_RUN" | "IN_PROGRESS" | "COMPLETE";
+
+/**
+ * FG03B-1 — read-only payout-evidence status (api payout-reconciliation.ts). `evidenceComplete`
+ * only means Bookly holds complete, fully linked payout evidence up to `completeAsOf`; it is NOT
+ * permission to withdraw.
+ */
+export interface ReconciliationReadiness {
+  mode: CentralStripeMode | null;
+  evidenceComplete: boolean;
+  reviewNeeded: boolean;
+  coverage: {
+    state: HistoryCoverageState;
+    completeAsOf: string | null;
+    lastCompletedAt: string | null;
+    lastRunAt: string | null;
+    runInProgress: { pages: number; observed: number } | null;
+    lastError: string | null;
+    accountMatches: boolean | null;
+  };
+  observations: {
+    total: number;
+    verifiedBookly: number;
+    notVerified: number;
+    unresolved: number;
+    inFlight: number;
+  };
+  unresolvedWithdrawalOperations: number;
+  syncEnabled: boolean;
+  blockers: { code: string; message: string }[];
+}
+
+export interface HistorySyncResult {
+  mode: CentralStripeMode;
+  outcome: "COMPLETED" | "PAUSED_AT_PAGE_LIMIT" | "PROVIDER_ERROR" | "LEASE_LOST";
+  state: HistoryCoverageState;
+  pagesThisCall: number;
+  observedThisCall: number;
+  completeAsOf: string | null;
+  error: string | null;
 }
 
 export interface CentralPayoutOperation {
@@ -118,6 +162,12 @@ export const centralPayoutsApi = {
       method: "POST",
       url: "/super-admin/finance/withdrawals",
       data: input,
+    }),
+  syncProviderHistory: (maxPages?: number) =>
+    apiRequest<HistorySyncResult>({
+      method: "POST",
+      url: "/super-admin/finance/withdrawals/provider-history/sync",
+      data: maxPages ? { maxPages } : {},
     }),
   refresh: (operationId: string) =>
     apiRequest<CentralPayoutOperation>({

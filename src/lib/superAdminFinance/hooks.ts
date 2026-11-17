@@ -176,6 +176,16 @@ export const useInitiateCentralPayoutMutation = () => {
   });
 };
 
+/** FG03B-1 — one bounded Stripe payout history read (Super Admin; refused unless the deployment
+ * enables it). Read-only towards money; refreshes the overview's readiness afterwards. */
+export const useSyncProviderPayoutHistoryMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (maxPages?: number) => centralPayoutsApi.syncProviderHistory(maxPages),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: centralPayoutKeys.all }),
+  });
+};
+
 export const useRefreshCentralPayoutMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({

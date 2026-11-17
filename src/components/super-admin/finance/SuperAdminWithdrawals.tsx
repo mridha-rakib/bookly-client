@@ -13,6 +13,7 @@ import {
   useCentralPayoutsQuery,
   useInitiateCentralPayoutMutation,
   useRefreshCentralPayoutMutation,
+  useSyncProviderPayoutHistoryMutation,
 } from "@/lib/superAdminFinance/hooks";
 
 /** Minor-unit digits for a currency, from Intl (EUR → 2, JPY → 0). */
@@ -134,6 +135,7 @@ export default function SuperAdminWithdrawals() {
           <BalanceCards overview={overview} />
           <WithdrawalForm key={overview.balances.map((b) => b.currency).join(",")} overview={overview} />
           <StripePayoutHistory overview={overview} />
+          <ReconciliationReadinessCard overview={overview} />
         </>
       )}
 
@@ -470,6 +472,8 @@ function StripePayoutHistory({ overview }: { overview: CentralPayoutOverview }) 
                           <span className="px-2 py-0.5 rounded-full font-semibold whitespace-nowrap bg-emerald-50 text-emerald-700 self-start">Bookly withdrawal</span>
                           {p.booklyOperationId && <span className="font-mono text-[10px] text-gray-500">Ref {p.booklyOperationId}</span>}
                         </span>
+                      ) : p.origin === "LINKAGE_UNRESOLVED" ? (
+                        <span className="px-2 py-0.5 rounded-full font-semibold whitespace-nowrap bg-amber-50 text-amber-700">Linkage unresolved</span>
                       ) : (
                         <span className="px-2 py-0.5 rounded-full font-semibold whitespace-nowrap bg-gray-100 text-gray-700">Origin not verified</span>
                       )}
@@ -489,10 +493,115 @@ function StripePayoutHistory({ overview }: { overview: CentralPayoutOverview }) 
         </span>
         {unverified > 0 && (
           <span>
-            &quot;Origin not verified&quot; means Bookly has no withdrawal record holding this Stripe payout. It may have been made in the Stripe Dashboard, by Stripe&apos;s automatic schedule, or be a Bookly withdrawal not yet linked. It is not a finding that the payout was unauthorized.
+            &quot;Origin not verified&quot; means Bookly has no withdrawal record holding this Stripe payout. It may have been made in the Stripe Dashboard, by Stripe&apos;s automatic schedule, or be a Bookly withdrawal not yet linked. &quot;Linkage unresolved&quot; means the payout names a Bookly withdrawal that has not confirmed it yet. Neither is a finding that the payout was unauthorized.
           </span>
         )}
         <span>Stripe&apos;s &quot;Paid&quot; status and estimated arrival are Stripe&apos;s reports. Check the bank statement to confirm receipt.</span>
+      </div>
+    </Card>
+  );
+}
+
+const coverageLabel: Record<string, string> = {
+  NEVER_RUN: "Never read",
+  IN_PROGRESS: "Incomplete",
+  COMPLETE: "Complete",
+};
+
+/**
+ * FG03B-1 — read-only payout-evidence status. "Evidence complete" is never shown as permission
+ * to withdraw; the history read control appears only when the deployment enables it.
+ */
+function ReconciliationReadinessCard({ overview }: { overview: CentralPayoutOverview }) {
+  const readiness = overview.reconciliation;
+  const sync = useSyncProviderPayoutHistoryMutation();
+  if (!readiness) {
+    return (
+      <Card>
+        <span className="text-sm text-gray-500">Payout reconciliation status is not available from this server.</span>
+      </Card>
+    );
+  }
+  const { coverage, observations } = readiness;
+  const status = readiness.evidenceComplete
+    ? { text: "Evidence complete", tone: "bg-emerald-50 text-emerald-700" }
+    : readiness.reviewNeeded
+      ? { text: "Review needed", tone: "bg-amber-50 text-amber-700" }
+      : { text: "Evidence incomplete", tone: "bg-gray-100 text-gray-700" };
+
+  return (
+    <Card className="p-0 overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex flex-col gap-0.5">
+          <span className="font-semibold text-sm text-[#111827]">Payout reconciliation</span>
+          <span className="text-xs text-gray-500">
+            Whether Bookly holds complete, linked evidence of every Stripe payout. This is not permission to withdraw.
+          </span>
+        </div>
+        <span className={`self-start sm:self-auto px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${status.tone}`}>{status.text}</span>
+      </div>
+      <div className="px-5 py-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-[#314158]">
+        <div className="flex flex-col gap-1 min-w-0">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Stripe history coverage</span>
+          <span className="font-medium">{coverageLabel[coverage.state] ?? coverage.state}</span>
+          {coverage.state === "COMPLETE" && coverage.completeAsOf && (
+            <span className="text-xs text-gray-500">
+              Read through {formatDate(coverage.completeAsOf)}. Later payouts rely on webhook delivery until the next read.
+            </span>
+          )}
+          {coverage.runInProgress && (
+            <span className="text-xs text-gray-500">
+              Read in progress: {coverage.runInProgress.pages} page(s), {coverage.runInProgress.observed} payout(s) so far.
+            </span>
+          )}
+          {coverage.lastRunAt && <span className="text-xs text-gray-500">Last read started {formatDate(coverage.lastRunAt)}</span>}
+          {coverage.accountMatches === false && (
+            <span className="text-xs text-rose-600">The connected Stripe account differs from the one the history was read from.</span>
+          )}
+        </div>
+        <div className="flex flex-col gap-1 min-w-0">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Observed Stripe payouts ({observations.total})</span>
+          <span>{observations.verifiedBookly} linked to a Bookly withdrawal</span>
+          <span>{observations.notVerified} origin not verified</span>
+          <span>{observations.unresolved} linkage unresolved</span>
+          <span>{observations.inFlight} pending or in transit</span>
+          {readiness.unresolvedWithdrawalOperations > 0 && (
+            <span>{readiness.unresolvedWithdrawalOperations} Bookly withdrawal(s) awaiting Stripe confirmation</span>
+          )}
+        </div>
+      </div>
+      {readiness.blockers.length > 0 && (
+        <ul aria-label="Reconciliation gaps" className="px-5 pb-4 flex flex-col gap-1.5 text-xs text-[#5B5D58]">
+          {readiness.blockers.map((b) => (
+            <li key={b.code} className="flex gap-2">
+              <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+              <span>{b.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="px-5 py-3 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-gray-500">
+        {readiness.syncEnabled ? (
+          <>
+            <button
+              type="button"
+              disabled={sync.isPending}
+              onClick={() => sync.mutate(undefined)}
+              className="self-start border border-[#111111] text-[#111111] hover:bg-gray-50 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50"
+            >
+              {sync.isPending ? "Reading Stripe history…" : "Read Stripe payout history"}
+            </button>
+            <span>
+              {sync.isError
+                ? toUserMessage(sync.error)
+                : sync.data
+                  ? `Read ${sync.data.pagesThisCall} page(s), ${sync.data.observedThisCall} payout(s): ${sync.data.state === "COMPLETE" ? "history complete." : "history still incomplete; run again to continue."}`
+                  : "Reads a bounded number of Stripe pages per click. It never moves money."}
+            </span>
+          </>
+        ) : (
+          <span>Reading the full Stripe payout history is not enabled in this deployment.</span>
+        )}
       </div>
     </Card>
   );
