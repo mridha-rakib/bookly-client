@@ -190,7 +190,7 @@ export default function SuperAdminFinance({
 
       <p className="text-xs text-gray-500 -mt-3" data-testid="finance-period-note">
         Period: {describeOverviewPeriod({ fromDate: period.from, toDate: period.to })}. Applies to
-        Bookly revenue, Collected for businesses and Discounted money; Sent to businesses is all
+        Bookly revenue, Collected for businesses and Discounted money; Recorded as paid to businesses is all
         time and Pending payouts is the current balance.
       </p>
       {rangeError && (

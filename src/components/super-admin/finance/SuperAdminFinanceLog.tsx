@@ -71,6 +71,13 @@ const formatDate = (iso: string) =>
     new Date(iso),
   );
 
+/** Refunds plus net dispute effect for one payout record; negative (a returned dispute) adds. */
+const formatPayoutDeductions = (p: { refundsCents?: number; disputeAdjustmentsCents?: number }) => {
+  const cents = (p.refundsCents ?? 0) + (p.disputeAdjustmentsCents ?? 0);
+  if (cents === 0) return formatBookingMoney(0);
+  return cents > 0 ? `-${formatBookingMoney(cents)}` : `+${formatBookingMoney(-cents)}`;
+};
+
 const DEFAULT_LOG_DAYS = 90;
 const LOG_MAX_RANGE_DAYS = 92;
 
@@ -243,7 +250,7 @@ export default function SuperAdminFinanceLog() {
             <div role="status" className="p-8 text-center text-gray-500">Loading finance records…</div>
           ) : isPayoutsTab ? (
             <div className="overflow-x-auto w-full">
-              <p className="px-5 pt-4 text-xs text-gray-500">Payouts are self-attested records; Bookly does not execute or verify the external transfer.</p>
+              <p className="px-5 pt-4 text-xs text-gray-500">Payouts are self-attested records; Bookly does not execute or verify the external transfer. &quot;Recorded on&quot; is when the transfer was recorded in Bookly, not the bank transfer date.</p>
               <table className="w-full text-left font-sans text-xs border-collapse">
                 <thead>
                   <tr className="bg-[#F9FAFB] border-b border-gray-100 text-gray-700 font-semibold">
@@ -251,7 +258,9 @@ export default function SuperAdminFinanceLog() {
                     <th className="p-4 whitespace-nowrap">Period</th>
                     <th className="p-4 whitespace-nowrap text-right">Gross</th>
                     <th className="p-4 whitespace-nowrap text-right">Processing fees</th>
-                    <th className="p-4 whitespace-nowrap text-right">Net</th>
+                    <th className="p-4 whitespace-nowrap text-right">Refunds &amp; disputes</th>
+                    <th className="p-4 whitespace-nowrap text-right">Recorded as paid</th>
+                    <th className="p-4 whitespace-nowrap">Recorded on</th>
                     <th className="p-4 whitespace-nowrap text-center">Status</th>
                   </tr>
                 </thead>
@@ -268,8 +277,17 @@ export default function SuperAdminFinanceLog() {
                       <td className="p-4 text-right whitespace-nowrap text-rose-600">
                         -{formatBookingMoney(p.processingFeesCents)}
                       </td>
+                      <td className="p-4 text-right whitespace-nowrap text-rose-600">
+                        {formatPayoutDeductions(p)}
+                      </td>
                       <td className="p-4 text-right whitespace-nowrap text-[#D97706] font-semibold">
                         {formatBookingMoney(p.netPayoutCents)}
+                      </td>
+                      <td className="p-4 whitespace-nowrap text-gray-500">
+                        {p.paidAt ? formatDate(p.paidAt) : "—"}
+                        {p.providerReference ? (
+                          <span className="block text-[11px] text-gray-400">Ref: {p.providerReference}</span>
+                        ) : null}
                       </td>
                       <td className="p-4 text-center whitespace-nowrap">
                         <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full ${statusBadgeStyle(p.status === "PAID" ? "Payout recorded" : "Pending")}`}>
@@ -280,7 +298,7 @@ export default function SuperAdminFinanceLog() {
                   ))}
                   {payoutRows.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-gray-500 font-medium">
+                      <td colSpan={8} className="p-8 text-center text-gray-500 font-medium">
                         No payout records yet.
                       </td>
                     </tr>

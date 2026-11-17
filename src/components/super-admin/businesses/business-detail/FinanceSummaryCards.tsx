@@ -45,7 +45,7 @@ export default function FinanceSummaryCards({ summary, payable, isLoading }: Fin
         <span className="text-xs font-medium text-[#6B7280]">Pending Payout</span>
         <span className="text-3xl font-bold text-[#195156] mt-1">{amount(payable?.netCents)}</span>
         <span className="text-[11px] text-[#6B7280] mt-1">
-          {payable ? `${payable.transactionCount} transaction${payable.transactionCount === 1 ? "" : "s"} — awaiting SEPA` : "—"}
+          {payable ? `${payable.transactionCount} transaction${payable.transactionCount === 1 ? "" : "s"} — not yet recorded as paid` : "—"}
         </span>
       </div>
 

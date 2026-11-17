@@ -40,16 +40,16 @@ export default function SuperAdminFinanceStats({
       valueColor: "text-[#6366F1]",
     },
     {
-      title: "Sent to businesses via SEPA",
+      title: "Recorded as paid to businesses",
       value: amount(summary?.sentToBusinesses.amountCents),
-      subtitle: summary ? `${summary.sentToBusinesses.payoutCount} payouts sent (all time)` : "—",
+      subtitle: summary ? `${summary.sentToBusinesses.payoutCount} transfers recorded (all time)` : "—",
       valueColor: "text-[#8D1212]",
     },
     {
       title: "Pending payouts",
       value: amount(summary?.pendingPayouts.amountCents),
       subtitle: summary
-        ? `${summary.pendingPayouts.businessCount} business${summary.pendingPayouts.businessCount === 1 ? "" : "es"} awaiting SEPA`
+        ? `${summary.pendingPayouts.businessCount} business${summary.pendingPayouts.businessCount === 1 ? "" : "es"} awaiting a recorded transfer`
         : "—",
       valueColor: "text-[#D97706]",
     },

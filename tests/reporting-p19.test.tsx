@@ -381,7 +381,7 @@ describe("E17 — Super Admin Finance in Cyprus time (P2.2.2)", () => {
     expect(button("All time")).toBeUndefined();
     expect(button("Last 90 days")).toBeTruthy();
     expect(host.querySelector('[data-testid="finance-period-note"]')?.textContent).toContain("(Cyprus time)");
-    expect(host.querySelector('[data-testid="finance-period-note"]')?.textContent).toContain("Sent to businesses is all");
+    expect(host.querySelector('[data-testid="finance-period-note"]')?.textContent).toContain("Recorded as paid to businesses is all");
 
     await click(button("Last Month"));
     await waitFor(() => expect(last("/super-admin/finance/summary")).toEqual({ from: platformLastMonth().fromDate, to: platformLastMonth().toDate }));

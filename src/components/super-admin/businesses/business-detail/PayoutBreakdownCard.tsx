@@ -5,7 +5,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { InformationCircleIcon } from "@hugeicons/core-free-icons";
 
 import { formatBookingMoney } from "@/lib/bookings/format";
-import type { BusinessPayableSummary } from "@/lib/api/superAdminFinance";
+import { normalizeApiError } from "@/lib/api/client";
+import { type BusinessPayableSummary, PAYOUT_SNAPSHOT_CHANGED } from "@/lib/api/superAdminFinance";
 import { useExecutePayoutMutation } from "@/lib/superAdminFinance/hooks";
 import { useSuperAdminPayoutDestinationQuery } from "@/lib/superAdminPayoutDestination/hooks";
 import PayoutDestinationPanel from "@/components/super-admin/finance/PayoutDestinationPanel";
@@ -35,14 +36,19 @@ export default function PayoutBreakdownCard({
   const amount = (cents: number | undefined) =>
     cents !== undefined ? formatBookingMoney(cents) : isLoading ? "…" : "—";
 
-  // A manual SEPA transfer with no known destination must not be confirmable, so the existing
+  // A manual transfer with no known destination must not be confirmable, so the existing
   // "is there anything to pay" gate is extended with "do we know where to send it".
   const canPay = Boolean(payable && payable.netCents > 0) && hasDestination;
+  const disputeAdjustmentsCents = payable?.disputeAdjustmentsCents ?? 0;
+  const snapshotChanged =
+    executeMutation.isError && normalizeApiError(executeMutation.error).code === PAYOUT_SNAPSHOT_CHANGED;
 
+  // Finance Gap 02 — the record is bound to exactly the amount + snapshot displayed here; the
+  // server refuses it (nothing written) if the payable changed since this read.
   const handleConfirm = () => {
-    if (!payable || payable.netCents <= 0 || !hasDestination) return;
+    if (!payable || payable.netCents <= 0 || !hasDestination || !payable.snapshotDigest) return;
     executeMutation.mutate(
-      { businessId },
+      { businessId, expectedNetCents: payable.netCents, snapshotDigest: payable.snapshotDigest },
       {
         onSuccess: () => {
           setShowDetails(false);
@@ -99,8 +105,16 @@ export default function PayoutBreakdownCard({
                 <span className="font-semibold">-{amount(payable.refundsCents)}</span>
               </div>
             ) : null}
+            {disputeAdjustmentsCents !== 0 ? (
+              <div className="flex justify-between py-2.5 border-b border-gray-100 text-sm text-rose-600">
+                <span>Disputes</span>
+                <span className="font-semibold">
+                  {disputeAdjustmentsCents > 0 ? `-${amount(disputeAdjustmentsCents)}` : `+${amount(-disputeAdjustmentsCents)}`}
+                </span>
+              </div>
+            ) : null}
             <div className="flex justify-between py-4 text-lg font-bold text-[#1C1B1C] border-t border-gray-100 mt-2">
-              <span>Net to send via SEPA</span>
+              <span>Net to transfer</span>
               <span className="text-2xl text-[#2E9DA7]">{amount(payable?.netCents)}</span>
             </div>
           </div>
@@ -144,7 +158,7 @@ export default function PayoutBreakdownCard({
           >
             <span className="font-sans font-medium text-[14px] sm:text-[18px] leading-[20px] text-center text-[#111111] whitespace-nowrap">
               {canPay
-                ? "Send SEPA payout"
+                ? "Record Bank Transfer"
                 : !hasDestination && payable && payable.netCents > 0
                   ? "Bank details not configured for this Business"
                   : "No pending balance to pay out"}
@@ -155,23 +169,25 @@ export default function PayoutBreakdownCard({
         <div className="mx-6 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center p-5 gap-4 w-auto bg-[#E5F5EF] rounded-xl flex-none order-1 grow-0 border border-emerald-100 transition-all">
           <div className="flex flex-col justify-center items-start p-0 gap-2 w-full md:max-w-[858px] flex-none order-0 grow">
             <span className="w-full font-sans font-semibold text-2xl text-[#224F42] flex items-center">
-              Ready to send {amount(payable?.netCents)} to {businessName}
+              Record a completed transfer of {amount(payable?.netCents)} to {businessName}
             </span>
             <p className="w-full font-sans font-normal text-[15.9px] leading-[24px] text-[#39725E] flex items-center">
-              {payable?.transactionCount ?? 0} transaction{payable?.transactionCount === 1 ? "" : "s"} pending — net of actual Stripe fees. You are about to mark {amount(payable?.netCents)} as paid to {businessName}. This records your own attestation that you sent this money via your bank/Stripe transfer — Bookly does not execute the transfer. This action is irreversible. Confirm?
+              {payable?.transactionCount ?? 0} transaction{payable?.transactionCount === 1 ? "" : "s"} pending — net of actual Stripe fees. Only continue if you have already transferred exactly {amount(payable?.netCents)} to {businessName} from your own bank, outside Bookly. Bookly does not send or verify this transfer; it records your confirmation. If the amount owed changes before you confirm, nothing is recorded. This action is irreversible. Confirm?
             </p>
-            {executeMutation.isError ? (
-              <span className="text-xs text-rose-600">Couldn&apos;t record this payout — please try again.</span>
+            {snapshotChanged ? (
+              <span role="alert" className="text-xs text-rose-600">The amount owed changed after you reviewed it — nothing was recorded. The updated amount is shown above; confirm only if it matches your transfer.</span>
+            ) : executeMutation.isError ? (
+              <span className="text-xs text-rose-600">Couldn&apos;t record this transfer — please try again.</span>
             ) : null}
           </div>
           <div className="flex flex-col gap-2 shrink-0 w-full md:w-auto">
             <button
               onClick={handleConfirm}
-              disabled={executeMutation.isPending}
+              disabled={executeMutation.isPending || !payable?.snapshotDigest || !canPay}
               className="flex flex-row justify-center items-center px-4 py-1.5 gap-2 w-full h-[56px] rounded-lg cursor-pointer disabled:opacity-50 bg-[#16A34A] hover:bg-[#15803d] transition-colors"
             >
               <span className="font-sans font-medium text-[14px] sm:text-[16px] text-center text-white whitespace-nowrap">
-                {executeMutation.isPending ? "Confirming…" : "Confirm transfer sent"}
+                {executeMutation.isPending ? "Recording…" : "Record transfer as paid"}
               </span>
             </button>
             <button

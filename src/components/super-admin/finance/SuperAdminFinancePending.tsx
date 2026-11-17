@@ -5,8 +5,9 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Download01Icon, ArrowDown01Icon, ArrowUp01Icon } from "@hugeicons/core-free-icons";
 
 import { formatBookingMoney } from "@/lib/bookings/format";
-import { type BusinessPayableSummary, superAdminFinanceApi } from "@/lib/api/superAdminFinance";
-import { useExecutePayoutMutation, useSuperAdminPendingPayoutsQuery } from "@/lib/superAdminFinance/hooks";
+import { normalizeApiError } from "@/lib/api/client";
+import { type BusinessPayableSummary, PAYOUT_SNAPSHOT_CHANGED, superAdminFinanceApi } from "@/lib/api/superAdminFinance";
+import { useExecutePayoutMutation, useSuperAdminBusinessPayableQuery, useSuperAdminPendingPayoutsQuery } from "@/lib/superAdminFinance/hooks";
 import { useSuperAdminPayoutDestinationQuery } from "@/lib/superAdminPayoutDestination/hooks";
 import PayoutDestinationPanel from "./PayoutDestinationPanel";
 
@@ -39,8 +40,26 @@ export default function SuperAdminFinancePending({
     enabled: Boolean(selectedPayout),
   });
   const destination = destinationQuery.data;
-  // A manual transfer with no known destination must not be confirmable.
-  const canConfirmTransfer = destination?.configured === true;
+  // Finance Gap 02 — the amount to confirm is the Business's CURRENT payable (with its snapshot),
+  // re-read when the modal opens, never the possibly older pending-list row. The server refuses
+  // the record if that payable changes before confirmation.
+  const payableQuery = useSuperAdminBusinessPayableQuery(selectedPayout?.businessId);
+  const reviewed = payableQuery.data;
+  const reviewedReady =
+    Boolean(reviewed?.snapshotDigest) && (reviewed?.netCents ?? 0) > 0 && !payableQuery.isFetching;
+  const amountChangedSinceList = Boolean(
+    reviewed && selectedPayout && !payableQuery.isFetching && reviewed.netCents !== selectedPayout.netCents,
+  );
+  const snapshotChanged =
+    executeMutation.isError && normalizeApiError(executeMutation.error).code === PAYOUT_SNAPSHOT_CHANGED;
+  // A manual transfer with no known destination, or no current reviewed amount, is not confirmable.
+  const canConfirmTransfer = destination?.configured === true && reviewedReady;
+
+  const closeModal = () => {
+    setSelectedPayout(null);
+    setProviderReference("");
+    executeMutation.reset();
+  };
 
   // P1.9 — server-streamed export of the complete pending list via the shared CSV encoder.
   const [exporting, setExporting] = useState(false);
@@ -58,15 +77,17 @@ export default function SuperAdminFinancePending({
   };
 
   const handleConfirmTransfer = () => {
-    if (!selectedPayout || !canConfirmTransfer || submitting.current) return;
+    if (!selectedPayout || !canConfirmTransfer || !reviewed?.snapshotDigest || submitting.current) return;
     submitting.current = true;
     executeMutation.mutate(
-      { businessId: selectedPayout.businessId, providerReference: providerReference || undefined },
       {
-        onSuccess: () => {
-          setSelectedPayout(null);
-          setProviderReference("");
-        },
+        businessId: selectedPayout.businessId,
+        expectedNetCents: reviewed.netCents,
+        snapshotDigest: reviewed.snapshotDigest,
+        providerReference: providerReference.trim() || undefined,
+      },
+      {
+        onSuccess: closeModal,
         onSettled: () => { submitting.current = false; },
       },
     );
@@ -78,10 +99,10 @@ export default function SuperAdminFinancePending({
       <div className="bg-[#F5F5F5] p-5 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 border-b border-gray-200 w-full">
         <div className="flex flex-col gap-1 w-full sm:w-auto">
           <h3 className="font-semibold text-base text-[#111111] leading-tight">
-            Pending SEPA payouts{query.data && !query.isError ? ` - ${items.length} businesses` : ""}
+            Pending payouts{query.data && !query.isError ? ` - ${items.length} businesses` : ""}
           </h3>
           <p className="text-xs text-gray-500 font-normal">
-            Each payout requires an individual record of a transfer made outside Bookly.
+            Transfer each balance from your own bank first, then record it here. Bookly does not send or verify bank transfers.
           </p>
         </div>
 
@@ -179,7 +200,7 @@ export default function SuperAdminFinancePending({
                           onClick={() => setSelectedPayout(p)}
                           className="px-4 py-1.5 border border-[#E5E7EB] rounded-lg text-xs font-semibold text-[#111827] hover:bg-gray-50 transition-colors cursor-pointer"
                         >
-                          Send SEPA
+                          Record Bank Transfer
                         </button>
                       </div>
                     </td>
@@ -197,22 +218,34 @@ export default function SuperAdminFinancePending({
         <div className="fixed inset-0 z-[1000] bg-black/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl border border-gray-100 max-w-md w-full p-6 flex flex-col gap-4 font-sans relative">
             <button
-              onClick={() => setSelectedPayout(null)}
+              onClick={closeModal}
               className="absolute right-4 top-4 text-gray-400 hover:text-gray-900 text-lg focus:outline-none"
             >
               ✕
             </button>
 
             <h3 className="font-bold text-lg text-gray-900">
-              Confirm SEPA Transfer
+              Confirm Completed Transfer
             </h3>
 
             <p className="text-sm text-gray-600 leading-relaxed">
-              Confirm that you have sent <strong className="text-gray-900">{formatBookingMoney(selectedPayout.netCents)}</strong> to <strong className="text-gray-900">{selectedPayout.businessName}</strong> via your own bank/Stripe transfer.
+              {reviewed && !payableQuery.isFetching ? (
+                <>Record that you have <strong className="text-gray-900">already transferred exactly {formatBookingMoney(reviewed.netCents)}</strong> to <strong className="text-gray-900">{selectedPayout.businessName}</strong> from your own bank, outside Bookly.</>
+              ) : payableQuery.isError ? (
+                <>Couldn&apos;t load the current amount owed to <strong className="text-gray-900">{selectedPayout.businessName}</strong>. <button type="button" onClick={() => void payableQuery.refetch()} className="underline">Retry</button></>
+              ) : (
+                <>Loading the current amount owed to <strong className="text-gray-900">{selectedPayout.businessName}</strong>…</>
+              )}
               <br />
-              <span className="text-gray-500 text-xs mt-1 block">Bookly does not execute this transfer. This records your attestation that you made it using the configured destination.</span>
+              <span className="text-gray-500 text-xs mt-1 block">Bookly does not send or verify this transfer. It only records your confirmation that the transfer to the configured account is complete. If the amount owed changes before you confirm, nothing is recorded and you will be asked to review it again.</span>
               <span className="text-rose-600 font-semibold text-xs mt-2 block">⚠️ This action is irreversible</span>
             </p>
+
+            {amountChangedSinceList && reviewed ? (
+              <span role="alert" className="text-xs font-semibold text-[#B45309]">
+                The amount owed is now {formatBookingMoney(reviewed.netCents)} (the list showed {formatBookingMoney(selectedPayout.netCents)}). Only record this if you transferred {formatBookingMoney(reviewed.netCents)}.
+              </span>
+            ) : null}
 
             <PayoutDestinationPanel
               businessId={selectedPayout.businessId}
@@ -233,13 +266,15 @@ export default function SuperAdminFinancePending({
               />
             </label>
 
-            {executeMutation.isError ? (
-              <span className="text-xs text-rose-600">Couldn&apos;t record this payout — please try again.</span>
+            {snapshotChanged ? (
+              <span role="alert" className="text-xs text-rose-600">The amount owed changed after you reviewed it — nothing was recorded. Check the updated amount above before confirming.</span>
+            ) : executeMutation.isError ? (
+              <span className="text-xs text-rose-600">Couldn&apos;t record this transfer — please try again.</span>
             ) : null}
 
             <div className="flex justify-end items-center gap-4 mt-2">
               <button
-                onClick={() => setSelectedPayout(null)}
+                onClick={closeModal}
                 className="text-sm font-medium text-gray-500 hover:underline hover:text-gray-900"
               >
                 Cancel
@@ -247,10 +282,16 @@ export default function SuperAdminFinancePending({
               <button
                 onClick={handleConfirmTransfer}
                 disabled={executeMutation.isPending || !canConfirmTransfer}
-                title={canConfirmTransfer ? undefined : "This Business has no payout bank details configured"}
+                title={
+                  destination?.configured !== true
+                    ? "This Business has no payout bank details configured"
+                    : !reviewedReady
+                      ? "Waiting for the current amount owed"
+                      : undefined
+                }
                 className="bg-[#16A34A] hover:bg-[#15803d] disabled:opacity-50 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
               >
-                {executeMutation.isPending ? "Confirming…" : "Confirm Transfer"}
+                {executeMutation.isPending ? "Recording…" : "Record transfer as paid"}
               </button>
             </div>
           </div>

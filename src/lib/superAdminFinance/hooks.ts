@@ -2,8 +2,14 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { BooklyApiError } from "@/lib/api/client";
 import type { FinancePeriodParams } from "@/lib/api/finance";
-import { superAdminFinanceApi, type PlatformTransactionType } from "@/lib/api/superAdminFinance";
+import {
+  type PayoutRecordInput,
+  superAdminFinanceApi,
+  type PlatformTransactionType,
+} from "@/lib/api/superAdminFinance";
+import { financeKeys } from "@/lib/finance/hooks";
 import { centralPayoutsApi, type InitiateCentralPayoutInput } from "@/lib/api/centralPayouts";
 
 export const superAdminFinanceKeys = {
@@ -112,24 +118,24 @@ export const useSuperAdminBusinessPayoutHistoryQuery = (
     enabled: Boolean(businessId),
   });
 
-/** "Send SEPA" / "Confirm Transfer" — invalidates every cached view that could now be stale
- * (pending list, platform summary, the settled Business's own payable/summary/history). */
+/** "Record bank transfer" — records a transfer already completed outside Bookly, bound to the
+ * reviewed amount + snapshot. On success every cached view that could now be stale is
+ * invalidated: all Super Admin finance reads (pending list, platform summary/history, the
+ * Business's payable/summary/history) and any cached Business Owner finance reads. A refused
+ * record (e.g. the payable changed after review) also refreshes, so the current amount shows. */
 export const useExecutePayoutMutation = () => {
   const queryClient = useQueryClient();
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: superAdminFinanceKeys.all });
+    void queryClient.invalidateQueries({ queryKey: financeKeys.all });
+  };
 
   return useMutation({
-    mutationFn: ({
-      businessId,
-      providerReference,
-    }: {
-      businessId: string;
-      providerReference?: string;
-    }) => superAdminFinanceApi.executePayout(businessId, providerReference),
-    onSuccess: (_payout, variables) => {
-      void queryClient.invalidateQueries({ queryKey: superAdminFinanceKeys.all });
-      void queryClient.invalidateQueries({
-        queryKey: superAdminFinanceKeys.businessPayable(variables.businessId),
-      });
+    mutationFn: ({ businessId, ...input }: { businessId: string } & PayoutRecordInput) =>
+      superAdminFinanceApi.executePayout(businessId, input),
+    onSuccess: refresh,
+    onError: (error) => {
+      if (error instanceof BooklyApiError && error.status === 409) refresh();
     },
   });
 };

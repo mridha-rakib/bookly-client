@@ -10,6 +10,7 @@ vi.mock("@/lib/superAdminBookings/hooks", () => ({ useSuperAdminBookingDetailQue
 vi.mock("@/lib/superAdminFinance/hooks", () => ({
   useSuperAdminPendingPayoutsQuery: () => ({ data: undefined, isLoading: false, isError: true, isFetching: false, refetch: fx.payoutRetry }),
   useExecutePayoutMutation: () => ({ isPending: false, mutate: vi.fn() }),
+  useSuperAdminBusinessPayableQuery: () => ({}),
   useSuperAdminPlatformTransactionsQuery: () => ({ data: undefined, isLoading: false, isError: true, isFetching: false, refetch: fx.payoutRetry }),
   useSuperAdminPlatformPayoutHistoryQuery: () => ({ data: undefined, isLoading: false, isError: true, isFetching: false, refetch: fx.payoutRetry }),
 }));

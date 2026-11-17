@@ -143,7 +143,7 @@ export default function SuperAdminStatsGrid({ period, filters = {} }: SuperAdmin
             {formatBookingMoney(summary.completedPayoutsAllTimeCents)}
           </span>
           <span className="font-sans font-normal text-xs text-gray-400 mt-auto leading-4">
-            All time · already sent to Businesses (not affected by period, city or day)
+            All time · transfers recorded as paid to Businesses (not affected by period, city or day)
           </span>
         </div>
       </div>

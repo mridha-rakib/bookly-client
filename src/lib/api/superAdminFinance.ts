@@ -72,12 +72,27 @@ export interface BusinessPayableSummary {
   grossCents: number;
   processingFeesCents: number;
   refundsCents: number;
+  /** Net Business-owned dispute effect (withdrawals + fees − reinstatements), already in netCents. */
+  disputeAdjustmentsCents?: number;
   netCents: number;
   transactionCount: number;
   noShowAmountCents: number;
   cancellationAmountCents: number;
   depositAmountCents: number;
+  /** Finance Gap 02 — present on the single-Business payable read only (not the pending list).
+   * Recording a transfer must echo it with `netCents`; the server refuses any changed snapshot. */
+  snapshotDigest?: string;
 }
+
+/** The exact reviewed payable a manual transfer record is bound to. */
+export interface PayoutRecordInput {
+  expectedNetCents: number;
+  snapshotDigest: string;
+  providerReference?: string;
+}
+
+/** Server code when the payable changed after the Super Admin reviewed it (nothing recorded). */
+export const PAYOUT_SNAPSHOT_CHANGED = "FINANCE_PAYOUT_SNAPSHOT_CHANGED";
 
 export interface PendingPayoutsResponse {
   items: BusinessPayableSummary[];
@@ -93,9 +108,12 @@ export interface PlatformPayoutHistoryItem {
   periodEnd: string;
   grossBusinessOwnedCents: number;
   processingFeesCents: number;
+  refundsCents?: number;
+  disputeAdjustmentsCents?: number;
   netPayoutCents: number;
   currency: "EUR";
   status: BusinessPayoutStatus;
+  /** When the Super Admin recorded the transfer in Bookly — not the external bank transfer date. */
   paidAt?: string;
   providerReference?: string;
 }
@@ -214,13 +232,17 @@ export const superAdminFinanceApi = {
       },
     }),
 
-  /** "Send SEPA" / "Confirm Transfer" — one-step, self-attested (see the backend's own
-   * business-payout.model.ts doc comment on this confirmed product decision). */
-  executePayout: (businessId: string, providerReference?: string) =>
+  /** "Record bank transfer" — records a transfer the Super Admin already completed outside
+   * Bookly (Bookly never executes it), bound to the exact reviewed amount + snapshot. */
+  executePayout: (businessId: string, input: PayoutRecordInput) =>
     apiRequest<ExecutedPayout>({
       method: "POST",
       url: `/super-admin/businesses/${businessId}/finance/payouts`,
-      data: { providerReference },
+      data: {
+        expectedNetCents: input.expectedNetCents,
+        snapshotDigest: input.snapshotDigest,
+        ...(input.providerReference ? { providerReference: input.providerReference } : {}),
+      },
     }),
 };
 
