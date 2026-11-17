@@ -89,12 +89,14 @@ export interface ReconciliationReadiness {
   mode: CentralStripeMode | null;
   evidenceComplete: boolean;
   reviewNeeded: boolean;
+  /** FG03B-2 — false when the current Stripe account could not be identified (nothing counted). */
+  accountVerified?: boolean;
   coverage: {
     state: HistoryCoverageState;
     completeAsOf: string | null;
     lastCompletedAt: string | null;
     lastRunAt: string | null;
-    runInProgress: { pages: number; observed: number } | null;
+    runInProgress: { pages: number; observed: number; windowStart?: string | null } | null;
     lastError: string | null;
     accountMatches: boolean | null;
   };
@@ -104,10 +106,73 @@ export interface ReconciliationReadiness {
     notVerified: number;
     unresolved: number;
     inFlight: number;
+    /** FG03B-2 — status may still change (in flight, or paid within the failure window). */
+    unsettled?: number;
+    /** FG03B-2 — unsettled and not re-confirmed by Stripe recently (possible missed webhook). */
+    stale?: number;
+    /** FG03B-2 — retained observations of other Stripe accounts, excluded from every count. */
+    otherAccounts?: number;
   };
+  /** FG03B-2 — absent from older API builds. */
+  freshness?: { historyStale: boolean; staleAfterHours: number; paidFailureWindowDays: number };
   unresolvedWithdrawalOperations: number;
   syncEnabled: boolean;
   blockers: { code: string; message: string }[];
+}
+
+export type PayoutLinkage = "VERIFIED_BOOKLY" | "UNRESOLVED" | "NOT_VERIFIED";
+
+/**
+ * FG03B-2 — one observed Stripe payout (provider evidence, not a ledger entry), scoped by the API
+ * to the current verified Stripe account. Masked: no bank ids, metadata or provider free text.
+ */
+export interface ObservedPayout {
+  providerPayoutId: string;
+  mode: CentralStripeMode;
+  amountCents: number;
+  currency: string;
+  status: string;
+  automatic: boolean;
+  created: string;
+  arrivalDate: string | null;
+  failureCode: string | null;
+  destinationLast4: string | null;
+  linkage: PayoutLinkage;
+  booklyOperationId: string | null;
+  namedOperationId: string | null;
+  firstObservedVia: "WEBHOOK" | "HISTORY_SYNC";
+  firstObservedAt: string;
+  lastObservedAt: string;
+  settlement: "SETTLED" | "UNSETTLED";
+  stale: boolean;
+  reviewReasons: ("NOT_VERIFIED" | "UNRESOLVED" | "STALE")[];
+}
+
+export interface ObservedPayoutFilters {
+  mode?: CentralStripeMode;
+  linkage?: PayoutLinkage;
+  status?: ProviderPayoutStatus;
+  needsReview?: boolean;
+  /** YYYY-MM-DD, Stripe creation day (UTC), inclusive. */
+  from?: string;
+  to?: string;
+  page: number;
+  limit: number;
+}
+
+export interface ObservedPayoutPage {
+  mode: CentralStripeMode;
+  modeIsCurrent: boolean;
+  accountVerified: true;
+  items: ObservedPayout[];
+  pagination: { page: number; limit: number; total: number };
+  evidence: {
+    coverageState: HistoryCoverageState;
+    completeAsOf: string | null;
+    coverageAccountMatches: boolean | null;
+    historyStale: boolean;
+    otherAccountObservations: number;
+  };
 }
 
 export interface HistorySyncResult {
@@ -168,6 +233,13 @@ export const centralPayoutsApi = {
       method: "POST",
       url: "/super-admin/finance/withdrawals/provider-history/sync",
       data: maxPages ? { maxPages } : {},
+    }),
+  /** FG03B-2 — read-only observed-payout review (database only; no Stripe listing per load). */
+  listObservedPayouts: ({ needsReview, ...filters }: ObservedPayoutFilters) =>
+    apiRequest<ObservedPayoutPage>({
+      method: "GET",
+      url: "/super-admin/finance/withdrawals/provider-payouts",
+      params: { ...filters, ...(needsReview ? { needsReview: "true" } : {}) },
     }),
   refresh: (operationId: string) =>
     apiRequest<CentralPayoutOperation>({

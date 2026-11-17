@@ -10,7 +10,11 @@ import {
   type PlatformTransactionType,
 } from "@/lib/api/superAdminFinance";
 import { financeKeys } from "@/lib/finance/hooks";
-import { centralPayoutsApi, type InitiateCentralPayoutInput } from "@/lib/api/centralPayouts";
+import {
+  centralPayoutsApi,
+  type InitiateCentralPayoutInput,
+  type ObservedPayoutFilters,
+} from "@/lib/api/centralPayouts";
 
 export const superAdminFinanceKeys = {
   all: ["superAdminFinance"] as const,
@@ -147,7 +151,18 @@ export const centralPayoutKeys = {
   overview: () => [...centralPayoutKeys.all, "overview"] as const,
   bankAccount: () => [...centralPayoutKeys.all, "bankAccount"] as const,
   list: (page: number, limit: number) => [...centralPayoutKeys.all, "list", page, limit] as const,
+  observed: (filters: ObservedPayoutFilters) =>
+    [...centralPayoutKeys.all, "observed", filters] as const,
 };
+
+/** FG03B-2 — read-only observed Stripe payout review; refreshed after every history read. */
+export const useObservedPayoutsQuery = (filters: ObservedPayoutFilters) =>
+  useQuery({
+    queryKey: centralPayoutKeys.observed(filters),
+    queryFn: () => centralPayoutsApi.listObservedPayouts(filters),
+    retry: false,
+    placeholderData: (previous) => previous,
+  });
 
 export const useCentralPayoutOverviewQuery = () =>
   useQuery({

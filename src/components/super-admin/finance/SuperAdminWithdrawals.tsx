@@ -7,11 +7,16 @@ import type {
   CentralBankDestination,
   CentralPayoutOperation,
   CentralPayoutOverview,
+  CentralStripeMode,
+  ObservedPayoutFilters,
+  PayoutLinkage,
+  ProviderPayoutStatus,
 } from "@/lib/api/centralPayouts";
 import {
   useCentralPayoutOverviewQuery,
   useCentralPayoutsQuery,
   useInitiateCentralPayoutMutation,
+  useObservedPayoutsQuery,
   useRefreshCentralPayoutMutation,
   useSyncProviderPayoutHistoryMutation,
 } from "@/lib/superAdminFinance/hooks";
@@ -136,6 +141,7 @@ export default function SuperAdminWithdrawals() {
           <WithdrawalForm key={overview.balances.map((b) => b.currency).join(",")} overview={overview} />
           <StripePayoutHistory overview={overview} />
           <ReconciliationReadinessCard overview={overview} />
+          {overview.reconciliation && overview.mode && <ObservedPayoutReview currentMode={overview.mode} />}
         </>
       )}
 
@@ -552,6 +558,13 @@ function ReconciliationReadinessCard({ overview }: { overview: CentralPayoutOver
           {coverage.runInProgress && (
             <span className="text-xs text-gray-500">
               Read in progress: {coverage.runInProgress.pages} page(s), {coverage.runInProgress.observed} payout(s) so far.
+              {coverage.runInProgress.windowStart &&
+                ` Re-reading payouts created since ${formatDay(coverage.runInProgress.windowStart)}.`}
+            </span>
+          )}
+          {readiness.freshness?.historyStale && (
+            <span className="text-xs text-amber-700">
+              The last complete read is more than {readiness.freshness.staleAfterHours} hours old. Read the history again to refresh the evidence.
             </span>
           )}
           {coverage.lastRunAt && <span className="text-xs text-gray-500">Last read started {formatDate(coverage.lastRunAt)}</span>}
@@ -559,16 +572,38 @@ function ReconciliationReadinessCard({ overview }: { overview: CentralPayoutOver
             <span className="text-xs text-rose-600">The connected Stripe account differs from the one the history was read from.</span>
           )}
         </div>
-        <div className="flex flex-col gap-1 min-w-0">
-          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Observed Stripe payouts ({observations.total})</span>
-          <span>{observations.verifiedBookly} linked to a Bookly withdrawal</span>
-          <span>{observations.notVerified} origin not verified</span>
-          <span>{observations.unresolved} linkage unresolved</span>
-          <span>{observations.inFlight} pending or in transit</span>
-          {readiness.unresolvedWithdrawalOperations > 0 && (
-            <span>{readiness.unresolvedWithdrawalOperations} Bookly withdrawal(s) awaiting Stripe confirmation</span>
-          )}
-        </div>
+        {readiness.accountVerified === false ? (
+          <div className="flex flex-col gap-1 min-w-0">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Observed Stripe payouts</span>
+            <span className="text-rose-600">
+              Counts unavailable: the current Stripe account could not be identified, so no payout evidence is counted.
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1 min-w-0">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Observed Stripe payouts ({observations.total})</span>
+            <span>{observations.verifiedBookly} linked to a Bookly withdrawal</span>
+            <span>{observations.notVerified} origin not verified</span>
+            <span>{observations.unresolved} linkage unresolved</span>
+            <span>{observations.inFlight} pending or in transit</span>
+            {observations.unsettled !== undefined && readiness.freshness && (
+              <span>
+                {observations.unsettled} not yet settled (in flight, or paid within the last {readiness.freshness.paidFailureWindowDays} days)
+              </span>
+            )}
+            {observations.stale !== undefined && observations.stale > 0 && (
+              <span className="text-amber-700">{observations.stale} not re-confirmed by Stripe recently</span>
+            )}
+            {readiness.unresolvedWithdrawalOperations > 0 && (
+              <span>{readiness.unresolvedWithdrawalOperations} Bookly withdrawal(s) awaiting Stripe confirmation</span>
+            )}
+            {observations.otherAccounts !== undefined && observations.otherAccounts > 0 && (
+              <span className="text-xs text-gray-500">
+                {observations.otherAccounts} record(s) from a previously connected Stripe account are kept but not counted.
+              </span>
+            )}
+          </div>
+        )}
       </div>
       {readiness.blockers.length > 0 && (
         <ul aria-label="Reconciliation gaps" className="px-5 pb-4 flex flex-col gap-1.5 text-xs text-[#5B5D58]">
@@ -601,6 +636,182 @@ function ReconciliationReadinessCard({ overview }: { overview: CentralPayoutOver
           </>
         ) : (
           <span>Reading the full Stripe payout history is not enabled in this deployment.</span>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+const linkageBadge: Record<PayoutLinkage, { text: string; tone: string }> = {
+  VERIFIED_BOOKLY: { text: "Bookly withdrawal", tone: "bg-emerald-50 text-emerald-700" },
+  UNRESOLVED: { text: "Linkage unresolved", tone: "bg-amber-50 text-amber-700" },
+  NOT_VERIFIED: { text: "Origin not verified", tone: "bg-gray-100 text-gray-700" },
+};
+const selectClass = "border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-[#314158] bg-white";
+
+/**
+ * FG03B-2 — read-only review of every Stripe payout Bookly has observed (beyond the recent sample),
+ * served from Bookly's records for the current verified Stripe account. Provider evidence only:
+ * it is not Bookly's money ledger and offers no approve / assign / withdraw action.
+ */
+function ObservedPayoutReview({ currentMode }: { currentMode: CentralStripeMode }) {
+  const limit = 20;
+  const [filters, setFilters] = useState<Omit<ObservedPayoutFilters, "page" | "limit">>({});
+  const [page, setPage] = useState(1);
+  const query = useObservedPayoutsQuery({ ...filters, page, limit });
+  const data = query.data;
+  const rows = data?.items ?? [];
+  const total = data?.pagination.total ?? 0;
+  const update = (next: Partial<typeof filters>) => {
+    setFilters((current) => {
+      const merged = { ...current, ...next };
+      for (const key of Object.keys(merged) as (keyof typeof merged)[])
+        if (merged[key] === undefined || merged[key] === "" || merged[key] === false) delete merged[key];
+      return merged;
+    });
+    setPage(1);
+  };
+
+  return (
+    <Card className="p-0 overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 flex flex-col gap-0.5">
+        <span className="font-semibold text-sm text-[#111827]">Observed Stripe payouts</span>
+        <span className="text-xs text-gray-500">
+          Provider evidence Bookly has recorded from Stripe for the current Stripe account. This is not Bookly&apos;s money ledger, and nothing here approves, assigns or moves money.
+        </span>
+      </div>
+      <div role="group" aria-label="Payout filters" className="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2 text-xs">
+        <select aria-label="Linkage" className={selectClass} value={filters.linkage ?? ""} onChange={(e) => update({ linkage: (e.target.value || undefined) as PayoutLinkage | undefined })}>
+          <option value="">All linkage</option>
+          <option value="NOT_VERIFIED">Origin not verified</option>
+          <option value="UNRESOLVED">Linkage unresolved</option>
+          <option value="VERIFIED_BOOKLY">Bookly withdrawal</option>
+        </select>
+        <select aria-label="Stripe status" className={selectClass} value={filters.status ?? ""} onChange={(e) => update({ status: (e.target.value || undefined) as ProviderPayoutStatus | undefined })}>
+          <option value="">All statuses</option>
+          {(["pending", "in_transit", "paid", "failed", "canceled"] as const).map((s) => (
+            <option key={s} value={s}>{providerStatusLabel(s).text}</option>
+          ))}
+        </select>
+        <select aria-label="Mode" className={selectClass} value={filters.mode ?? currentMode} onChange={(e) => update({ mode: e.target.value === currentMode ? undefined : (e.target.value as CentralStripeMode) })}>
+          <option value="TEST">TEST</option>
+          <option value="LIVE">LIVE</option>
+        </select>
+        <label className="flex items-center gap-1 text-gray-500">
+          From
+          <input type="date" aria-label="Created from" className={selectClass} value={filters.from ?? ""} max={filters.to} onChange={(e) => update({ from: e.target.value || undefined })} />
+        </label>
+        <label className="flex items-center gap-1 text-gray-500">
+          To
+          <input type="date" aria-label="Created to" className={selectClass} value={filters.to ?? ""} min={filters.from} onChange={(e) => update({ to: e.target.value || undefined })} />
+        </label>
+        <label className="flex items-center gap-1.5 text-[#314158]">
+          <input type="checkbox" checked={filters.needsReview === true} onChange={(e) => update({ needsReview: e.target.checked })} />
+          Needs financial review only
+        </label>
+      </div>
+      {query.isLoading ? (
+        <p className="px-5 py-6 text-sm text-gray-500">Loading…</p>
+      ) : query.isError ? (
+        <div role="alert" className="px-5 py-6 text-sm text-rose-600">
+          {toUserMessage(query.error)}{" "}
+          <button type="button" disabled={query.isFetching} onClick={() => void query.refetch()} className="underline">Retry</button>
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="px-5 py-6 text-sm text-gray-500">
+          No observed payouts match these filters. Bookly only holds payouts it has read from Stripe, so this does not prove that none were made.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs min-w-[960px]">
+            <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
+              <tr>
+                {["Stripe payout", "Amount", "Created", "Stripe status", "Settlement", "Destination", "Linkage", "Last confirmed by Stripe"].map((h) => (
+                  <th key={h} className="px-4 py-2.5 font-semibold">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 text-[#314158]">
+              {rows.map((p) => {
+                const status = providerStatusLabel(p.status);
+                const link = linkageBadge[p.linkage] ?? linkageBadge.NOT_VERIFIED;
+                return (
+                  <tr key={`${p.mode}:${p.providerPayoutId}`} className="align-top">
+                    <td className="px-4 py-3 font-mono">
+                      {p.providerPayoutId}
+                      {p.reviewReasons.length > 0 && <p className="mt-1 font-sans text-[10px] font-semibold text-amber-700">Needs review</p>}
+                    </td>
+                    <td className="px-4 py-3 font-semibold whitespace-nowrap">
+                      {formatMinor(p.amountCents, p.currency)}
+                      <span className={`ml-1 text-[10px] ${p.mode === "LIVE" ? "text-rose-700" : "text-sky-700"}`}>{p.mode}</span>
+                      <p className="font-normal text-gray-500">{p.automatic ? "Automatic" : "Manual"}</p>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">{formatDate(p.created)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full font-semibold whitespace-nowrap ${status.tone}`}>{status.text}</span>
+                      {p.failureCode && <p className="mt-1 text-rose-600 font-mono">{p.failureCode}</p>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="whitespace-nowrap">{p.settlement === "SETTLED" ? "Settled" : "Not yet settled"}</span>
+                      {p.stale && <p className="mt-1 text-amber-700 font-semibold whitespace-nowrap">Stale: re-read needed</p>}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">{p.destinationLast4 ? `•••• ${p.destinationLast4}` : "Not recorded"}</td>
+                    <td className="px-4 py-3">
+                      <span className="flex flex-col gap-0.5">
+                        <span className={`px-2 py-0.5 rounded-full font-semibold whitespace-nowrap self-start ${link.tone}`}>{link.text}</span>
+                        {p.booklyOperationId && <span className="font-mono text-[10px] text-gray-500">Ref {p.booklyOperationId}</span>}
+                        {p.namedOperationId && <span className="font-mono text-[10px] text-gray-500">Names {p.namedOperationId} (unconfirmed)</span>}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {formatDate(p.lastObservedAt)}
+                      <p className="text-gray-500">{p.firstObservedVia === "WEBHOOK" ? "First seen by webhook" : "First seen by history read"}</p>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="px-5 py-3 border-t border-gray-100 flex flex-col sm:flex-row sm:items-start justify-between gap-3 text-xs text-gray-500">
+        <div className="flex flex-col gap-1">
+          {data && (
+            <>
+              <span>
+                {data.evidence.coverageState === "COMPLETE"
+                  ? `Stripe history read through ${formatDate(data.evidence.completeAsOf)}${data.evidence.historyStale ? " (more than 24 hours ago: newer payouts may be missing)" : ""}.`
+                  : data.evidence.coverageState === "IN_PROGRESS"
+                    ? "Stripe history read is incomplete: older payouts may be missing from this list."
+                    : "Stripe history has never been fully read: this list holds only payouts seen by webhook."}
+              </span>
+              {data.evidence.coverageAccountMatches === false && (
+                <span className="text-rose-600">The history was read from a different Stripe account.</span>
+              )}
+              {!data.modeIsCurrent && (
+                <span>{data.mode} records shown; the configured Stripe key is {currentMode}.</span>
+              )}
+              {data.evidence.otherAccountObservations > 0 && (
+                <span>{data.evidence.otherAccountObservations} record(s) from a previously connected Stripe account are excluded.</span>
+              )}
+            </>
+          )}
+          <span>
+            Unverified or unresolved payouts stay unassigned until an approved financial-review policy exists. Neither is a finding that a payout was unauthorized.
+          </span>
+        </div>
+        {total > 0 && (
+          <div className="flex items-center gap-2 shrink-0">
+            <span>
+              Page {page} of {Math.max(1, Math.ceil(total / limit))} · {total} record(s)
+            </span>
+            <button type="button" disabled={page === 1 || query.isFetching} onClick={() => setPage(page - 1)} className="border px-3 py-1 rounded-lg text-xs font-semibold disabled:opacity-40">
+              Previous
+            </button>
+            <button type="button" disabled={page * limit >= total || query.isFetching} onClick={() => setPage(page + 1)} className="border px-3 py-1 rounded-lg text-xs font-semibold disabled:opacity-40">
+              Next
+            </button>
+          </div>
         )}
       </div>
     </Card>
