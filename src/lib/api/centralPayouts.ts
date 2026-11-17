@@ -34,14 +34,33 @@ export interface CentralBankDestination {
   eligible: boolean;
 }
 
+/**
+ * FG03B-0 — one recent Stripe payout, from any origin. `origin` is BOOKLY_WITHDRAWAL only when
+ * a Bookly withdrawal record holds this exact Stripe payout id in the same mode; otherwise
+ * NOT_VERIFIED (never "unauthorized": it may be a Dashboard/automatic payout or a Bookly
+ * withdrawal not yet linked). Optional fields are absent from older API builds.
+ */
 export interface CentralProviderPayout {
   id: string;
   amountCents: number;
   currency: string;
   status: string;
+  /** Stripe's estimate only. */
   arrivalDate: string | null;
   created: string;
   automatic: boolean;
+  livemode?: boolean;
+  failureCode?: string | null;
+  destinationLast4?: string | null;
+  origin?: "BOOKLY_WITHDRAWAL" | "NOT_VERIFIED";
+  booklyOperationId?: string | null;
+}
+
+/** What the recent-payout list covers: a bounded sample, never a complete history. */
+export interface RecentStripePayoutsScope {
+  shown: number;
+  returnedByStripe: number;
+  requestLimit: number;
 }
 
 export interface CentralPayoutOverview {
@@ -53,6 +72,7 @@ export interface CentralPayoutOverview {
   scheduleInterval: string | null;
   restrictions: { code: string; message: string }[];
   recentStripePayouts: CentralProviderPayout[];
+  recentStripePayoutsScope?: RecentStripePayoutsScope;
   businessAttributedUnpaid: { currency: string; amountCents: number } | null;
 }
 

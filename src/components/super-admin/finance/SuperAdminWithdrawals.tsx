@@ -133,6 +133,7 @@ export default function SuperAdminWithdrawals() {
         <>
           <BalanceCards overview={overview} />
           <WithdrawalForm key={overview.balances.map((b) => b.currency).join(",")} overview={overview} />
+          <StripePayoutHistory overview={overview} />
         </>
       )}
 
@@ -391,6 +392,112 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
   );
 }
 
+/** Stripe's reported status for a payout of any origin. "Paid" is Stripe's report, not a bank
+ * statement entry. */
+const providerStatusLabel = (status: string): { text: string; tone: string } => {
+  switch (status) {
+    case "pending":
+      return { text: "Pending", tone: "bg-amber-50 text-amber-700" };
+    case "in_transit":
+      return { text: "In transit", tone: "bg-sky-50 text-sky-700" };
+    case "paid":
+      return { text: "Paid (reported by Stripe)", tone: "bg-emerald-50 text-emerald-700" };
+    case "failed":
+      return { text: "Failed", tone: "bg-rose-50 text-rose-700" };
+    case "canceled":
+      return { text: "Canceled", tone: "bg-gray-100 text-gray-700" };
+    default:
+      return { text: status || "Unknown", tone: "bg-gray-100 text-gray-700" };
+  }
+};
+
+/**
+ * FG03B-0 — read-only list of the most recent Stripe payouts, including ones not requested
+ * through Bookly. Origin is shown as "Bookly withdrawal" only when the API verified the link;
+ * everything else is "Origin not verified", never "unauthorized". The list is a bounded sample,
+ * so a payout missing from it proves nothing.
+ */
+function StripePayoutHistory({ overview }: { overview: CentralPayoutOverview }) {
+  const rows = overview.recentStripePayouts ?? [];
+  const scope = overview.recentStripePayoutsScope;
+  const unverified = rows.filter((p) => p.origin !== "BOOKLY_WITHDRAWAL").length;
+
+  return (
+    <Card className="p-0 overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 flex flex-col gap-0.5">
+        <span className="font-semibold text-sm text-[#111827]">Recent Stripe payouts</span>
+        <span className="text-xs text-gray-500">
+          As reported by Stripe, from any origin: Bookly withdrawals, Stripe Dashboard payouts and automatic payouts. Read-only.
+        </span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="px-5 py-6 text-sm text-gray-500">
+          Stripe returned no recent payouts. This does not prove that no payouts were made.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs min-w-[820px]">
+            <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
+              <tr>
+                {["Stripe payout", "Amount", "Created", "Status", "Est. arrival", "Type", "Destination", "Origin"].map((h) => (
+                  <th key={h} className="px-4 py-2.5 font-semibold">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 text-[#314158]">
+              {rows.map((p) => {
+                const status = providerStatusLabel(p.status);
+                const verified = p.origin === "BOOKLY_WITHDRAWAL";
+                return (
+                  <tr key={p.id} className="align-top">
+                    <td className="px-4 py-3 font-mono">{p.id}</td>
+                    <td className="px-4 py-3 font-semibold whitespace-nowrap">
+                      {formatMinor(p.amountCents, p.currency)}
+                      {p.livemode === false && <span className="ml-1 text-[10px] text-sky-700">TEST</span>}
+                      {p.livemode === true && <span className="ml-1 text-[10px] text-rose-700">LIVE</span>}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">{formatDate(p.created)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full font-semibold whitespace-nowrap ${status.tone}`}>{status.text}</span>
+                      {p.failureCode && <p className="mt-1 text-rose-600 font-mono">{p.failureCode}</p>}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">{p.arrivalDate ? formatDay(p.arrivalDate) : "Not provided"}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{p.automatic ? "Automatic (Stripe schedule)" : "Manual"}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{p.destinationLast4 ? `•••• ${p.destinationLast4}` : "Not shown"}</td>
+                    <td className="px-4 py-3">
+                      {verified ? (
+                        <span className="flex flex-col gap-0.5">
+                          <span className="px-2 py-0.5 rounded-full font-semibold whitespace-nowrap bg-emerald-50 text-emerald-700 self-start">Bookly withdrawal</span>
+                          {p.booklyOperationId && <span className="font-mono text-[10px] text-gray-500">Ref {p.booklyOperationId}</span>}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full font-semibold whitespace-nowrap bg-gray-100 text-gray-700">Origin not verified</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="px-5 py-3 border-t border-gray-100 flex flex-col gap-1 text-xs text-gray-500">
+        <span>
+          {scope
+            ? `Showing the ${scope.shown} most recent of ${scope.returnedByStripe} payouts Stripe returned (Bookly requests at most ${scope.requestLimit}). Older payouts are not shown, so this is not a complete payout history.`
+            : "This list covers only Stripe's most recent payouts. It is not a complete payout history."}
+        </span>
+        {unverified > 0 && (
+          <span>
+            &quot;Origin not verified&quot; means Bookly has no withdrawal record holding this Stripe payout. It may have been made in the Stripe Dashboard, by Stripe&apos;s automatic schedule, or be a Bookly withdrawal not yet linked. It is not a finding that the payout was unauthorized.
+          </span>
+        )}
+        <span>Stripe&apos;s &quot;Paid&quot; status and estimated arrival are Stripe&apos;s reports. Check the bank statement to confirm receipt.</span>
+      </div>
+    </Card>
+  );
+}
+
 function WithdrawalHistory() {
   const [page, setPage] = useState(1);
   const limit = 20;
@@ -401,8 +508,9 @@ function WithdrawalHistory() {
 
   return (
     <Card className="p-0 overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100">
+      <div className="px-5 py-4 border-b border-gray-100 flex flex-col gap-0.5">
         <span className="font-semibold text-sm text-[#111827]">Withdrawal history</span>
+        <span className="text-xs text-gray-500">Withdrawals requested through Bookly. Stripe&apos;s own payout list is shown separately above.</span>
       </div>
       {query.isLoading ? (
         <p className="px-5 py-6 text-sm text-gray-500">Loading…</p>
