@@ -81,9 +81,9 @@ export interface CentralPayoutOverview {
 export type HistoryCoverageState = "NEVER_RUN" | "IN_PROGRESS" | "COMPLETE";
 
 /**
- * FG03B-1 — read-only payout-evidence status (api payout-reconciliation.ts). `evidenceComplete`
- * only means Bookly holds complete, fully linked payout evidence up to `completeAsOf`; it is NOT
- * permission to withdraw.
+ * FG03B-1/3 — read-only payout-evidence status (api payout-reconciliation.ts). `evidenceComplete`
+ * only means complete, current, fully linked PROVIDER evidence; it is not financial finality
+ * (see `finality`) and NOT permission to withdraw.
  */
 export interface ReconciliationReadiness {
   mode: CentralStripeMode | null;
@@ -96,7 +96,7 @@ export interface ReconciliationReadiness {
     completeAsOf: string | null;
     lastCompletedAt: string | null;
     lastRunAt: string | null;
-    runInProgress: { pages: number; observed: number; windowStart?: string | null } | null;
+    runInProgress: { pages: number; observed: number; startedAt?: string } | null;
     lastError: string | null;
     accountMatches: boolean | null;
   };
@@ -106,15 +106,25 @@ export interface ReconciliationReadiness {
     notVerified: number;
     unresolved: number;
     inFlight: number;
-    /** FG03B-2 — status may still change (in flight, or paid within the failure window). */
-    unsettled?: number;
-    /** FG03B-2 — unsettled and not re-confirmed by Stripe recently (possible missed webhook). */
+    /** FG03B-3 — Stripe reports paid: not bank-confirmed and still able to change to failed. */
+    reportedPaid?: number;
+    /** Not ended and not re-confirmed by Stripe within the freshness target. */
     stale?: number;
+    /** FG03B-3 — created before the last complete full read but not listed by it. */
+    notReconfirmed?: number;
+    /** FG03B-3 — Stripe's current list contradicts the recorded status. */
+    statusConflicts?: number;
     /** FG03B-2 — retained observations of other Stripe accounts, excluded from every count. */
     otherAccounts?: number;
   };
-  /** FG03B-2 — absent from older API builds. */
-  freshness?: { historyStale: boolean; staleAfterHours: number; paidFailureWindowDays: number };
+  /** FG03B-3 — absent from older API builds. */
+  freshness?: {
+    statusVerifiedAsOf: string | null;
+    verificationStale: boolean;
+    freshnessTargetHours: number;
+  };
+  /** FG03B-3 — financial finality is never inferred from Stripe statuses. */
+  finality?: { established: false; code: string; message: string };
   unresolvedWithdrawalOperations: number;
   syncEnabled: boolean;
   blockers: { code: string; message: string }[];
@@ -142,10 +152,16 @@ export interface ObservedPayout {
   namedOperationId: string | null;
   firstObservedVia: "WEBHOOK" | "HISTORY_SYNC";
   firstObservedAt: string;
-  lastObservedAt: string;
-  settlement: "SETTLED" | "UNSETTLED";
-  stale: boolean;
-  reviewReasons: ("NOT_VERIFIED" | "UNRESOLVED" | "STALE")[];
+  /** FG03B-3 — IN_FLIGHT, REPORTED_PAID (not bank-confirmed, can still fail) or ENDED. */
+  providerLifecycle: "IN_FLIGHT" | "REPORTED_PAID" | "ENDED";
+  /** Last time Stripe confirmed the recorded status (webhook or list read). */
+  lastVerifiedAt: string;
+  lastVerifiedVia: "WEBHOOK" | "HISTORY_SYNC";
+  /** Last time a full history read listed this payout (null: never). */
+  lastListedAt: string | null;
+  statusVerification: "CURRENT" | "STALE" | "NOT_RECONFIRMED" | "CONFLICT";
+  listedStatusConflict: string | null;
+  reviewReasons: ("NOT_VERIFIED" | "UNRESOLVED" | "STALE" | "NOT_RECONFIRMED" | "STATUS_CONFLICT")[];
 }
 
 export interface ObservedPayoutFilters {
@@ -170,7 +186,11 @@ export interface ObservedPayoutPage {
     coverageState: HistoryCoverageState;
     completeAsOf: string | null;
     coverageAccountMatches: boolean | null;
-    historyStale: boolean;
+    /** FG03B-3 — every listed payout's status was re-read from Stripe at/after this time. */
+    statusVerifiedAsOf: string | null;
+    verificationStale: boolean;
+    verificationInProgress: boolean;
+    lastError: string | null;
     otherAccountObservations: number;
   };
 }

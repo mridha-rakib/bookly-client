@@ -35,13 +35,19 @@ const observed = (over: Partial<ObservedPayout> = {}): ObservedPayout => ({
   providerPayoutId: "po_obs_1", mode: "TEST", amountCents: 4200, currency: "eur", status: "paid", automatic: true,
   created: "2029-12-01T10:00:00.000Z", arrivalDate: null, failureCode: null, destinationLast4: "6789",
   linkage: "NOT_VERIFIED", booklyOperationId: null, namedOperationId: null, firstObservedVia: "HISTORY_SYNC",
-  firstObservedAt: "2030-01-01T10:00:00.000Z", lastObservedAt: "2030-01-01T10:00:00.000Z",
-  settlement: "SETTLED", stale: false, reviewReasons: ["NOT_VERIFIED"], ...over,
+  firstObservedAt: "2030-01-01T10:00:00.000Z", providerLifecycle: "REPORTED_PAID",
+  lastVerifiedAt: "2030-01-01T10:00:00.000Z", lastVerifiedVia: "HISTORY_SYNC", lastListedAt: "2030-01-01T10:00:00.000Z",
+  statusVerification: "CURRENT", listedStatusConflict: null, reviewReasons: ["NOT_VERIFIED"], ...over,
+});
+const evidence = (over: Partial<ObservedPayoutPage["evidence"]> = {}): ObservedPayoutPage["evidence"] => ({
+  coverageState: "COMPLETE", completeAsOf: "2030-01-01T10:00:00.000Z", coverageAccountMatches: true,
+  statusVerifiedAsOf: "2030-01-01T10:00:00.000Z", verificationStale: false, verificationInProgress: false,
+  lastError: null, otherAccountObservations: 0, ...over,
 });
 const observedPage = (over: Partial<ObservedPayoutPage> = {}): ObservedPayoutPage => ({
   mode: "TEST", modeIsCurrent: true, accountVerified: true, items: [],
   pagination: { page: 1, limit: 20, total: 0 },
-  evidence: { coverageState: "COMPLETE", completeAsOf: "2030-01-01T10:00:00.000Z", coverageAccountMatches: true, historyStale: false, otherAccountObservations: 0 },
+  evidence: evidence(),
   ...over,
 });
 
@@ -168,9 +174,9 @@ it("complete evidence is never presented as withdrawal permission; account misma
   }));
   await render();
   const text = host.textContent ?? "";
-  expect(text).toContain("Evidence complete");
+  expect(text).toContain("Provider evidence complete");
   expect(text).toContain("This is not permission to withdraw");
-  expect(text).toContain("Later payouts rely on webhook delivery");
+  expect(text).toContain("Later payouts and status changes rely on webhook delivery");
   expect(text).toContain("The connected Stripe account differs");
   expect(centralPayoutsApi.initiate).not.toHaveBeenCalled();
 });
@@ -216,18 +222,26 @@ const reviewCard = () =>
 it("shows freshness and fails closed on an unidentified Stripe account", async () => {
   vi.spyOn(centralPayoutsApi, "getOverview").mockResolvedValue(overview({
     reconciliation: readiness({
-      observations: { total: 5, verifiedBookly: 1, notVerified: 2, unresolved: 0, inFlight: 1, unsettled: 3, stale: 2, otherAccounts: 4 },
-      freshness: { historyStale: true, staleAfterHours: 24, paidFailureWindowDays: 10 },
-      coverage: { state: "IN_PROGRESS", completeAsOf: null, lastCompletedAt: null, lastRunAt: null, runInProgress: { pages: 1, observed: 100, windowStart: "2029-12-20T00:00:00.000Z" }, lastError: null, accountMatches: true },
+      observations: { total: 5, verifiedBookly: 1, notVerified: 2, unresolved: 0, inFlight: 1, reportedPaid: 3, stale: 2, notReconfirmed: 1, statusConflicts: 1, otherAccounts: 4 },
+      freshness: { statusVerifiedAsOf: "2029-12-20T09:00:00.000Z", verificationStale: true, freshnessTargetHours: 24 },
+      finality: { established: false, code: "BANK_SETTLEMENT_NOT_VERIFIED", message: "Stripe's `paid` is Stripe's report, not a bank-confirmed receipt." },
+      coverage: { state: "COMPLETE", completeAsOf: "2029-12-20T09:00:00.000Z", lastCompletedAt: null, lastRunAt: null, runInProgress: { pages: 1, observed: 100, startedAt: "2030-01-02T09:00:00.000Z" }, lastError: null, accountMatches: true },
     }),
   }));
   await render();
   let text = host.textContent ?? "";
-  expect(text).toContain("3 not yet settled (in flight, or paid within the last 10 days)");
+  // FG03B-3 — no finality window: paid is never shown as settled or final.
+  expect(text).toContain("3 reported paid by Stripe (not bank-confirmed; can still change to failed)");
+  expect(text).not.toMatch(/settled/i);
   expect(text).toContain("2 not re-confirmed by Stripe recently");
+  expect(text).toContain("1 not listed by the last full Stripe read");
+  expect(text).toContain("1 with a status Stripe's current list contradicts");
   expect(text).toContain("4 record(s) from a previously connected Stripe account are kept but not counted.");
-  expect(text).toContain("Re-reading payouts created since 20 Dec 2029.");
-  expect(text).toContain("The last complete read is more than 24 hours old.");
+  expect(text).toContain("Every payout status re-verified by a full Stripe read on 20 Dec 2029");
+  expect(text).toContain("Re-verification in progress: 1 page(s), 100 payout(s) so far.");
+  expect(text).toContain("Payout statuses were last re-verified more than 24 hours ago.");
+  expect(text).toContain("Financial finality: not established.");
+  expect(text).toContain("not a bank-confirmed receipt");
 
   await act(async () => root.unmount());
   root = createRoot(host);
@@ -250,12 +264,14 @@ it("reviews observed payouts read-only with filters, pagination and evidence sta
   vi.spyOn(centralPayoutsApi, "getOverview").mockResolvedValue(overview({ reconciliation: readiness() }));
   vi.mocked(centralPayoutsApi.listObservedPayouts).mockResolvedValue(observedPage({
     items: [
-      observed({ providerPayoutId: "po_unverified", stale: true, settlement: "UNSETTLED", status: "in_transit", reviewReasons: ["NOT_VERIFIED", "STALE"] }),
+      observed({ providerPayoutId: "po_unverified", statusVerification: "STALE", providerLifecycle: "IN_FLIGHT", status: "in_transit", reviewReasons: ["NOT_VERIFIED", "STALE"] }),
       observed({ providerPayoutId: "po_named", linkage: "UNRESOLVED", namedOperationId: "op_named_1", reviewReasons: ["UNRESOLVED"], destinationLast4: null }),
-      observed({ providerPayoutId: "po_bookly_obs", linkage: "VERIFIED_BOOKLY", booklyOperationId: "op_ver_1", reviewReasons: [], automatic: false, failureCode: "account_closed", status: "failed", firstObservedVia: "WEBHOOK" }),
+      observed({ providerPayoutId: "po_bookly_obs", linkage: "VERIFIED_BOOKLY", booklyOperationId: "op_ver_1", reviewReasons: [], automatic: false, failureCode: "account_closed", status: "failed", providerLifecycle: "ENDED", lastVerifiedVia: "WEBHOOK" }),
+      observed({ providerPayoutId: "po_conflict", status: "failed", providerLifecycle: "ENDED", statusVerification: "CONFLICT", listedStatusConflict: "paid", reviewReasons: ["NOT_VERIFIED", "STATUS_CONFLICT"] }),
+      observed({ providerPayoutId: "po_ghost", statusVerification: "NOT_RECONFIRMED", lastListedAt: null, lastVerifiedVia: "WEBHOOK", reviewReasons: ["NOT_VERIFIED", "NOT_RECONFIRMED"] }),
     ],
     pagination: { page: 1, limit: 20, total: 45 },
-    evidence: { coverageState: "COMPLETE", completeAsOf: "2030-01-01T10:00:00.000Z", coverageAccountMatches: true, historyStale: true, otherAccountObservations: 3 },
+    evidence: evidence({ verificationStale: true, verificationInProgress: true, lastError: "Rate limited by Stripe", otherAccountObservations: 3 }),
   }));
   await render(); await flush(); // the review query starts once the overview has loaded
   expect(centralPayoutsApi.listObservedPayouts).toHaveBeenLastCalledWith({ page: 1, limit: 20 });
@@ -265,20 +281,34 @@ it("reviews observed payouts read-only with filters, pagination and evidence sta
   const unverified = rowFor("po_unverified")!.textContent!;
   expect(unverified).toContain("Needs review");
   expect(unverified).toContain("Origin not verified");
-  expect(unverified).toContain("Not yet settled");
+  expect(unverified).toContain("In transit");
   expect(unverified).toContain("Stale: re-read needed");
   expect(unverified).toContain("•••• 6789");
-  expect(unverified).toContain("First seen by history read");
+  expect(unverified).toContain("By history read");
+  expect(unverified).toContain("Last full read");
   const named = rowFor("po_named")!.textContent!;
   expect(named).toContain("Linkage unresolved");
   expect(named).toContain("Names op_named_1 (unconfirmed)");
   expect(named).toContain("Not recorded");
+  // Stripe-reported paid is labelled as such, never as settled or bank-confirmed.
+  expect(named).toContain("Paid (reported by Stripe)");
+  expect(named).toContain("Not bank-confirmed; can still fail");
+  expect(named).toContain("Verified current");
   const bookly = rowFor("po_bookly_obs")!.textContent!;
   expect(bookly).toContain("Bookly withdrawal");
   expect(bookly).toContain("Ref op_ver_1");
   expect(bookly).not.toContain("Needs review");
   expect(bookly).toContain("account_closed");
-  expect(text).toContain("more than 24 hours ago: newer payouts may be missing");
+  expect(bookly).toContain("By webhook");
+  expect(bookly).not.toContain("Not bank-confirmed");
+  expect(rowFor("po_conflict")!.textContent).toContain("Stripe list now says Paid (reported by Stripe)");
+  const ghost = rowFor("po_ghost")!.textContent!;
+  expect(ghost).toContain("Not in last full Stripe read");
+  expect(ghost).toContain("Never in a full read");
+  expect(text).toContain("more than 24 hours ago: newer payouts or status changes may be missing");
+  expect(text).toContain("A full re-verification read is in progress.");
+  expect(text).toContain("The last Stripe read stopped: Rate limited by Stripe");
+  expect(text).not.toMatch(/settled/i);
   expect(text).toContain("3 record(s) from a previously connected Stripe account are excluded.");
   expect(text).toContain("Page 1 of 3 · 45 record(s)");
   expect(text).toContain("Neither is a finding that a payout was unauthorized.");
@@ -312,7 +342,7 @@ it("reviews observed payouts read-only with filters, pagination and evidence sta
 it("an empty review never claims that no payouts were made", async () => {
   vi.spyOn(centralPayoutsApi, "getOverview").mockResolvedValue(overview({ reconciliation: readiness() }));
   vi.mocked(centralPayoutsApi.listObservedPayouts).mockResolvedValue(observedPage({
-    evidence: { coverageState: "NEVER_RUN", completeAsOf: null, coverageAccountMatches: null, historyStale: false, otherAccountObservations: 0 },
+    evidence: evidence({ coverageState: "NEVER_RUN", completeAsOf: null, coverageAccountMatches: null, statusVerifiedAsOf: null }),
   }));
   await render(); await flush();
   expect(host.textContent).toContain("No observed payouts match these filters. Bookly only holds payouts it has read from Stripe, so this does not prove that none were made.");

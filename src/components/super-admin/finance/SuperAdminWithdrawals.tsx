@@ -8,6 +8,7 @@ import type {
   CentralPayoutOperation,
   CentralPayoutOverview,
   CentralStripeMode,
+  ObservedPayout,
   ObservedPayoutFilters,
   PayoutLinkage,
   ProviderPayoutStatus,
@@ -502,7 +503,7 @@ function StripePayoutHistory({ overview }: { overview: CentralPayoutOverview }) 
             &quot;Origin not verified&quot; means Bookly has no withdrawal record holding this Stripe payout. It may have been made in the Stripe Dashboard, by Stripe&apos;s automatic schedule, or be a Bookly withdrawal not yet linked. &quot;Linkage unresolved&quot; means the payout names a Bookly withdrawal that has not confirmed it yet. Neither is a finding that the payout was unauthorized.
           </span>
         )}
-        <span>Stripe&apos;s &quot;Paid&quot; status and estimated arrival are Stripe&apos;s reports. Check the bank statement to confirm receipt.</span>
+        <span>Stripe&apos;s &quot;Paid&quot; status and estimated arrival are Stripe&apos;s reports, not bank confirmation, and Stripe documents that a paid payout can later change to failed. Check the bank statement to confirm receipt.</span>
       </div>
     </Card>
   );
@@ -530,7 +531,7 @@ function ReconciliationReadinessCard({ overview }: { overview: CentralPayoutOver
   }
   const { coverage, observations } = readiness;
   const status = readiness.evidenceComplete
-    ? { text: "Evidence complete", tone: "bg-emerald-50 text-emerald-700" }
+    ? { text: "Provider evidence complete", tone: "bg-emerald-50 text-emerald-700" }
     : readiness.reviewNeeded
       ? { text: "Review needed", tone: "bg-amber-50 text-amber-700" }
       : { text: "Evidence incomplete", tone: "bg-gray-100 text-gray-700" };
@@ -552,19 +553,20 @@ function ReconciliationReadinessCard({ overview }: { overview: CentralPayoutOver
           <span className="font-medium">{coverageLabel[coverage.state] ?? coverage.state}</span>
           {coverage.state === "COMPLETE" && coverage.completeAsOf && (
             <span className="text-xs text-gray-500">
-              Read through {formatDate(coverage.completeAsOf)}. Later payouts rely on webhook delivery until the next read.
+              {readiness.freshness?.statusVerifiedAsOf
+                ? `Every payout status re-verified by a full Stripe read on ${formatDate(readiness.freshness.statusVerifiedAsOf)}.`
+                : `Read through ${formatDate(coverage.completeAsOf)}.`}{" "}
+              Later payouts and status changes rely on webhook delivery until the next full read.
             </span>
           )}
           {coverage.runInProgress && (
             <span className="text-xs text-gray-500">
-              Read in progress: {coverage.runInProgress.pages} page(s), {coverage.runInProgress.observed} payout(s) so far.
-              {coverage.runInProgress.windowStart &&
-                ` Re-reading payouts created since ${formatDay(coverage.runInProgress.windowStart)}.`}
+              {coverage.state === "COMPLETE" ? "Re-verification" : "Read"} in progress: {coverage.runInProgress.pages} page(s), {coverage.runInProgress.observed} payout(s) so far.
             </span>
           )}
-          {readiness.freshness?.historyStale && (
+          {readiness.freshness?.verificationStale && (
             <span className="text-xs text-amber-700">
-              The last complete read is more than {readiness.freshness.staleAfterHours} hours old. Read the history again to refresh the evidence.
+              Payout statuses were last re-verified more than {readiness.freshness.freshnessTargetHours} hours ago. Read the history again to refresh the evidence.
             </span>
           )}
           {coverage.lastRunAt && <span className="text-xs text-gray-500">Last read started {formatDate(coverage.lastRunAt)}</span>}
@@ -586,13 +588,17 @@ function ReconciliationReadinessCard({ overview }: { overview: CentralPayoutOver
             <span>{observations.notVerified} origin not verified</span>
             <span>{observations.unresolved} linkage unresolved</span>
             <span>{observations.inFlight} pending or in transit</span>
-            {observations.unsettled !== undefined && readiness.freshness && (
-              <span>
-                {observations.unsettled} not yet settled (in flight, or paid within the last {readiness.freshness.paidFailureWindowDays} days)
-              </span>
+            {observations.reportedPaid !== undefined && (
+              <span>{observations.reportedPaid} reported paid by Stripe (not bank-confirmed; can still change to failed)</span>
             )}
             {observations.stale !== undefined && observations.stale > 0 && (
               <span className="text-amber-700">{observations.stale} not re-confirmed by Stripe recently</span>
+            )}
+            {observations.notReconfirmed !== undefined && observations.notReconfirmed > 0 && (
+              <span className="text-amber-700">{observations.notReconfirmed} not listed by the last full Stripe read</span>
+            )}
+            {observations.statusConflicts !== undefined && observations.statusConflicts > 0 && (
+              <span className="text-rose-600">{observations.statusConflicts} with a status Stripe&apos;s current list contradicts</span>
             )}
             {readiness.unresolvedWithdrawalOperations > 0 && (
               <span>{readiness.unresolvedWithdrawalOperations} Bookly withdrawal(s) awaiting Stripe confirmation</span>
@@ -605,6 +611,11 @@ function ReconciliationReadinessCard({ overview }: { overview: CentralPayoutOver
           </div>
         )}
       </div>
+      {readiness.finality && (
+        <p className="px-5 pb-3 text-xs text-[#5B5D58]">
+          <span className="font-semibold text-[#314158]">Financial finality: not established.</span> {readiness.finality.message}
+        </p>
+      )}
       {readiness.blockers.length > 0 && (
         <ul aria-label="Reconciliation gaps" className="px-5 pb-4 flex flex-col gap-1.5 text-xs text-[#5B5D58]">
           {readiness.blockers.map((b) => (
@@ -648,6 +659,20 @@ const linkageBadge: Record<PayoutLinkage, { text: string; tone: string }> = {
   NOT_VERIFIED: { text: "Origin not verified", tone: "bg-gray-100 text-gray-700" },
 };
 const selectClass = "border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-[#314158] bg-white";
+
+/** FG03B-3 — whether Bookly's record of the Stripe status is currently verified (not finality). */
+const statusEvidenceLabel = (p: ObservedPayout): { text: string; tone: string } => {
+  switch (p.statusVerification) {
+    case "CONFLICT":
+      return { text: `Stripe list now says ${providerStatusLabel(p.listedStatusConflict ?? "").text}`, tone: "text-rose-600" };
+    case "NOT_RECONFIRMED":
+      return { text: "Not in last full Stripe read", tone: "text-amber-700" };
+    case "STALE":
+      return { text: "Stale: re-read needed", tone: "text-amber-700" };
+    default:
+      return { text: "Verified current", tone: "text-emerald-700" };
+  }
+};
 
 /**
  * FG03B-2 — read-only review of every Stripe payout Bookly has observed (beyond the recent sample),
@@ -726,7 +751,7 @@ function ObservedPayoutReview({ currentMode }: { currentMode: CentralStripeMode 
           <table className="w-full text-left text-xs min-w-[960px]">
             <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
               <tr>
-                {["Stripe payout", "Amount", "Created", "Stripe status", "Settlement", "Destination", "Linkage", "Last confirmed by Stripe"].map((h) => (
+                {["Stripe payout", "Amount", "Created", "Stripe-reported status", "Status evidence", "Destination", "Linkage", "Last confirmed by Stripe"].map((h) => (
                   <th key={h} className="px-4 py-2.5 font-semibold">{h}</th>
                 ))}
               </tr>
@@ -750,10 +775,18 @@ function ObservedPayoutReview({ currentMode }: { currentMode: CentralStripeMode 
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded-full font-semibold whitespace-nowrap ${status.tone}`}>{status.text}</span>
                       {p.failureCode && <p className="mt-1 text-rose-600 font-mono">{p.failureCode}</p>}
+                      {p.providerLifecycle === "REPORTED_PAID" && (
+                        <p className="mt-1 text-gray-500 whitespace-nowrap">Not bank-confirmed; can still fail</p>
+                      )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="whitespace-nowrap">{p.settlement === "SETTLED" ? "Settled" : "Not yet settled"}</span>
-                      {p.stale && <p className="mt-1 text-amber-700 font-semibold whitespace-nowrap">Stale: re-read needed</p>}
+                      {(() => {
+                        const evidence = statusEvidenceLabel(p);
+                        return <span className={`font-semibold whitespace-nowrap ${evidence.tone}`}>{evidence.text}</span>;
+                      })()}
+                      <p className="mt-1 text-gray-500 whitespace-nowrap">
+                        {p.lastListedAt ? `Last full read ${formatDate(p.lastListedAt)}` : "Never in a full read"}
+                      </p>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">{p.destinationLast4 ? `•••• ${p.destinationLast4}` : "Not recorded"}</td>
                     <td className="px-4 py-3">
@@ -764,8 +797,8 @@ function ObservedPayoutReview({ currentMode }: { currentMode: CentralStripeMode 
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      {formatDate(p.lastObservedAt)}
-                      <p className="text-gray-500">{p.firstObservedVia === "WEBHOOK" ? "First seen by webhook" : "First seen by history read"}</p>
+                      {formatDate(p.lastVerifiedAt)}
+                      <p className="text-gray-500">{p.lastVerifiedVia === "WEBHOOK" ? "By webhook" : "By history read"}</p>
                     </td>
                   </tr>
                 );
@@ -779,12 +812,18 @@ function ObservedPayoutReview({ currentMode }: { currentMode: CentralStripeMode 
           {data && (
             <>
               <span>
-                {data.evidence.coverageState === "COMPLETE"
-                  ? `Stripe history read through ${formatDate(data.evidence.completeAsOf)}${data.evidence.historyStale ? " (more than 24 hours ago: newer payouts may be missing)" : ""}.`
+                {data.evidence.statusVerifiedAsOf
+                  ? `All payout statuses re-verified by a full Stripe read on ${formatDate(data.evidence.statusVerifiedAsOf)}${data.evidence.verificationStale ? " (more than 24 hours ago: newer payouts or status changes may be missing)" : ""}.`
                   : data.evidence.coverageState === "IN_PROGRESS"
                     ? "Stripe history read is incomplete: older payouts may be missing from this list."
-                    : "Stripe history has never been fully read: this list holds only payouts seen by webhook."}
+                    : data.evidence.coverageState === "COMPLETE"
+                      ? "The last full Stripe read does not apply to the current account: statuses are not re-verified."
+                      : "Stripe history has never been fully read: this list holds only payouts seen by webhook."}
               </span>
+              {data.evidence.verificationInProgress && <span>A full re-verification read is in progress.</span>}
+              {data.evidence.lastError && (
+                <span className="text-amber-700">The last Stripe read stopped: {data.evidence.lastError}</span>
+              )}
               {data.evidence.coverageAccountMatches === false && (
                 <span className="text-rose-600">The history was read from a different Stripe account.</span>
               )}
