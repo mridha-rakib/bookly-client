@@ -30,7 +30,7 @@ it("does not present stale enabled status when the provider response is unavaila
     act(() => root.render(<PlatformBankAccount />));
     expect(host.textContent).toContain("details are unavailable");
     expect(host.textContent).not.toContain("Stripe reports payouts enabled");
-    expect(host.textContent).toContain("Live Bookly withdrawals remain disabled");
+    expect(host.textContent).toContain("LIVE withdrawals also require explicit enablement for this deployment");
   } finally { act(() => root.unmount()); }
 });
 
@@ -47,7 +47,7 @@ it("distinguishes enabled, disabled and unknown provider status", () => {
       state.bank.data = { state: "NO_DESTINATION", payoutsEnabled: value, destinations: [] };
       act(() => root.render(<PlatformBankAccount />));
       expect(host.textContent).toContain(message);
-      expect(host.textContent).toContain("Live Bookly withdrawals remain disabled");
+      expect(host.textContent).toContain("LIVE withdrawals also require explicit enablement for this deployment");
     }
     state.bank.data = { state: "NOT_CONFIGURED", payoutsEnabled: true, destinations: [] };
     act(() => root.render(<PlatformBankAccount />));

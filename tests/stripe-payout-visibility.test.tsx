@@ -10,6 +10,7 @@ import {
   type ObservedPayout,
   type ObservedPayoutPage,
 } from "@/lib/api/centralPayouts";
+import { withdrawalEligibility } from "./helpers/withdrawal-eligibility";
 
 /** FG03B-0 — read-only recent Stripe payout visibility on the Super Admin Withdrawals screen. */
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -59,6 +60,7 @@ beforeEach(() => {
   vi.spyOn(centralPayoutsApi, "initiate");
   vi.spyOn(centralPayoutsApi, "refresh");
   vi.spyOn(centralPayoutsApi, "listObservedPayouts").mockResolvedValue(observedPage());
+  vi.spyOn(centralPayoutsApi, "getEligibility").mockResolvedValue(withdrawalEligibility());
 });
 afterEach(async () => { await act(async () => root.unmount()); cache.clear(); host.remove(); vi.restoreAllMocks(); });
 

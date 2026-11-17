@@ -51,7 +51,7 @@ export default function PlatformBankAccount() {
       </>}
       <p className="text-xs text-gray-500">In Stripe Dashboard, select Bookly&apos;s platform account, then Settings → Bank accounts and currencies. Verify the bank and settlement currency, and complete any outstanding Stripe verification requirements. Changes and verification take place there.</p>
       <a href="https://dashboard.stripe.com/settings/payouts" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold underline self-start">Manage platform bank account in Stripe</a>
-      <p className="text-xs text-gray-500">Reserve policy status: awaiting Owner/accounting approval. Live Bookly withdrawals remain disabled pending reserve-policy approval and reviewed financial controls.</p>
+      <p className="text-xs text-gray-500">Withdrawals are limited to the eligible amount Bookly calculates from its ledger and Stripe evidence. LIVE withdrawals also require explicit enablement for this deployment.</p>
     </section>
   );
 }

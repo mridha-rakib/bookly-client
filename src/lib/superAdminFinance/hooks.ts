@@ -153,7 +153,17 @@ export const centralPayoutKeys = {
   list: (page: number, limit: number) => [...centralPayoutKeys.all, "list", page, limit] as const,
   observed: (filters: ObservedPayoutFilters) =>
     [...centralPayoutKeys.all, "observed", filters] as const,
+  eligibility: () => [...centralPayoutKeys.all, "eligibility"] as const,
 };
+
+/** CW-1 — the authoritative withdrawal eligibility; refreshed after every withdrawal attempt
+ * (all central payout keys are invalidated on settle). */
+export const useWithdrawalEligibilityQuery = () =>
+  useQuery({
+    queryKey: centralPayoutKeys.eligibility(),
+    queryFn: () => centralPayoutsApi.getEligibility(),
+    retry: false,
+  });
 
 /** FG03B-2 — read-only observed Stripe payout review; refreshed after every history read. */
 export const useObservedPayoutsQuery = (filters: ObservedPayoutFilters) =>

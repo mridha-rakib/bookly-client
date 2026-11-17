@@ -3,11 +3,13 @@
 import React, { useMemo, useState } from "react";
 import PlatformBankAccount from "./PlatformBankAccount";
 import { toUserMessage } from "@/lib/auth/messages";
+import { BooklyApiError } from "@/lib/api/client";
 import type {
   CentralBankDestination,
   CentralPayoutOperation,
   CentralPayoutOverview,
   CentralStripeMode,
+  CurrencyEligibility,
   ObservedPayout,
   ObservedPayoutFilters,
   PayoutLinkage,
@@ -20,6 +22,7 @@ import {
   useObservedPayoutsQuery,
   useRefreshCentralPayoutMutation,
   useSyncProviderPayoutHistoryMutation,
+  useWithdrawalEligibilityQuery,
 } from "@/lib/superAdminFinance/hooks";
 
 /** Minor-unit digits for a currency, from Intl (EUR → 2, JPY → 0). */
@@ -196,14 +199,15 @@ function BalanceCards({ overview }: { overview: CentralPayoutOverview }) {
       </div>
 
       <div className="bg-[#F7F5F1] border border-[#E2E8F0] rounded-lg p-3 text-xs text-[#5B5D58] font-medium leading-[18px]">
-        The Stripe available balance is not the same as Bookly&apos;s own money. It can include
-        cancellation and no-show fees attributed to Businesses
+        The Stripe available balance is not the same as Bookly&apos;s own money. It includes
+        Business-owned deposits, cancellation and no-show fees
         {overview.businessAttributedUnpaid
           ? ` (${formatMinor(overview.businessAttributedUnpaid.amountCents, overview.businessAttributedUnpaid.currency)} recorded as not yet paid out to Businesses)`
           : ""}
-        , and funds needed for refunds or disputes. Eligible platform funds have not been
-        determined: the reserve policy is not approved. Live withdrawals remain disabled until
-        the policy and reviewed financial controls are in place.
+        , and funds needed for refunds or disputes. The eligible withdrawal amount below is
+        calculated by Bookly&apos;s server from the ledger and Stripe evidence. Withdrawing moves cash
+        to the company bank; it never turns Business money into Bookly revenue or reduces what is
+        owed to Businesses.
       </div>
     </div>
   );
@@ -211,14 +215,19 @@ function BalanceCards({ overview }: { overview: CentralPayoutOverview }) {
 
 function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
   const mutation = useInitiateCentralPayoutMutation();
+  const eligibilityQuery = useWithdrawalEligibilityQuery();
   const currencies = overview.balances.map((b) => b.currency);
   const [currency, setCurrency] = useState(currencies[0] ?? "eur");
   const [amount, setAmount] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  /** Created once per review; a resubmission of the same confirmation reuses it server-side. */
-  const [review, setReview] = useState<{ requestId: string; amountMinor: number; destination: CentralBankDestination } | null>(null);
+  /** Created once per review; a resubmission of the same confirmation reuses it server-side.
+   * Bound to the reviewed eligibility digest: a changed evaluation requires a new review. */
+  const [review, setReview] = useState<{ requestId: string; amountMinor: number; destination: CentralBankDestination; digest: string } | null>(null);
   const [result, setResult] = useState<CentralPayoutOperation | null>(null);
+  const decision = eligibilityQuery.data?.currencies.find((c) => c.currency === currency);
+  const eligible = decision?.status === "AVAILABLE" ? decision.eligibleCents : 0;
+  const staleReview = Boolean(review && decision && decision.digest !== review.digest);
 
   const destination = useMemo(
     () => {
@@ -227,25 +236,28 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
     },
     [overview.destinations, currency],
   );
-  const available = overview.balances.find((b) => b.currency === currency)?.availableCents ?? 0;
-  const blocked = overview.restrictions.length > 0 || (overview.mode === "LIVE" && !overview.liveExecutionEnabled);
+  const blocked =
+    overview.restrictions.length > 0 ||
+    (overview.mode === "LIVE" && !overview.liveExecutionEnabled) ||
+    decision?.status !== "AVAILABLE";
 
   const startReview = (event: React.FormEvent) => {
     event.preventDefault();
-    if (blocked) return setError("Withdrawal authority is unavailable. Review the restrictions above.");
+    if (blocked || !decision) return setError("Withdrawal authority is unavailable. Review the restrictions above.");
     setError(null);
     setResult(null);
     const amountMinor = parseMinor(amount, currency);
     if (amountMinor === null) return setError("Enter a valid amount, for example 200.00.");
-    if (amountMinor > available)
-      return setError(`The amount is more than the available ${formatMinor(available, currency)}.`);
+    if (amountMinor > eligible)
+      return setError(`The amount is more than the eligible ${formatMinor(eligible, currency)}.`);
     if (!destination) return setError("No usable bank account is linked for this currency.");
-    setReview({ requestId: crypto.randomUUID(), amountMinor, destination });
+    setReview({ requestId: crypto.randomUUID(), amountMinor, destination, digest: decision.digest });
   };
 
   const confirm = (event: React.FormEvent) => {
     event.preventDefault();
     if (blocked) return setError("Withdrawal authority is unavailable. Review the restrictions above.");
+    if (staleReview) return setError("The eligible amount changed since your review. Review the withdrawal again.");
     if (!review || mutation.isPending) return;
     setError(null);
     mutation.mutate(
@@ -255,6 +267,7 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
         currency,
         destinationId: review.destination.id,
         currentPassword: password,
+        eligibilityDigest: review.digest,
       },
       {
         onSuccess: (op) => {
@@ -264,7 +277,14 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
           setPassword("");
         },
         // The same requestId is kept, so retrying after a timeout cannot create a second payout.
-        onError: (err) => setError(toUserMessage(err)),
+        // Changed or unavailable eligibility needs a fresh review against the new evaluation.
+        onError: (err) => {
+          setError(toUserMessage(err));
+          if (err instanceof BooklyApiError && err.code?.startsWith("CENTRAL_PAYOUT_ELIGIBILITY_")) {
+            setReview(null);
+            setPassword("");
+          }
+        },
       },
     );
   };
@@ -285,6 +305,15 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
             )}
           </span>
         </div>
+
+        <EligibilityPanel
+          currency={currency}
+          decision={decision}
+          evaluatedAt={eligibilityQuery.data?.evaluatedAt ?? null}
+          loading={eligibilityQuery.isLoading}
+          error={eligibilityQuery.isError ? toUserMessage(eligibilityQuery.error) : null}
+          onRetry={() => void eligibilityQuery.refetch()}
+        />
 
         {overview.restrictions.length > 0 && (
           <ul className="flex flex-col gap-2" aria-label="Withdrawal restrictions">
@@ -327,7 +356,7 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[10px] font-semibold tracking-[0.8px] uppercase text-[#6B7280]">
-                Amount (available {formatMinor(available, currency)})
+                Amount (eligible {formatMinor(eligible, currency)})
               </span>
               <input
                 inputMode="decimal"
@@ -356,8 +385,14 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
               {overview.mode === "LIVE"
                 ? "This moves real money from Bookly's LIVE Stripe balance."
                 : "TEST mode: Stripe simulates this payout; no real money moves."}{" "}
-              Fees and arrival date are shown once Stripe reports them.
+              Fees and arrival date are shown once Stripe reports them. Bookly re-checks the eligible
+              amount immediately before sending; if it no longer covers this amount, nothing is sent.
             </p>
+            {staleReview && (
+              <p role="alert" className="text-xs font-semibold text-amber-700">
+                The eligible amount changed since your review. Cancel and review the withdrawal again.
+              </p>
+            )}
             <label className="flex flex-col gap-1 max-w-sm">
               <span className="text-[10px] font-semibold tracking-[0.8px] uppercase text-[#6B7280]">
                 Your current password
@@ -374,7 +409,7 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
             <div className="flex flex-col sm:flex-row gap-2">
               <button
                 type="submit"
-                disabled={blocked || mutation.isPending || !password}
+                disabled={blocked || staleReview || mutation.isPending || !password}
                 className="h-10 bg-[#111111] hover:bg-black text-white px-4 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {mutation.isPending ? "Submitting…" : "Confirm withdrawal"}
@@ -398,6 +433,90 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
         {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
       </div>
     </Card>
+  );
+}
+
+/**
+ * CW-1 — the server's eligibility decision for one currency, displayed as calculated (never
+ * recomputed here): the cash and ledger caps, the protected refund/dispute amounts, the
+ * Bookly-owned vs Business-owned distinction, and every reason it is unavailable.
+ */
+function EligibilityPanel({
+  currency,
+  decision,
+  evaluatedAt,
+  loading,
+  error,
+  onRetry,
+}: {
+  currency: string;
+  decision: CurrencyEligibility | undefined;
+  evaluatedAt: string | null;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  if (loading) return <p className="text-xs text-gray-500">Calculating the eligible withdrawal amount…</p>;
+  if (error)
+    return (
+      <div role="alert" className="text-xs text-rose-600">
+        Eligible amount unavailable: {error}{" "}
+        <button type="button" onClick={onRetry} className="underline">Retry</button>
+      </div>
+    );
+  if (!decision)
+    return <p className="text-xs text-gray-500">No eligibility was calculated for {currency.toUpperCase()}.</p>;
+  const money = (cents: number | null) => (cents === null ? "Not available" : formatMinor(cents, currency));
+  const row = (label: string, value: string, emphasis = false) => (
+    <div key={label} className="flex justify-between gap-3">
+      <span className={emphasis ? "font-semibold text-[#111827]" : "text-gray-500"}>{label}</span>
+      <span className={`whitespace-nowrap ${emphasis ? "font-semibold text-[#111827]" : "font-medium text-[#314158]"}`}>{value}</span>
+    </div>
+  );
+  const p = decision.protected;
+  return (
+    <section aria-label="Withdrawal eligibility" className="border border-gray-100 rounded-lg p-4 flex flex-col gap-3 text-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+        <span className="font-semibold text-sm text-[#111827]">
+          {decision.status === "AVAILABLE"
+            ? `Eligible to withdraw now: ${formatMinor(decision.eligibleCents, currency)}`
+            : "Eligible amount unavailable"}
+        </span>
+        {evaluatedAt && <span className="text-gray-500">Calculated {formatDate(evaluatedAt)}</span>}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="flex flex-col gap-1.5">
+          {row("Stripe available", money(decision.stripeAvailableCents))}
+          {row("Cash Bookly's ledger attributes to Stripe", money(decision.ledgerHeldCents))}
+          {row("Protected: refunds in progress", money(p.refundsInProgressCents))}
+          {row("Protected: refundable bookings", money(p.refundableBookingsCents))}
+          {row("Protected: refundable packages", money(p.refundablePackagesCents))}
+          {row("Protected: disputes not yet debited", money(p.disputesCents))}
+          {row("Eligible (lower of the two, minus protected)", money(decision.eligibleCents), true)}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {row("Bookly net platform-fee revenue (recorded)", money(decision.ledger.booklyNetRevenueCents))}
+          {row("Business-owned funds (recorded)", money(decision.ledger.businessOwnedNetCents))}
+          {row("Recorded transfers to Businesses", money(decision.ledger.businessSettledCents))}
+          {row("Still owed to Businesses", money(decision.ledger.businessOutstandingCents))}
+          {decision.ledger.taxLiabilityCents > 0 && row("Recorded tax liability", money(decision.ledger.taxLiabilityCents))}
+          {row("Already paid out of Stripe", money(decision.ledger.stripePayoutsOutCents))}
+          <span className="text-gray-500">
+            Business-owned money may be moved to the company bank, but it is never Bookly revenue. What is still owed to
+            Businesses stays owed until each bank transfer is recorded.
+          </span>
+        </div>
+      </div>
+      {decision.blockers.length > 0 && (
+        <ul aria-label="Eligibility blockers" className="flex flex-col gap-1.5">
+          {decision.blockers.map((b) => (
+            <li key={b.code} className="bg-amber-50 border border-amber-100 rounded-lg p-2 text-amber-800 font-medium">
+              {b.message}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

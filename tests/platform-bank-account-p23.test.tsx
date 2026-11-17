@@ -7,6 +7,7 @@ import SuperAdminWithdrawals from "@/components/super-admin/finance/SuperAdminWi
 import { centralPayoutsApi, type PlatformBankAccountSummary, type CentralPayoutOverview } from "@/lib/api/centralPayouts";
 import { validatePlatformRange } from "@/lib/superAdminDashboard/period";
 import { centralPayoutKeys } from "@/lib/superAdminFinance/hooks";
+import { currencyEligibility, withdrawalEligibility } from "./helpers/withdrawal-eligibility";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement, root: Root, cache: QueryClient;
@@ -17,6 +18,7 @@ const bank = (): PlatformBankAccountSummary => ({
 const flush = async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 15)); }); };
 const render = async (node: React.ReactNode = <PlatformBankAccount />) => {
   await act(async () => root.render(<QueryClientProvider client={cache}>{node}</QueryClientProvider>)); await flush();
+  await flush(); // CW-1: the eligibility read starts once the overview has loaded
 };
 beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
@@ -25,6 +27,9 @@ beforeEach(() => {
   vi.spyOn(centralPayoutsApi, "getOverview").mockRejectedValue(new Error("Overview unavailable"));
   vi.spyOn(centralPayoutsApi, "list").mockResolvedValue({ withdrawals: [], pagination: { page: 1, limit: 20, total: 0 } });
   vi.spyOn(centralPayoutsApi, "initiate");
+  vi.spyOn(centralPayoutsApi, "getEligibility").mockResolvedValue(
+    withdrawalEligibility([currencyEligibility(), currencyEligibility({ currency: "usd", digest: "c".repeat(64) })]),
+  );
 });
 afterEach(async () => { await act(async () => root.unmount()); cache.clear(); host.remove(); vi.restoreAllMocks(); });
 
@@ -72,18 +77,18 @@ it("keeps the bank panel visible when the balance/history overview fails", async
   expect(centralPayoutsApi.getOverview).toHaveBeenCalled();
   expect(centralPayoutsApi.initiate).not.toHaveBeenCalled();
 });
-it("does not offer an active withdrawal while reserve authority is denied", async () => {
+it("does not offer an active LIVE withdrawal while the deployment has LIVE disabled", async () => {
   const overview: CentralPayoutOverview = {
     mode: "LIVE", liveExecutionEnabled: false, balances: [{ currency: "eur", availableCents: 10000, pendingCents: 5000 }],
     payoutsInProgress: [], destinations: [{ id: "ba_platform", bankName: "Platform Bank", last4: "1234", currency: "eur", country: "CY", status: "verified", defaultForCurrency: true, eligible: true }],
-    scheduleInterval: "manual", restrictions: [{ code: "CENTRAL_PAYOUT_RESERVE_POLICY_UNAPPROVED", message: "Reserve policy approval is required" }], recentStripePayouts: [], businessAttributedUnpaid: { currency: "eur", amountCents: 9000 },
+    scheduleInterval: "manual", restrictions: [{ code: "CENTRAL_PAYOUT_LIVE_DISABLED", message: "LIVE withdrawals are disabled in this deployment" }], recentStripePayouts: [], businessAttributedUnpaid: { currency: "eur", amountCents: 9000 },
   };
   vi.mocked(centralPayoutsApi.getOverview).mockResolvedValue(overview);
-  await render(<SuperAdminWithdrawals />);
+  await render(<SuperAdminWithdrawals />); await flush();
   const review = Array.from(host.querySelectorAll("button")).find(button => button.textContent === "Review withdrawal");
   expect(review?.disabled).toBe(true);
-  expect(host.textContent).toContain("Eligible platform funds have not been determined");
-  expect(host.textContent).toContain("Reserve policy approval is required");
+  expect(host.textContent).toContain("never turns Business money into Bookly revenue");
+  expect(host.textContent).toContain("LIVE withdrawals are disabled in this deployment");
   expect(centralPayoutsApi.initiate).not.toHaveBeenCalled();
 });
 

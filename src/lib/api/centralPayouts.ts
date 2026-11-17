@@ -229,6 +229,47 @@ export interface InitiateCentralPayoutInput {
   currency: string;
   destinationId: string;
   currentPassword: string;
+  /** CW-1 — the digest of the eligibility the Super Admin reviewed; a changed one is refused. */
+  eligibilityDigest: string;
+}
+
+/**
+ * CW-1 — the authoritative, server-side withdrawal eligibility for one currency
+ * (api withdrawal-eligibility.ts). The client never calculates it; it only displays it.
+ */
+export interface CurrencyEligibility {
+  currency: string;
+  status: "AVAILABLE" | "UNAVAILABLE";
+  eligibleCents: number;
+  stripeAvailableCents: number;
+  ledgerHeldCents: number | null;
+  protected: {
+    refundsInProgressCents: number;
+    refundableBookingsCents: number;
+    refundablePackagesCents: number;
+    disputesCents: number;
+    totalCents: number;
+  };
+  ledger: {
+    stripeChargedCents: number;
+    stripeOutflowsCents: number;
+    stripePayoutsOutCents: number;
+    booklyNetRevenueCents: number;
+    businessOwnedNetCents: number;
+    businessSettledCents: number;
+    businessOutstandingCents: number | null;
+    taxLiabilityCents: number;
+  };
+  blockers: { code: string; message: string }[];
+  digest: string;
+}
+
+export interface WithdrawalEligibility {
+  policyVersion: string;
+  mode: CentralStripeMode | null;
+  evaluatedAt: string;
+  currencies: CurrencyEligibility[];
+  blockers: { code: string; message: string }[];
 }
 
 export const centralPayoutsApi = {
@@ -237,6 +278,8 @@ export const centralPayoutsApi = {
   }),
   getOverview: () =>
     apiRequest<CentralPayoutOverview>({ method: "GET", url: "/super-admin/finance/withdrawals/overview" }),
+  getEligibility: () =>
+    apiRequest<WithdrawalEligibility>({ method: "GET", url: "/super-admin/finance/withdrawals/eligibility" }),
   list: (page: number, limit: number) =>
     apiRequest<{
       withdrawals: CentralPayoutOperation[];
