@@ -74,6 +74,10 @@ export interface CatalogBusiness {
     tiers: Array<{ tier: "MORE_THAN_72_HOURS" | "BETWEEN_24_AND_72_HOURS" | "BETWEEN_12_AND_24_HOURS" | "BETWEEN_2_AND_12_HOURS" | "UNDER_2_HOURS"; mode: "FREE" | "PERCENTAGE"; percentage?: number }>;
     noShowPercentage: number;
   } | null;
+  /** Saved Instagram handle (without "@"); absent when none is saved or it is invalid. */
+  instagramHandle?: string;
+  /** Saved Facebook Page URL; absent when none is saved or it is invalid. */
+  facebookPageUrl?: string;
 }
 
 // Matches api/src/modules/services/service.types.ts ServicePricingMode exactly — a Package

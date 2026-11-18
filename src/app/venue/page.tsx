@@ -25,6 +25,7 @@ import { BookingOnboardingHeader, bookingContentClass, bookingMainClass } from "
 import BookingServiceCard, { QuantityStepper } from "./components/BookingServiceCard";
 import type { BookingSelection } from "./components/BookingSelectionSummary";
 import VenueLocationMap from "./components/VenueLocationMap";
+import VenueSocialLinks from "./components/VenueSocialLinks";
 import {
   availabilityPartySize,
   effectivePricingInput,
@@ -1842,6 +1843,9 @@ function VenueDetailsContent() {
                     </div>
                   </div>
 
+                  {/* Saved social accounts (Business Profile) */}
+                  <VenueSocialLinks businessName={business?.name} instagramHandle={business?.instagramHandle} facebookPageUrl={business?.facebookPageUrl} />
+
                 </div>
 
               </div>
@@ -1933,6 +1937,9 @@ function VenueDetailsContent() {
                           </a>
                         </div>
                       </div>
+
+                      {/* Saved social accounts (Business Profile) */}
+                      <VenueSocialLinks businessName={business?.name} instagramHandle={business?.instagramHandle} facebookPageUrl={business?.facebookPageUrl} />
 
                     </div>
                   </>
@@ -2296,6 +2303,9 @@ function VenueDetailsContent() {
                     </a>
                   </div>
                 </div>
+
+                {/* Saved social accounts (Business Profile) */}
+                <VenueSocialLinks businessName={business?.name} instagramHandle={business?.instagramHandle} facebookPageUrl={business?.facebookPageUrl} />
 
               </div>
             </div>
