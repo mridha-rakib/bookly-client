@@ -97,3 +97,30 @@ it.each(["connected", "error"])("consumes the %s result without losing the Setti
     await act(async () => root.unmount()); window.history.replaceState(null, "", "/");
   }
 });
+
+it.each([
+  ["account_in_use", "That Google account is already connected to another business on Bookly."],
+  ["cancelled", "Google Calendar connection was cancelled. No account was connected."],
+])("shows the %s callback reason and consumes it from the URL", async (reason, message) => {
+  window.history.replaceState(null, "", `/business-dashboard?section=settings&settingsTab=Integration&googleCalendar=error&reason=${reason}`);
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<DashboardSettings />));
+    expect(host.textContent).toContain(message);
+    expect(host.textContent).not.toContain("Couldn't connect Google Calendar. Please try again.");
+    const params = new URLSearchParams(window.location.search);
+    expect(params.has("googleCalendar")).toBe(false);
+    expect(params.has("reason")).toBe(false);
+    expect(params.get("settingsTab")).toBe("Integration");
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("an unknown reason value is ignored (generic error only)", async () => {
+  window.history.replaceState(null, "", "/business-dashboard?section=settings&settingsTab=Integration&googleCalendar=error&reason=<script>");
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<DashboardSettings />));
+    expect(host.textContent).toContain("Couldn't connect Google Calendar. Please try again.");
+    expect(host.textContent).not.toContain("<script>");
+  } finally { await act(async () => root.unmount()); }
+});

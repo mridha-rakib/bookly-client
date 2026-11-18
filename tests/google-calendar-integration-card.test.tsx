@@ -227,3 +227,49 @@ describe("P2.2.9 Google Calendar integration card", () => {
     expect([...host.querySelectorAll("button")].some((b) => /resend|retry sync/i.test(b.textContent ?? ""))).toBe(false);
   });
 });
+
+describe("Google account selection", () => {
+  async function renderWithNotice(notice: "account_in_use" | "cancelled") {
+    await act(async () =>
+      root.render(<QueryClientProvider client={client}><GoogleCalendarIntegrationCard businessId="b1" redirectNotice={notice} /></QueryClientProvider>),
+    );
+  }
+
+  it("not connected: explains that ANY Gmail or Workspace account may be chosen, independent of the Bookly email", async () => {
+    statuses.b1 = { connected: false, needsReconnection: false, delivery: bestEffort };
+    await render();
+    await waitFor(() => expect(button("Connect")).toBeTruthy());
+    expect(host.querySelector('[data-testid="calendar-account-choice"]')?.textContent).toBe(
+      "You'll choose which Google account to connect. It can be any Gmail or Google Workspace account you manage; it doesn't have to match your Bookly sign-in email.",
+    );
+    expect(button("Change account")).toBeUndefined();
+  });
+
+  it("connected: Change account starts the same OAuth flow (one request) and Disconnect stays available", async () => {
+    statuses.b1 = { connected: true, needsReconnection: false, googleAccountEmail: "owner.personal@gmail.com", delivery: bestEffort } as GoogleCalendarStatus;
+    await render();
+    await waitFor(() => expect(text()).toContain("Connected · owner.personal@gmail.com"));
+    expect(button("Disconnect")).toBeTruthy();
+    await click(button("Change account"));
+    await waitFor(() => expect(text()).toContain("Redirecting..."));
+    expect(fx.requests.filter((r) => r.url.endsWith("/google-calendar/connect"))).toHaveLength(1);
+    expect(button("Redirecting...")?.disabled).toBe(true);
+  });
+
+  it("reconnection required: offers Reconnect only (no separate Change account)", async () => {
+    statuses.b1 = { connected: true, needsReconnection: true, googleAccountEmail: "a@gmail.com", delivery: bestEffort } as GoogleCalendarStatus;
+    await render();
+    await waitFor(() => expect(button("Reconnect")).toBeTruthy());
+    expect(button("Change account")).toBeUndefined();
+  });
+
+  it("explains an account already used by another business, and a cancelled choice", async () => {
+    statuses.b1 = { connected: false, needsReconnection: false, delivery: bestEffort };
+    await renderWithNotice("account_in_use");
+    await waitFor(() => expect(host.querySelector('[data-testid="calendar-account-in-use"]')).toBeTruthy());
+    expect(text()).toContain("That Google account is already connected to another business on Bookly. Choose a different Google account.");
+    expect(text()).not.toContain("Google Calendar connected.");
+    await renderWithNotice("cancelled");
+    await waitFor(() => expect(text()).toContain("Google Calendar connection was cancelled. No account was connected."));
+  });
+});

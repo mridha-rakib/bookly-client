@@ -31,7 +31,7 @@ import {
   useMyBusinessProfileQuery,
   useUpdateBusinessMutation,
 } from "@/lib/business/hooks";
-import GoogleCalendarIntegrationCard from "@/components/dashboard/GoogleCalendarIntegrationCard";
+import GoogleCalendarIntegrationCard, { type GoogleCalendarRedirectNotice } from "@/components/dashboard/GoogleCalendarIntegrationCard";
 import { useStaffListQuery, useUploadOwnerAvatarMutation } from "@/lib/staff/hooks";
 import {
   cancellationTiers,
@@ -71,7 +71,7 @@ export default function DashboardSettings() {
 
   const googleCalendarStatusQuery = useGoogleCalendarStatusQuery(businessId);
   const [googleCalendarRedirectNotice, setGoogleCalendarRedirectNotice] = useState<
-    "connected" | "error" | null
+    GoogleCalendarRedirectNotice | null
   >(null);
 
   // Landed back here from the Google Calendar OAuth redirect (see
@@ -87,11 +87,18 @@ export default function DashboardSettings() {
     }
 
     if (googleCalendarResult === "connected" || googleCalendarResult === "error") {
-      setGoogleCalendarRedirectNotice(googleCalendarResult);
+      // A fixed reason code from the API redirect (never a provider message).
+      const reason = params.get("reason");
+      setGoogleCalendarRedirectNotice(
+        googleCalendarResult === "error" && (reason === "account_in_use" || reason === "cancelled")
+          ? reason
+          : googleCalendarResult,
+      );
       void googleCalendarStatusQuery.refetch();
       // Consume only the transient callback result. Native history updates also update
       // Next's search params, so clearing section would navigate this dashboard to Calendar.
       params.delete("googleCalendar");
+      params.delete("reason");
       params.set("section", "settings");
       window.history.replaceState(window.history.state, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
     }

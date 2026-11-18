@@ -26,6 +26,8 @@ import BookingServiceCard, { QuantityStepper } from "./components/BookingService
 import type { BookingSelection } from "./components/BookingSelectionSummary";
 import VenueLocationMap from "./components/VenueLocationMap";
 import VenueSocialLinks from "./components/VenueSocialLinks";
+import VenueGalleryDialog from "./components/VenueGalleryDialog";
+import VenueDirectionsLink from "./components/VenueDirectionsLink";
 import {
   availabilityPartySize,
   effectivePricingInput,
@@ -784,6 +786,9 @@ function VenueDetailsContent() {
 
   // Tab State
   const [activeTab, setActiveTab] = useState<"services" | "about" | "reviews" | "team" | "gallery">("services");
+  // Index of the photo shown in the full gallery (null = closed). Uses the saved Business Media
+  // already in the catalog read — no second request, no other image set.
+  const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
   const [selectedCategory, setSelectedCategory] = useState("Featured");
   const [isMobile, setIsMobile] = useState(false);
 
@@ -1128,8 +1133,10 @@ function VenueDetailsContent() {
             </div>
             {/* See all images button */}
             <button
-              onClick={() => scrollToSection("gallery")}
-              className="absolute right-4 bottom-4 bg-[#FFFFFF] border border-[#D3D3D3] rounded-xl px-4 py-2 flex items-center justify-center gap-1.5 shadow-md hover:bg-neutral-50 transition-colors cursor-pointer z-10 text-[14.2px] font-medium font-inter text-[#0D0D0D]"
+              type="button"
+              onClick={() => setGalleryIndex(0)}
+              disabled={venueMedia.length === 0}
+              className="absolute right-4 bottom-4 bg-[#FFFFFF] border border-[#D3D3D3] rounded-xl px-4 py-2 flex items-center justify-center gap-1.5 shadow-md hover:bg-neutral-50 transition-colors cursor-pointer z-10 text-[14.2px] font-medium font-inter text-[#0D0D0D] disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <span>See all images</span>
             </button>
@@ -1726,7 +1733,13 @@ function VenueDetailsContent() {
                       <h3 className="font-semibold text-[25.8px] leading-[36px] text-[#0D0D0D]">
                         Photos
                       </h3>
-                      <button className="w-[46px] h-[36px] font-poppins text-sm leading-[36px] text-[#0D0D0D] hover:underline cursor-pointer">
+                      <button
+                        type="button"
+                        onClick={() => setGalleryIndex(0)}
+                        disabled={venueMedia.length === 0}
+                        aria-label="See all photos"
+                        className="w-[46px] h-[36px] font-poppins text-sm leading-[36px] text-[#0D0D0D] hover:underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
+                      >
                         See all
                       </button>
                     </div>
@@ -1742,9 +1755,15 @@ function VenueDetailsContent() {
                     {venueMedia.length > 0 && (
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-5 w-full">
                         {venueMedia.map((item, idx) => (
-                          <div key={item.id} className="aspect-square w-full bg-[#D9D9D9] rounded-xl overflow-hidden relative">
+                          <button
+                            type="button"
+                            key={item.id}
+                            onClick={() => setGalleryIndex(idx)}
+                            aria-label={`Open photo ${idx + 1} of ${venueMedia.length}`}
+                            className="aspect-square w-full bg-[#D9D9D9] rounded-xl overflow-hidden relative cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2E9DA7]"
+                          >
                             <Image src={item.url} alt={`Gallery ${idx + 1}`} fill className="object-cover" />
-                          </div>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -1833,13 +1852,7 @@ function VenueDetailsContent() {
                         {venueLocationText}
                       </span>
                       <span className="w-1.5 h-1.5 rounded-full bg-[#808080] shrink-0" />
-                      <a
-                        href="#"
-                        onClick={(e) => { e.preventDefault(); scrollToSection("about"); }}
-                        className="font-inter font-normal text-[15.8px] text-[#2366C5] hover:underline whitespace-nowrap shrink-0"
-                      >
-                        Get Directions
-                      </a>
+                      <VenueDirectionsLink business={business} />
                     </div>
                   </div>
 
@@ -1928,13 +1941,7 @@ function VenueDetailsContent() {
                             {venueLocationText}
                           </span>
                           <span className="w-1.5 h-1.5 rounded-full bg-[#808080] shrink-0" />
-                          <a
-                            href="#"
-                            onClick={(e) => { e.preventDefault(); scrollToSection("about"); }}
-                            className="font-inter font-normal text-[15.8px] text-[#2366C5] hover:underline whitespace-nowrap shrink-0"
-                          >
-                            Get Directions
-                          </a>
+                          <VenueDirectionsLink business={business} />
                         </div>
                       </div>
 
@@ -1982,13 +1989,7 @@ function VenueDetailsContent() {
                             {venueLocationText}
                           </span>
                           <span className="w-1.5 h-1.5 rounded-full bg-[#808080] shrink-0" />
-                          <a
-                            href="#"
-                            onClick={(e) => { e.preventDefault(); scrollToSection("about"); }}
-                            className="font-inter font-normal text-[15.8px] text-[#2366C5] hover:underline whitespace-nowrap shrink-0"
-                          >
-                            Get Directions
-                          </a>
+                          <VenueDirectionsLink business={business} />
                         </div>
                       </div>
                     </div>
@@ -2024,6 +2025,15 @@ function VenueDetailsContent() {
         </div>
 
       </main>
+
+      {galleryIndex !== null && (
+        <VenueGalleryDialog
+          images={venueMedia.map(({ id, url }) => ({ id, url }))}
+          businessName={business?.name}
+          startIndex={galleryIndex}
+          onClose={() => setGalleryIndex(null)}
+        />
+      )}
 
       {/* Footer */}
       <Footer />
@@ -2294,13 +2304,7 @@ function VenueDetailsContent() {
                       {venueLocationText}
                     </span>
                     <span className="w-1.5 h-1.5 rounded-full bg-[#808080] shrink-0" />
-                    <a
-                      href="#"
-                      onClick={(e) => { e.preventDefault(); scrollToSection("about"); setIsMobileSummaryExpanded(false); }}
-                      className="font-inter font-normal text-[15.8px] text-[#2366C5] hover:underline whitespace-nowrap shrink-0"
-                    >
-                      Get Directions
-                    </a>
+                    <VenueDirectionsLink business={business} />
                   </div>
                 </div>
 

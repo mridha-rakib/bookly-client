@@ -60,6 +60,8 @@ function DeliverySummary({ delivery }: { delivery: GoogleCalendarStatus["deliver
   );
 }
 
+export type GoogleCalendarRedirectNotice = "connected" | "error" | "account_in_use" | "cancelled";
+
 /**
  * Business Settings → Connected apps → Google Calendar. One-way Bookly → Google sync, Owner-only.
  * Shows the authoritative connection and sync state from
@@ -71,7 +73,7 @@ export default function GoogleCalendarIntegrationCard({
   redirectNotice,
 }: {
   businessId: string | undefined;
-  redirectNotice?: "connected" | "error" | null;
+  redirectNotice?: GoogleCalendarRedirectNotice | null;
 }) {
   const statusQuery = useGoogleCalendarStatusQuery(businessId);
   const connectMutation = useConnectGoogleCalendarMutation();
@@ -117,6 +119,14 @@ export default function GoogleCalendarIntegrationCard({
         </div>
       </div>
 
+      {status && !status.needsReconnection && (
+        <p className="text-[11px] text-[#666666]" data-testid="calendar-account-choice">
+          {status.connected
+            ? "Bookings sync one way, from Bookly to this Google Calendar. To use a different Google account, choose Change account."
+            : "You'll choose which Google account to connect. It can be any Gmail or Google Workspace account you manage; it doesn't have to match your Bookly sign-in email."}
+        </p>
+      )}
+
       {statusQuery.isError && !status && (
         <p role="alert" className="text-xs text-red-600">
           Couldn&apos;t load the Google Calendar status.{" "}
@@ -136,6 +146,16 @@ export default function GoogleCalendarIntegrationCard({
       )}
       {redirectNotice === "error" && (
         <p className="text-xs text-red-600">Couldn&apos;t connect Google Calendar. Please try again.</p>
+      )}
+      {redirectNotice === "account_in_use" && (
+        <p className="text-xs text-red-600" data-testid="calendar-account-in-use">
+          That Google account is already connected to another business on Bookly. Choose a different Google account.
+        </p>
+      )}
+      {redirectNotice === "cancelled" && (
+        <p className="text-xs text-[#666666]" data-testid="calendar-cancelled">
+          Google Calendar connection was cancelled. No account was connected.
+        </p>
       )}
       {connectError && <p className="text-xs text-red-600">{connectError}</p>}
 
@@ -172,6 +192,16 @@ export default function GoogleCalendarIntegrationCard({
             className="px-4 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-[#1A1A1A] hover:bg-neutral-50 cursor-pointer disabled:opacity-60"
           >
             {connectMutation.isPending ? "Redirecting..." : "Reconnect"}
+          </button>
+        )}
+        {status?.connected && !status.needsReconnection && (
+          <button
+            type="button"
+            disabled={!businessId || connectMutation.isPending || disconnectMutation.isPending}
+            onClick={connect}
+            className="px-4 py-1.5 border border-[#DEDDE3] rounded-lg text-xs font-semibold text-[#1A1A1A] hover:bg-neutral-50 cursor-pointer disabled:opacity-60"
+          >
+            {connectMutation.isPending ? "Redirecting..." : "Change account"}
           </button>
         )}
         {status?.connected ? (
