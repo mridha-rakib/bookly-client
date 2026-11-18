@@ -10,7 +10,8 @@ export interface PlatformBankAccountSummary {
   state: "NOT_CONFIGURED" | "NO_DESTINATION" | "UNAVAILABLE" | "CONFIGURED";
   payoutsEnabled: boolean | null;
   inventoryComplete?: boolean;
-  unavailableReason?: "PERMISSIONS" | "PROVIDER" | "INCOMPLETE";
+  /** TEST_MODE_RESTRICTED — Stripe does not list bank accounts to a TEST key. */
+  unavailableReason?: "PERMISSIONS" | "PROVIDER" | "INCOMPLETE" | "TEST_MODE_RESTRICTED";
   destinations: {
     bankName: string | null;
     last4: string | null;
@@ -69,6 +70,9 @@ export interface CentralPayoutOverview {
   balances: { currency: string; availableCents: number; pendingCents: number }[];
   payoutsInProgress: { currency: string; amountCents: number }[];
   destinations: CentralBankDestination[];
+  /** TEST only: Stripe chooses the TEST account's default destination (no bank details exist).
+   * Absent/null for LIVE and for older API builds. */
+  stripeTestDefaultDestination?: { id: string; label: string } | null;
   scheduleInterval: string | null;
   restrictions: { code: string; message: string }[];
   recentStripePayouts: CentralProviderPayout[];
@@ -210,7 +214,8 @@ export interface CentralPayoutOperation {
   mode: CentralStripeMode;
   amountCents: number;
   currency: string;
-  destination: { bankName: string | null; last4: string };
+  /** `stripeTestDefault`: TEST payout to Stripe's TEST default destination (no bank details). */
+  destination: { bankName: string | null; last4: string; stripeTestDefault?: boolean };
   state: CentralPayoutState;
   providerPayoutId: string | null;
   providerStatus: ProviderPayoutStatus | null;

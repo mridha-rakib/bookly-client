@@ -60,8 +60,15 @@ const formatDate = (iso: string | null): string =>
 const formatDay = (iso: string | null): string =>
   iso ? new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(new Date(iso)) : "—";
 
-const maskedBank = (d: { bankName: string | null; last4: string }) =>
-  `${d.bankName ?? "Bank account"} •••• ${d.last4}`;
+const maskedBank = (d: { bankName: string | null; last4: string; stripeTestDefault?: boolean }) =>
+  d.stripeTestDefault
+    ? "Stripe TEST default destination (bank details unavailable)"
+    : `${d.bankName ?? "Bank account"} •••• ${d.last4}`;
+
+/** The reviewed destination: a verified bank, or (TEST only) Stripe's TEST default destination. */
+type ReviewDestination =
+  | { kind: "BANK"; id: string; bank: CentralBankDestination }
+  | { kind: "STRIPE_TEST_DEFAULT"; id: string; label: string };
 
 /** What the Super Admin sees for each state. Stripe "paid" is reported, not a bank guarantee. */
 const statusLabel = (op: CentralPayoutOperation): { text: string; tone: string } => {
@@ -223,7 +230,7 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
   const [error, setError] = useState<string | null>(null);
   /** Created once per review; a resubmission of the same confirmation reuses it server-side.
    * Bound to the reviewed eligibility digest: a changed evaluation requires a new review. */
-  const [review, setReview] = useState<{ requestId: string; amountMinor: number; destination: CentralBankDestination; digest: string } | null>(null);
+  const [review, setReview] = useState<{ requestId: string; amountMinor: number; destination: ReviewDestination; digest: string } | null>(null);
   const [result, setResult] = useState<CentralPayoutOperation | null>(null);
   const decision = eligibilityQuery.data?.currencies.find((c) => c.currency === currency);
   const eligible = decision?.status === "AVAILABLE" ? decision.eligibleCents : 0;
@@ -236,6 +243,14 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
     },
     [overview.destinations, currency],
   );
+  // TEST only: Stripe does not list bank accounts to a TEST key, so Stripe chooses the TEST
+  // account's default destination. Never offered for LIVE or when a verified bank is available.
+  const testDefault = overview.mode === "TEST" && !destination ? (overview.stripeTestDefaultDestination ?? null) : null;
+  const target: ReviewDestination | undefined = destination
+    ? { kind: "BANK", id: destination.id, bank: destination }
+    : testDefault
+      ? { kind: "STRIPE_TEST_DEFAULT", id: testDefault.id, label: testDefault.label }
+      : undefined;
   const blocked =
     overview.restrictions.length > 0 ||
     (overview.mode === "LIVE" && !overview.liveExecutionEnabled) ||
@@ -250,8 +265,8 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
     if (amountMinor === null) return setError("Enter a valid amount, for example 200.00.");
     if (amountMinor > eligible)
       return setError(`The amount is more than the eligible ${formatMinor(eligible, currency)}.`);
-    if (!destination) return setError("No usable bank account is linked for this currency.");
-    setReview({ requestId: crypto.randomUUID(), amountMinor, destination, digest: decision.digest });
+    if (!target) return setError("No usable bank account is linked for this currency.");
+    setReview({ requestId: crypto.randomUUID(), amountMinor, destination: target, digest: decision.digest });
   };
 
   const confirm = (event: React.FormEvent) => {
@@ -300,6 +315,8 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
               <span className="font-medium text-[#314158]">
                 {maskedBank(destination)} ({destination.currency.toUpperCase()}, {destination.status})
               </span>
+            ) : testDefault ? (
+              <span className="font-medium text-sky-800">{testDefault.label}</span>
             ) : (
               <span className="font-medium text-rose-600">No confirmed usable default for this currency. Review the bank summary and Stripe.</span>
             )}
@@ -334,6 +351,13 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
             <span>
               Stripe reference: {result.providerPayoutId ?? "awaiting confirmation"} · Bookly reference: {result.id}
             </span>
+            {result.failureMessage && <span className="text-rose-700">Stripe: {result.failureMessage}</span>}
+            {result.mode === "TEST" && (
+              <span>
+                Simulated Stripe TEST payout{result.destination.stripeTestDefault ? " to the Stripe TEST default destination" : ""} — not a
+                bank transfer.
+              </span>
+            )}
           </div>
         )}
 
@@ -369,7 +393,7 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
             </label>
             <button
               type="submit"
-              disabled={blocked || !destination}
+              disabled={blocked || !target}
               className="h-10 bg-[#111111] hover:bg-black text-white px-4 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Review withdrawal
@@ -378,9 +402,17 @@ function WithdrawalForm({ overview }: { overview: CentralPayoutOverview }) {
         ) : (
           <form onSubmit={confirm} className="flex flex-col gap-4 border border-gray-200 rounded-lg p-4">
             <p className="text-sm font-semibold text-[#111827]">
-              Withdraw {formatMinor(review.amountMinor, currency)} to the linked bank account ending in{" "}
-              {review.destination.last4}.
+              {review.destination.kind === "BANK"
+                ? `Withdraw ${formatMinor(review.amountMinor, currency)} to the linked bank account ending in ${review.destination.bank.last4}.`
+                : `Withdraw ${formatMinor(review.amountMinor, currency)} to the ${review.destination.label}`}
             </p>
+            {review.destination.kind === "STRIPE_TEST_DEFAULT" && (
+              <p className="text-xs text-sky-800">
+                Stripe chooses the TEST account&apos;s default destination for this currency. This is a simulated
+                Stripe TEST payout: no bank transfer takes place and no bank confirms it. If Stripe has no usable
+                default, it refuses the payout and its message is shown here.
+              </p>
+            )}
             <p className="text-xs text-gray-500">
               {overview.mode === "LIVE"
                 ? "This moves real money from Bookly's LIVE Stripe balance."

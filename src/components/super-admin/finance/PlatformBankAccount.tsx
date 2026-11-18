@@ -18,6 +18,9 @@ export default function PlatformBankAccount() {
           <p>Platform bank details are unavailable. This does not confirm whether a bank account is configured. Check Stripe account settings.</p>
           {summary?.unavailableReason === "PERMISSIONS" && <p>The Stripe API key cannot read the platform bank accounts. Review account permissions in Stripe.</p>}
           {summary?.unavailableReason === "INCOMPLETE" && <p>Stripe returned incomplete bank-account data.</p>}
+          {summary?.mode === "TEST" && summary.unavailableReason === "TEST_MODE_RESTRICTED" && (
+            <p>Stripe TEST default destination — bank details unavailable in TEST mode. Stripe does not list bank accounts to a TEST key; a TEST withdrawal is sent to the TEST account&apos;s default destination, chosen by Stripe.</p>
+          )}
           <button type="button" onClick={() => void query.refetch()} className="text-sm underline mt-2">Try again</button>
         </div>
       ) : summary?.state === "NOT_CONFIGURED" ? (
