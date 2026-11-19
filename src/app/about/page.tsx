@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import AboutHero from "@/components/about/AboutHero";
@@ -10,17 +10,10 @@ import AboutPromise from "@/components/about/AboutPromise";
 import AboutCTA from "@/components/about/AboutCTA";
 
 export default function AboutPage() {
+  // Legacy Navbar props only: Navbar derives identity from the session store and ignores these,
+  // so the old localStorage "isLoggedIn" mirror was dead state and has been removed.
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("isLoggedIn");
-      if (saved === "true") {
-        setIsLoggedIn(true);
-      }
-    }
-  }, []);
 
   return (
     <div className="min-h-screen bg-[#FCFAF9] flex flex-col relative text-[#1C1B1C] font-poppins overflow-x-hidden">

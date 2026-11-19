@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useSyncExternalStore } from "react";
+
+const subscribeNoop = () => () => {};
 
 interface EdgeSoftOrbsTopProps {
   size?: number;
@@ -17,11 +19,8 @@ export default function EdgeSoftOrbsTop({
   zIndex = 1,
   blend = "screen",
 }: EdgeSoftOrbsTopProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // false on the server and during hydration, true afterwards (same as the old mount effect).
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
 
   if (!mounted) return null;
 

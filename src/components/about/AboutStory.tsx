@@ -62,7 +62,7 @@ export default function AboutStory() {
               It started with a simple frustration: playing phone tag to book a haircut, a padel court, or a consultation. In a world where everything is instant, scheduling local services in Cyprus felt stuck in the past.
             </p>
             <p>
-              Bookly.cy was born to bridge this gap. We set out to build a platform that respects the time of both the customer and the provider. By centralizing availability and simplifying the transaction, we're not just booking appointments; we're streamlining daily life.
+              Bookly.cy was born to bridge this gap. We set out to build a platform that respects the time of both the customer and the provider. By centralizing availability and simplifying the transaction, we&apos;re not just booking appointments; we&apos;re streamlining daily life.
             </p>
           </div>
         </div>

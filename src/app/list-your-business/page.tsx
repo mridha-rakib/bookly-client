@@ -69,16 +69,9 @@ export default function ListYourBusinessPage() {
   // Banner & Language states
   const [showBanner, setShowBanner] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState("ENG");
+  // Legacy Navbar props only: Navbar derives identity from the session store and ignores these,
+  // so the old localStorage "isLoggedIn" mirror was dead state and has been removed.
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("isLoggedIn");
-      if (saved === "true") {
-        setIsLoggedIn(true);
-      }
-    }
-  }, []);
 
   // Intersection observers for section trigger animations
   const cardsContainerRef = useRef<HTMLDivElement | null>(null);

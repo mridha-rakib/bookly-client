@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { ZapIcon, HeartIcon, StarIcon, Wallet03Icon } from "@hugeicons/core-free-icons";
 
 function FeatureCard({
@@ -9,7 +9,7 @@ function FeatureCard({
   index,
   globalVisible,
 }: {
-  step: { icon: any; title: string; description: string };
+  step: { icon: IconSvgElement; title: string; description: string };
   index: number;
   globalVisible: boolean;
 }) {
@@ -26,11 +26,11 @@ function FeatureCard({
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
+  // Desktop follows the section-level trigger directly; mobile observes each card itself.
+  const visible = isMobile ? inView : globalVisible;
+
   useEffect(() => {
-    if (!isMobile) {
-      setInView(globalVisible);
-      return;
-    }
+    if (!isMobile) return;
     const el = ref.current;
     if (!el) return;
 
@@ -55,7 +55,7 @@ function FeatureCard({
       ref={ref}
       style={{ transitionDelay: `${delay}ms` }}
       className={`flex flex-col items-start p-5 gap-10 bg-white border border-[#E8E6FF] rounded-xl hover:shadow-md hover:-translate-y-1.5 hover:border-[#2E9DA7]/30 hover:duration-300 transition-all duration-[1400ms] ease-out ${
-        inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
+        visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
       }`}
     >
       {/* Icon Container */}

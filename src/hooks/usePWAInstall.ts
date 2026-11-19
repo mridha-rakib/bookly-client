@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 // Extend window interface to recognize beforeinstallprompt event
 interface BeforeInstallPromptEvent extends Event {
@@ -13,11 +13,20 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 let deferredPrompt: BeforeInstallPromptEvent | null = null;
-let listeners = new Set<() => void>();
+const listeners = new Set<() => void>();
 
 const notifyListeners = () => {
   listeners.forEach((listener) => listener());
 };
+
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+};
+const getInstallableSnapshot = () => !!deferredPrompt;
+const getServerInstallableSnapshot = () => false;
 
 if (typeof window !== "undefined") {
   window.addEventListener("beforeinstallprompt", (e) => {
@@ -30,7 +39,12 @@ if (typeof window !== "undefined") {
 }
 
 export function usePWAInstall() {
-  const [isInstallable, setIsInstallable] = useState(false);
+  // The stashed beforeinstallprompt event is module-level external state.
+  const isInstallable = useSyncExternalStore(
+    subscribe,
+    getInstallableSnapshot,
+    getServerInstallableSnapshot,
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -46,17 +60,6 @@ export function usePWAInstall() {
           console.error("Service Worker registration failed:", err);
         });
     }
-
-    setIsInstallable(!!deferredPrompt);
-
-    const handleUpdate = () => {
-      setIsInstallable(!!deferredPrompt);
-    };
-
-    listeners.add(handleUpdate);
-    return () => {
-      listeners.delete(handleUpdate);
-    };
   }, []);
 
   const installPWA = async () => {
@@ -64,7 +67,7 @@ export function usePWAInstall() {
       // Check if it is iOS Safari which does not support beforeinstallprompt
       const isIOS =
         /iPad|iPhone|iPod/.test(navigator.userAgent) &&
-        !(window as any).MSStream;
+        !(window as Window & { MSStream?: unknown }).MSStream;
       if (isIOS) {
         alert(
           "To install Bookly on your iOS device:\n\n1. Tap the Share button in Safari (at the bottom/top of the screen)\n2. Scroll down and tap 'Add to Home Screen' (+ icon)\n3. Tap 'Add' to confirm."
@@ -86,7 +89,6 @@ export function usePWAInstall() {
 
     // We've used the prompt, and can't use it again, discard it
     deferredPrompt = null;
-    setIsInstallable(false);
     notifyListeners();
   };
 

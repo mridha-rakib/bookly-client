@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import React from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   DashboardSquare01Icon,
   Calendar03Icon,
@@ -71,7 +71,7 @@ export default function DashboardSidebar({
   // Helper for rendering menu button items with tooltip on hover when collapsed
   const renderMenuItem = (
     tabName: string,
-    icon: any,
+    icon: IconSvgElement,
     labelText: string,
     badgeCount?: number
   ) => {

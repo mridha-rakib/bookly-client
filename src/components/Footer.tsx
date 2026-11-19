@@ -73,9 +73,9 @@ export default function Footer() {
                 <Link href="/contact-support" className="font-poppins font-normal text-[18px] sm:text-[20px] leading-[40px] text-[#4E5F78] hover:text-black transition-colors">
                   Support
                 </Link>
-                <a href="/blog" className="font-poppins font-normal text-[18px] sm:text-[20px] leading-[40px] text-[#4E5F78] hover:text-black transition-colors">
+                <Link href="/blog" className="font-poppins font-normal text-[18px] sm:text-[20px] leading-[40px] text-[#4E5F78] hover:text-black transition-colors">
                   Blog
-                </a>
+                </Link>
                 <Link href="/about" className="font-poppins font-normal text-[18px] sm:text-[20px] leading-[40px] text-[#4E5F78] hover:text-black transition-colors">
                   About us
                 </Link>

@@ -30,11 +30,11 @@ function BusinessStepCard({
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
+  // Desktop follows the section-level trigger directly; mobile observes each card itself.
+  const visible = isMobile ? inView : globalVisible;
+
   useEffect(() => {
-    if (!isMobile) {
-      setInView(globalVisible);
-      return;
-    }
+    if (!isMobile) return;
     const el = ref.current;
     if (!el) return;
 
@@ -59,7 +59,7 @@ function BusinessStepCard({
       ref={ref}
       style={{ transitionDelay: `${delay}ms` }}
       className={`group flex flex-col items-start p-6 gap-8 bg-white border border-[#E8E6FF] rounded-2xl hover:shadow-xl hover:-translate-y-3 hover:scale-[1.02] hover:border-[#2E9DA7]/40 transition-all duration-[1400ms] ease-in-out ${
-        inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
+        visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
       }`}
     >
       <div className="w-[60px] h-[60px] bg-[#2E9DA7] text-[#111111] rounded-xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-6">

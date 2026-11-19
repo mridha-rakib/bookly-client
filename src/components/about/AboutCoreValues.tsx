@@ -45,7 +45,7 @@ export default function AboutCoreValues() {
             Innovation
           </h3>
           <p className="font-manrope font-normal text-[16px] leading-[26px] text-[#45474B]">
-            We constantly refine our technology to provide the most intuitive, frictionless booking experience possible. We don't settle for the status quo.
+            We constantly refine our technology to provide the most intuitive, frictionless booking experience possible. We don&apos;t settle for the status quo.
           </p>
         </div>
 

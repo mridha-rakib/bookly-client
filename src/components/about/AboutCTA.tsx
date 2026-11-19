@@ -17,7 +17,7 @@ export default function AboutCTA() {
           Join the Community
         </h2>
         <p className="font-manrope font-normal text-lg md:text-xl text-[#45474B] leading-7 max-w-[456px]">
-          Whether you're looking to streamline your life or scale your business, Bookly.cy is your destination.
+          Whether you&apos;re looking to streamline your life or scale your business, Bookly.cy is your destination.
         </p>
 
         {/* Buttons Row */}

@@ -1,9 +1,9 @@
 import React from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 
 interface SubTabItem {
   name: string;
-  icon: any;
+  icon: IconSvgElement;
 }
 
 interface SettingsSubSidebarProps {
