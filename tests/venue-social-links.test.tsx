@@ -195,10 +195,64 @@ describe("venue summary card social links", () => {
     expect(host.textContent).not.toContain("javascript:");
   });
 
-  it("logged out: the locked contact card does not show social accounts", async () => {
-    fx.auth = { user: null, status: "unauthenticated", cacheEpoch: 1, isInitializing: false };
-    await render(SAVED);
-    await waitFor(() => expect(aside().textContent).toContain("Log in or create an account to contact this business"));
-    expect(socialLinks(host)).toHaveLength(0);
+  it("shows only Instagram when only the Instagram handle is saved", async () => {
+    await render({ instagramHandle: SAVED.instagramHandle });
+    await waitFor(() => expect(socialLinks(aside())).toHaveLength(1));
+    expect(socialLinks(aside())[0]!.textContent?.trim()).toBe("Instagram");
+    expect(host.querySelector('a[href*="facebook.com"]')).toBeNull();
+  });
+});
+
+describe("public venue card (logged out and Business Owner)", () => {
+  const LOCK_TEXT = "Log in or create an account to contact this business";
+  // The blurred private-contact block (fixed 200px height) that sits under the lock overlay.
+  const lockedSection = () =>
+    [...aside().querySelectorAll("div")].find((el) => el.className.includes("h-[200px]")) as HTMLElement;
+  const states = [
+    ["logged out", { user: null, status: "unauthenticated" }],
+    ["Business Owner", { user: { id: "222222222222222222222222", role: "BUSINESS_OWNER", firstName: "Owner" }, status: "authenticated" }],
+  ] as const;
+
+  for (const [label, auth] of states) {
+    it(`${label}: shows both saved accounts below the address, outside the private-contact lock`, async () => {
+      fx.auth = { ...auth, cacheEpoch: 1, isInitializing: false };
+      await render(SAVED);
+      await waitFor(() => expect(aside().textContent).toContain(LOCK_TEXT));
+      await waitFor(() => expect(socialLinks(aside())).toHaveLength(2));
+      expectSavedLinks(aside());
+      expect(lockedSection()).toBeTruthy();
+      for (const link of socialLinks(aside())) {
+        expect(lockedSection().contains(link)).toBe(false);
+        expect(link.closest(".pointer-events-none")).toBeNull();
+      }
+      // Private contact details stay locked: no phone or email links.
+      expect(aside().querySelector('a[href^="tel:"], a[href^="mailto:"]')).toBeNull();
+    });
+
+    it(`${label}: the address row uses the location icon, not the phone icon`, async () => {
+      fx.auth = { ...auth, cacheEpoch: 1, isInitializing: false };
+      await render(SAVED);
+      await waitFor(() => expect(aside().textContent).toContain(LOCK_TEXT));
+      const addressRow = [...aside().querySelectorAll("div.flex.items-center.gap-2.w-full")]
+        .find((row) => row.textContent?.includes("Get Directions")) as HTMLElement;
+      expect(addressRow).toBeTruthy();
+      expect(addressRow.querySelector('[aria-label="Phone"]')).toBeNull();
+      expect(addressRow.querySelector("svg")).toBeTruthy();
+    });
+
+    it(`${label}: unset accounts are hidden and invalid values never become links`, async () => {
+      fx.auth = { ...auth, cacheEpoch: 1, isInitializing: false };
+      await render({ instagramHandle: "bad handle!", facebookPageUrl: "javascript:alert(1)//https://facebook.com/x" });
+      await waitFor(() => expect(aside().textContent).toContain(LOCK_TEXT));
+      expect(host.querySelector('[aria-label="Social media"]')).toBeNull();
+      expect(anyExternalSocialHref()).toBe(false);
+    });
+  }
+
+  it("Business Owner: only the saved Facebook Page renders when Instagram is unset", async () => {
+    fx.auth = { user: { id: "222222222222222222222222", role: "BUSINESS_OWNER", firstName: "Owner" }, status: "authenticated", cacheEpoch: 1, isInitializing: false };
+    await render({ facebookPageUrl: SAVED.facebookPageUrl });
+    await waitFor(() => expect(socialLinks(aside())).toHaveLength(1));
+    expect(socialLinks(aside())[0]!.getAttribute("href")).toBe(SAVED.facebookPageUrl);
   });
 });

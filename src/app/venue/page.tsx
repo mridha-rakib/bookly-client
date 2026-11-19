@@ -1982,7 +1982,7 @@ function VenueDetailsContent() {
                       {/* Address and Get Directions */}
                       <div className="flex items-center gap-2 w-full">
                         <div className="w-6 h-6 relative shrink-0">
-                          <Image src="/Icons/phone.svg" className="w-6 h-6 object-contain filter opacity-60" alt="Phone" width={24} height={24} />
+                          <HugeiconsIcon icon={Location05Icon} className="w-6 h-6 object-contain filter opacity-60" />
                         </div>
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className="font-inter font-normal text-[15.8px] text-[#767676] truncate shrink">
@@ -1992,6 +1992,9 @@ function VenueDetailsContent() {
                           <VenueDirectionsLink business={business} />
                         </div>
                       </div>
+
+                      {/* Saved social accounts (public Business Profile) — outside the private-contact lock */}
+                      <VenueSocialLinks businessName={business?.name} instagramHandle={business?.instagramHandle} facebookPageUrl={business?.facebookPageUrl} />
                     </div>
 
                     {/* Blurred details and Lock overlay section */}
