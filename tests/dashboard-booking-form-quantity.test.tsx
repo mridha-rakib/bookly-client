@@ -293,6 +293,31 @@ it("does not replay an uncertain booking request with changed details under the 
   expect(fx.create).toHaveBeenCalledTimes(2);
   expect(fx.create.mock.calls[1]![0].input).toEqual(fx.create.mock.calls[0]![0].input);
 });
+it("a definitive 4xx rejection (slot taken) lets the staff pick another slot as a NEW request", async () => {
+  const { BooklyApiError } = await import("@/lib/api/client");
+  await setup(fixed); await click("Slot 09:00");
+  fx.create.mockRejectedValueOnce(new BooklyApiError({
+    message: "Slot unavailable", status: 409, code: "BOOKING_SLOT_RESERVATION_CONFLICT",
+  }));
+  await click("Create booking");
+  await click("Slot 11:00"); await click("Create booking");
+  expect(fx.create).toHaveBeenCalledTimes(2);
+  expect(host.textContent).not.toContain("previous booking request may have been saved");
+  const [first, second] = fx.create.mock.calls.map((call) => call[0].input);
+  expect(second.startAt).not.toBe(first.startAt);
+  expect(second.idempotencyKey).not.toBe(first.idempotencyKey);
+});
+it("an idempotency conflict keeps the original request pinned (no new key, no changed retry)", async () => {
+  const { BooklyApiError } = await import("@/lib/api/client");
+  await setup(fixed); await click("Slot 09:00");
+  fx.create.mockRejectedValueOnce(new BooklyApiError({
+    message: "Conflict", status: 409, code: "BOOKING_IDEMPOTENCY_CONFLICT",
+  }));
+  await click("Create booking");
+  await click("Slot 11:00"); await click("Create booking");
+  expect(fx.create).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("previous booking request may have been saved");
+});
 it("BC-F02 client creation failure never dispatches a booking", async () => {
   await newClientForm();
   fx.createClient.mockRejectedValueOnce(Error("Contact conflict"));

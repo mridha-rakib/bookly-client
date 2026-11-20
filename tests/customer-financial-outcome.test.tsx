@@ -150,6 +150,13 @@ describe("F2D financial presentation", () => {
     expect([...host.querySelectorAll("button")].some((button) => button.textContent === "Cancel")).toBe(true);
     expect([...host.querySelectorAll("button")].some((button) => button.textContent === "Reschedule")).toBe(true);
   });
+  it("a PENDING (no-show under review) Booking offers no cancel or reschedule, which the API would reject", async () => {
+    detail.status = "PENDING"; delete detail.cancellationOutcome;
+    await render(<BookingView />);
+    await waitFor(() => expect(host.textContent).toContain("Recorded service"));
+    expect([...host.querySelectorAll("button")].some((button) => button.textContent === "Cancel")).toBe(false);
+    expect([...host.querySelectorAll("button")].some((button) => button.textContent === "Reschedule")).toBe(false);
+  });
   it("a real legacy Package Booking retains the common detail and original Package destination", async () => {
     detail.status = "UPCOMING"; delete detail.cancellationOutcome;
     detail.serviceLines[0]!.packageProgressId = "legacy-progress";

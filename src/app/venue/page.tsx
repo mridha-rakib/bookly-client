@@ -45,7 +45,7 @@ import LegacyPackageRecovery from "@/components/packages/LegacyPackageRecovery";
 import { continueLegacyRecovery, resolveLegacyRecovery, saveLegacyRecovery } from "@/lib/packages/legacy-recovery";
 import { storePostLoginRedirect } from "@/lib/auth/post-login-redirect";
 import { BooklyApiError } from "@/lib/api/client";
-import { useBusinessCatalogQuery, useServiceAddonsQuery, useServiceAvailabilityQuery } from "@/lib/catalog/hooks";
+import { catalogKeys, useBusinessCatalogQuery, useServiceAddonsQuery, useServiceAvailabilityQuery } from "@/lib/catalog/hooks";
 import { ANY_STAFF, type AvailabilitySlot, type CatalogService } from "@/lib/api/catalog";
 import {
   useFinalizeCustomerBookingMutation,
@@ -460,14 +460,16 @@ function VenueDetailsContent() {
       return;
     }
 
-    runGuardedPreview(() => previewMutation.mutateAsync({ businessId: venueId, input })).catch(() => {
+    runGuardedPreview(() => previewMutation.mutateAsync({ businessId: venueId, input })).catch((error: unknown) => {
       // Section 26 self-heal: if the applied promo became invalid mid-flow (e.g. usage
       // exhausted by another customer, or the code was deactivated), never leave the
       // customer stuck on a dead summary — drop it and re-quote without it. Runs regardless of
       // whether THIS particular attempt was superseded by a newer one by the time it failed —
       // same as before the race-safety fix, this only decides whether to self-heal, not what
       // gets displayed (that's runGuardedPreview's own job).
-      if (appliedPromoCode) {
+      // Only a promo rejection removes the promo; a network blip or a slot/schedule conflict must
+      // not silently discard a still-valid code (the failed quote itself is shown by the summary).
+      if (appliedPromoCode && error instanceof BooklyApiError && error.code?.startsWith("PROMO_")) {
         setAppliedPromoCode(undefined);
         setPromoCodeInput("");
         setPromoStatus("error");
@@ -653,6 +655,9 @@ function VenueDetailsContent() {
             dismissBookingContinuation(saved);
           }
           if (!isCurrentAction()) return;
+          // The committed operation's key is spent: re-opening the wizard ("Book now"/"Continue")
+          // after this confirmation must start a NEW logical booking, never replay this one.
+          setIdempotencyKey(crypto.randomUUID());
           setConfirmedBooking(booking);
           setBookingStep("confirmed");
         };
@@ -687,10 +692,24 @@ function VenueDetailsContent() {
         ) => {
           if (!isCurrentAction()) return;
           let message = typeof messageOrError === "string" ? messageOrError : toUserMessage(messageOrError);
+          // A definitive 4xx answered by the server (not a lost/ambiguous response).
+          const definitiveRejection =
+            messageOrError instanceof BooklyApiError &&
+            messageOrError.status !== undefined &&
+            messageOrError.status >= 400 &&
+            messageOrError.status < 500;
+          let releasedOperation = false;
           if (saved) {
             try {
               const observed = await readOriginal();
               if (!isCurrentAction()) return;
+              // The server rejected the request AND holds neither a claim nor a payment attempt
+              // for this key: nothing was reserved or charged. Retire the saved request and start
+              // a fresh key so the Customer can change slot/details instead of being locked out.
+              if (definitiveRejection && observed.state === "NOT_OBSERVED") {
+                dismissBookingContinuation(saved);
+                releasedOperation = true;
+              }
               if (observed.state === "COMMITTED" && observed.bookingId) {
                 const committed = await bookingsApi.getDetailForCustomer(observed.bookingId);
                 if (!isCurrentAction()) return;
@@ -706,10 +725,21 @@ function VenueDetailsContent() {
           const isAmbiguousServerOutcome =
             !(messageOrError instanceof BooklyApiError) ||
             messageOrError.status === undefined || messageOrError.status >= 500;
-          if (isPackagePurchaseFlow && !isAmbiguousServerOutcome && !options.preserveLogicalKey) {
+          if (
+            (isPackagePurchaseFlow && !isAmbiguousServerOutcome && !options.preserveLogicalKey) ||
+            releasedOperation
+          ) {
             setIdempotencyKey(crypto.randomUUID());
           }
-          if (messageOrError instanceof BooklyApiError && messageOrError.code === "BOOKING_SLOT_RESERVATION_CONFLICT") {
+          if (messageOrError instanceof BooklyApiError && messageOrError.status === 409) {
+            // Whatever conflicted (slot taken, schedule changed), the cached slots may be stale.
+            void queryClient.invalidateQueries({ queryKey: catalogKeys.all });
+          }
+          if (
+            messageOrError instanceof BooklyApiError &&
+            (messageOrError.code === "BOOKING_SLOT_RESERVATION_CONFLICT" ||
+              messageOrError.code === "AVAILABILITY_SLOT_NOT_BOOKABLE")
+          ) {
             setSelectedSlot(undefined);
             setBookingStep("time");
           }
@@ -2177,10 +2207,9 @@ function VenueDetailsContent() {
                 // own isPending/isError, which could otherwise flip based on an older, already-
                 // superseded call settling after a newer one.
                 isPreviewLoading={isPreviewPending}
-                previewError={
-                  previewFetchFailed ||
-                  (isPackagePurchaseFlow ? purchasePackageMutation.isError : finalizeMutation.isError)
-                }
+                // Only a failed QUOTE hides the amounts. A failed finalize is reported by
+                // walletError; the still-valid quote stays visible beside the enabled Confirm.
+                previewError={previewFetchFailed}
                 showPolicy={showPolicy}
                 setShowPolicy={setShowPolicy}
                 onContinue={handleWizardContinue}

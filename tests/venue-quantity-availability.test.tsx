@@ -914,6 +914,51 @@ describe("F3B payment continuation and authoritative confirmation", () => {
     expect(fx.stripeConfirm).not.toHaveBeenCalled();
   });
 
+  it("a definitive rejection with no server operation frees the Customer to pick another slot under a NEW key", async () => {
+    finalizeResponses((count) => count === 1
+      ? Promise.reject(new BooklyApiError({ message: "Slot taken", status: 409, code: "BOOKING_SLOT_RESERVATION_CONFLICT" }))
+      : { id: "second-booking", status: "UPCOMING" });
+    const respond = fx.respond!;
+    const op: { firstKey?: string } = {};
+    fx.respond = (req) => {
+      if (req.url.endsWith("/bookings/operations/payment-status") && req.params?.idempotencyKey === op.firstKey)
+        return { state: "NOT_OBSERVED", businessId: VENUE_ID, idempotencyKey: op.firstKey, canDismiss: false, canResume: true };
+      return respond(req);
+    };
+    await readyToPay();
+    const firstKey = (op.firstKey = lastPost("/bookings/preview")!.idempotencyKey);
+    await click(byText("Wizard continue"));
+    await waitFor(() => expect(posts("/bookings/finalize")).toHaveLength(1));
+    await waitFor(() => expect(host.textContent).toContain("This time slot was just taken"));
+    expectNoConfirmation();
+    // Back on Time with the rejected slot cleared: choose another and confirm.
+    await selectSlot("11:00");
+    await waitFor(() => expect(byText("Wizard continue").disabled).toBe(false));
+    await click(byText("Wizard continue"));
+    await waitFor(() => expect(byText("Wizard continue").disabled).toBe(false));
+    await click(byText("Wizard continue"));
+    await waitFor(() => expect(host.textContent).toContain("Booking confirmed"));
+    const [first, second] = posts("/bookings/finalize").map((r) => r.data as { idempotencyKey: string; startAt: string });
+    expect(first!.idempotencyKey).toBe(firstKey);
+    expect(second!.idempotencyKey).not.toBe(firstKey);
+    expect(second!.startAt).not.toBe(first!.startAt);
+    expect(host.textContent).not.toContain("already saved");
+    expect(Object.keys(localStorage).some((key) => key.includes(encodeURIComponent(firstKey!)))).toBe(false);
+  });
+
+  it("a rejection while the server still holds the operation keeps the original key and saved request", async () => {
+    finalizeResponses(() => Promise.reject(new BooklyApiError({ message: "Payment declined", status: 402, code: "PAYMENT_FAILED" })));
+    await readyToPay();
+    const key = lastPost("/bookings/preview")!.idempotencyKey;
+    await click(byText("Wizard continue"));
+    await waitFor(() => expect(host.textContent).toContain("Payment declined"));
+    await waitFor(() => expect(byText("Wizard continue").disabled).toBe(false));
+    await click(byText("Wizard continue"));
+    await waitFor(() => expect(posts("/bookings/finalize")).toHaveLength(2));
+    expect(posts("/bookings/finalize").every((r) => (r.data as { idempotencyKey: string }).idempotencyKey === key)).toBe(true);
+    expect(Object.keys(localStorage).some((k) => k.includes(encodeURIComponent(key)))).toBe(true);
+  });
+
   it.each(["account", "epoch", "logout"])("ignores an old finalize response/cache seed after %s change", async (change) => {
     const pending = Promise.withResolvers<unknown>();
     finalizeResponses(() => pending.promise);

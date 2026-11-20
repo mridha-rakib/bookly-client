@@ -41,7 +41,8 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   PENDING: "Pending resolution",
   NO_SHOW_CHARGED: "No-show (charged)",
   NO_SHOW_WAIVED: "No-show (waived)",
-  NO_SHOW_CANCELLED: "No-show (cancelled)",
+  // The business reversed the no-show: resolved with no no-show charge.
+  NO_SHOW_CANCELLED: "No-show reversed",
   CANCELLED_BY_CUSTOMER: "Cancelled by you",
   CANCELLED_BY_BUSINESS: "Cancelled by business",
   LATE_CANCELLATION: "Late cancellation",
@@ -119,6 +120,8 @@ export type CustomerBookingTab = "upcoming" | "completed" | "noshow" | "canceled
 export const CUSTOMER_BOOKING_TAB_STATUSES: Record<CustomerBookingTab, BookingStatus[]> = {
   upcoming: ["UPCOMING", "PENDING"],
   completed: ["COMPLETED"],
-  noshow: ["NO_SHOW_CHARGED", "NO_SHOW_WAIVED", "NO_SHOW_CANCELLED"],
-  canceled: ["CANCELLED_BY_CUSTOMER", "CANCELLED_BY_BUSINESS", "LATE_CANCELLATION"],
+  noshow: ["NO_SHOW_CHARGED", "NO_SHOW_WAIVED"],
+  // A reversed no-show is not a no-show against the Customer; the Business list also groups it
+  // with ended-without-completion bookings.
+  canceled: ["CANCELLED_BY_CUSTOMER", "CANCELLED_BY_BUSINESS", "LATE_CANCELLATION", "NO_SHOW_CANCELLED"],
 };

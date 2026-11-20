@@ -50,6 +50,9 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
 
   const isUpcoming = booking.status === "UPCOMING" || booking.status === "PENDING";
   const isTerminal = !isUpcoming;
+  // Only an UPCOMING booking can be rescheduled or cancelled; a PENDING one is a no-show under
+  // the business's review and the API rejects both actions.
+  const canChange = booking.status === "UPCOMING" && !booking.firstClassPackage;
 
   const businessProfileImg = business?.media?.find((m) => m.role === "PROFILE")?.url;
 
@@ -158,7 +161,7 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
             <>
               <button
                 onClick={() => onReschedule(booking.id)}
-                disabled={booking.firstClassPackage}
+                disabled={!canChange}
                 className="w-full py-2.5 border border-[#C6C6CB] rounded-xl text-sm font-semibold transition-colors bg-[#FCF8F8] hover:bg-neutral-100 text-[#020305] cursor-pointer text-center disabled:opacity-50"
               >
                 Reschedule
@@ -166,9 +169,9 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
 
               <button
                 onClick={() => onCancel(booking.id)}
-                disabled={!isUpcoming || booking.firstClassPackage}
+                disabled={!canChange}
                 className={`w-full py-2.5 border rounded-xl text-sm font-semibold transition-colors text-center ${
-                  !isUpcoming
+                  !canChange
                     ? "bg-red-50/20 border-red-100 text-red-300 cursor-not-allowed"
                     : "bg-white border-red-200 text-[#BA1A1A] hover:bg-red-50 cursor-pointer"
                 }`}
@@ -226,7 +229,12 @@ export default function BookingCard({ booking, onReschedule, onCancel }: Booking
       </div>
 
       {booking.firstClassPackage && <p role="status" className="text-sm text-[#5F5E5A]">First-class Package session changes are unavailable. Open View for package details.</p>}
-      {isUpcoming && !booking.firstClassPackage && (
+      {booking.status === "PENDING" && (
+        <p role="status" className="text-xs text-[#4E5F78] font-poppins">
+          The business is reviewing this appointment as a possible no-show, so it can&apos;t be rescheduled or cancelled.
+        </p>
+      )}
+      {canChange && (
         <p className="text-xs text-[#4E5F78] font-poppins">
           {MAX_CUSTOMER_RESCHEDULE_COUNT} free reschedules per booking.
         </p>

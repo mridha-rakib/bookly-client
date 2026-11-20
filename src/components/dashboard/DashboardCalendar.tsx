@@ -386,6 +386,10 @@ export default function DashboardCalendar({
           {/* Today View Toggle Dropdown */}
           <div className="relative">
             <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={isViewDropdownOpen}
+              data-calendar-view-toggle=""
               onClick={() => {
                 setIsViewDropdownOpen(!isViewDropdownOpen);
                 setIsStaffDropdownOpen(false);

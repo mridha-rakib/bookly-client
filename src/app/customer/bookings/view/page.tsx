@@ -59,7 +59,8 @@ function BookingViewContent({ bookingId }: { bookingId?: string }) {
   const cancelMutation = useCancelByCustomerMutation();
   const cancelInFlight = useRef(false);
 
-  const isUpcoming = !firstClassLine && (booking?.status === "UPCOMING" || booking?.status === "PENDING");
+  // A PENDING (no-show under review) booking cannot be rescheduled or cancelled by the API.
+  const isUpcoming = !firstClassLine && booking?.status === "UPCOMING";
   const visitMode = booking?.fulfilment?.mode;
   const location = visitMode === "AT_BUSINESS_LOCATION" ? booking?.fulfilment.businessLocation
     : visitMode === "TRAVEL_TO_CUSTOMER" ? booking?.fulfilment.travelAddress : undefined;

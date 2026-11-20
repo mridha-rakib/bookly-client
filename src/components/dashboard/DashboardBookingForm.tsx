@@ -36,6 +36,7 @@ import { formatBookingTime } from "@/lib/bookings/format";
 import { BUSINESS_CITIES, type BusinessCity } from "@/lib/constants/cities";
 import { CLIENT_PROPERTY_TYPES } from "@/lib/api/clients";
 import { getFieldErrors, toUserMessage } from "@/lib/auth/messages";
+import { BooklyApiError } from "@/lib/api/client";
 import { toast } from "@/components/ui/sonner";
 import TimeStep from "@/app/venue/components/TimeStep";
 
@@ -313,7 +314,7 @@ export default function DashboardBookingForm({
   // One idempotency key per form session — reused across retries of the SAME attempt, never
   // regenerated on a simple error (see BookingCreationClaimRepository's own contract: retrying
   // with the same key safely resolves to the same booking, never a duplicate).
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const submittedBookingInput = useRef<string | null>(null);
   const [submitError, setSubmitError] = useState<string | undefined>(undefined);
 
@@ -421,6 +422,19 @@ export default function DashboardBookingForm({
       onCreated(booking.id);
     } catch (error) {
       setSubmitError(toUserMessage(error));
+      // A definitive 4xx rejection (slot taken, staff not eligible, validation…) created no
+      // booking, so the form may be corrected and resubmitted as a NEW request. Network
+      // errors, 5xx and an idempotency conflict stay pinned to the original request.
+      if (
+        error instanceof BooklyApiError &&
+        error.status !== undefined &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        error.code !== "BOOKING_IDEMPOTENCY_CONFLICT"
+      ) {
+        submittedBookingInput.current = null;
+        setIdempotencyKey(crypto.randomUUID());
+      }
     }
   };
 

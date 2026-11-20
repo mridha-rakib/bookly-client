@@ -534,15 +534,20 @@ export default function ClientBookingHistoryCard({
                     {remainingMs !== undefined ? formatCountdown(remainingMs) : "—"}
                   </span>
                   <span className="text-xs text-[#000000] text-center font-inter px-2 leading-relaxed">
-                    Customer will be charged automatically when the timer reaches zero.
+                    {isManual
+                      ? "Manual bookings are resolved without a charge when the timer reaches zero."
+                      : "When the timer reaches zero, Bookly attempts to collect your no-show fee from the customer's saved card."}
                   </span>
                 </div>
               </div>
 
-              <div className="bg-[#F5F4EE] border border-neutral-200/50 rounded-xl p-4 flex items-center justify-between font-poppins text-sm text-[#1C1B1C] mt-2">
-                <span className="font-medium">No-show fee (outstanding)</span>
-                <span className="font-bold text-base">{formatBookingMoney(additionalChargeCents)}</span>
-              </div>
+              {/* The no-show fee is only known once resolution records it; never show a placeholder €0. */}
+              {additionalChargeCents > 0 && (
+                <div className="bg-[#F5F4EE] border border-neutral-200/50 rounded-xl p-4 flex items-center justify-between font-poppins text-sm text-[#1C1B1C] mt-2">
+                  <span className="font-medium">No-show fee (outstanding)</span>
+                  <span className="font-bold text-base">{formatBookingMoney(additionalChargeCents)}</span>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
                 <button
@@ -675,7 +680,9 @@ export default function ClientBookingHistoryCard({
         </div>
       )}
 
-      {showFooterActions && !isFirstClass && (status === "UPCOMING" || status === "PENDING") && (
+      {/* PENDING (no-show under review) is handled by the no-show panel above: the API rejects
+          cancel/reschedule/complete for anything but UPCOMING. */}
+      {showFooterActions && !isFirstClass && status === "UPCOMING" && (
         <div className="mt-4 flex w-full flex-col items-stretch gap-3 select-none lg:flex-row lg:items-center lg:justify-end">
           {status === "UPCOMING" && (
             <button

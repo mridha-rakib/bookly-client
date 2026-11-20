@@ -78,7 +78,11 @@ const codeMessages: Record<string, string> = {
     "The selected time is no longer available. Please choose another available time.",
   AVAILABILITY_CITY_REQUIRED: "Select a city for this travel appointment.",
   AVAILABILITY_CITY_NOT_SERVED:
-    "This package cannot be redeemed at the selected city. Choose another eligible city.",
+    "The business doesn't serve the selected city for this service. Choose another eligible city.",
+  AVAILABILITY_SLOT_NOT_BOOKABLE:
+    "The selected time is no longer available. Please choose another available time.",
+  BOOKING_ALREADY_STARTED:
+    "This appointment has already started and can no longer be rescheduled online. Please contact the business.",
   PACKAGE_PROGRESS_BALANCE_NOT_SETTLED:
     "The remaining package balance must be settled before another session can be scheduled.",
   PACKAGE_PROGRESS_NO_SESSIONS_REMAINING: "This package has no sessions remaining.",
