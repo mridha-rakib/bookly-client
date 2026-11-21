@@ -448,8 +448,9 @@ function VenueDetailsContent() {
   // Promo Code) change enough to affect price — never trust a client-computed total (rule #1/#14).
   // Section 26: this also re-validates the applied promo from scratch on every dependency change,
   // never trusting a stale preview snapshot.
-  useEffect(() => {
-    if (bookingStep !== "time" && bookingStep !== "payment") return;
+  // Also called directly after the server refuses a changed price (BOOKING_QUOTE_CHANGED), so
+  // the Customer sees — and must explicitly confirm — the fresh authoritative quote.
+  const refreshQuote = () => {
     const input = buildBookingInput();
     if (!input) return;
 
@@ -479,6 +480,11 @@ function VenueDetailsContent() {
         );
       }
     });
+  };
+
+  useEffect(() => {
+    if (bookingStep !== "time" && bookingStep !== "payment") return;
+    refreshQuote();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookingStep, selectedServiceId, selectedPricingInput.hours, selectedPricingInput.personCount, selectedAddonIds.join(","), selectedProfessional, selectedSlot?.startAt, appliedPromoCode, isPackagePurchaseFlow, JSON.stringify(additionalLines), customerCity, travelAddress.propertyType, travelAddress.area, travelAddress.streetName, travelAddress.streetNumber, travelAddress.floorUnit, travelAddress.aptRoom, travelAddress.additionalDirections]);
 
@@ -610,8 +616,12 @@ function VenueDetailsContent() {
       if (paymentAction.current || !canContinueWizard) return;
       const session = customerPaymentSession(useAuthStore.getState());
       if (!session) return;
-      const input = buildBookingInput();
-      if (!input) return;
+      const selections = buildBookingInput();
+      // Fix #1 — Confirm is consent to the quote ON SCREEN: the request is bound to that exact
+      // preview, and the server refuses (BOOKING_QUOTE_CHANGED, nothing charged) if its fresh
+      // terms differ. The amount itself is never sent.
+      if (!selections || !preview) return;
+      const input = { ...selections, acceptedQuoteDigest: preview.quoteDigest };
       const action = {};
       paymentAction.current = action;
       const isCurrentAction = () => paymentAction.current === action &&
@@ -621,7 +631,19 @@ function VenueDetailsContent() {
         const ownerId = useAuthStore.getState().user?.id;
         if (isPackagePurchaseFlow && ownerId) {
           const record = saveLegacyRecovery(ownerId, venueId, "PACKAGE_PURCHASE", input.serviceLines[0].serviceId, input);
-          const result = await continueLegacyRecovery(record, isCurrentAction);
+          let result: Awaited<ReturnType<typeof continueLegacyRecovery>>;
+          try {
+            result = await continueLegacyRecovery(record, isCurrentAction);
+          } catch (error) {
+            if (isCurrentAction() && error instanceof BooklyApiError && error.code === "BOOKING_QUOTE_CHANGED") {
+              // Nothing was reserved or charged (continueLegacyRecovery retired the saved request
+              // on the server's NOT_OBSERVED word): show the fresh price for a NEW explicit Confirm.
+              setIdempotencyKey(crypto.randomUUID());
+              setAcceptedPreview(undefined);
+              refreshQuote();
+            }
+            throw error;
+          }
           if (!isCurrentAction()) return;
           if (result.state !== "COMMITTED" || !result.bookingId) {
             if (result.canDismiss) setIdempotencyKey(crypto.randomUUID());
@@ -734,6 +756,13 @@ function VenueDetailsContent() {
           if (messageOrError instanceof BooklyApiError && messageOrError.status === 409) {
             // Whatever conflicted (slot taken, schedule changed), the cached slots may be stale.
             void queryClient.invalidateQueries({ queryKey: catalogKeys.all });
+          }
+          if (messageOrError instanceof BooklyApiError && messageOrError.code === "BOOKING_QUOTE_CHANGED") {
+            // Fix #1 — re-quote so the changed amount is displayed; Confirm stays disabled until
+            // the fresh preview lands, and only a NEW explicit Confirm binds to it. The refused
+            // amount is withdrawn immediately rather than left on screen as if still valid.
+            setAcceptedPreview(undefined);
+            refreshQuote();
           }
           if (
             messageOrError instanceof BooklyApiError &&

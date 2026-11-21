@@ -79,6 +79,8 @@ export interface PackageProgressListResponse {
  * enforced server-side (BOOKING_PACKAGE_PURCHASE_INVALID_LINES); this type mirrors
  * CreateBookingInput but the wizard always builds it with a single-entry serviceLines array. */
 export type PackagePurchaseInput = Omit<CreateBookingInput, "promoCode">;
+/** Fix #1 — a purchase body bound to the exact package preview the Customer accepted. */
+export type AcceptedPackagePurchaseInput = PackagePurchaseInput & { acceptedQuoteDigest: string };
 
 export interface RedeemPackageSessionInput {
   staffMembershipId: string;
@@ -136,7 +138,7 @@ export const packagesApi = {
       data: input,
     }),
 
-  purchase: (businessId: string, input: PackagePurchaseInput) =>
+  purchase: (businessId: string, input: AcceptedPackagePurchaseInput) =>
     apiRequest<FinalizeBookingResult>({
       method: "POST",
       url: `/businesses/${businessId}/bookings/packages/purchase`,

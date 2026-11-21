@@ -13,7 +13,8 @@ import { BOOKING_REQUEST_BODY_RETENTION_MS, BOOKING_POINTER_RETENTION_MS, readBo
 vi.mock("@/lib/payments/stripe-client", () => ({ getStripe: vi.fn() }));
 const customerId = "1".repeat(24), businessId = "2".repeat(24);
 const input: CreateBookingInput = { idempotencyKey: "original-operation", startAt: "2030-08-20T09:00:00.000Z",
-  serviceLines: [{ serviceId: "3".repeat(24), staffMembershipId: "4".repeat(24), addonIds: [], pricingInput: {} }] };
+  serviceLines: [{ serviceId: "3".repeat(24), staffMembershipId: "4".repeat(24), addonIds: [], pricingInput: {} }],
+  acceptedQuoteDigest: `bq1_${"a".repeat(64)}` };
 let root: Root, host: HTMLDivElement;
 const value = (state: BookingPaymentStatus["state"], extra: Partial<BookingPaymentStatus> = {}): BookingPaymentStatus =>
   ({ state, businessId, idempotencyKey: input.idempotencyKey, ...extra });
@@ -217,4 +218,12 @@ it("legacy persistent P4A bodies migrate out of localStorage and another account
   expect(JSON.stringify(localStorage)).not.toContain("legacy-private");
   expect(readBookingContinuations("9".repeat(24))).toEqual([]);
   expect(JSON.stringify(sessionStorage)).not.toContain("legacy-private");
+});
+
+it("Fix #1: a saved request without an accepted price is never re-sent unbound", async () => {
+  const unbound = { ...input, acceptedQuoteDigest: undefined };
+  saveBookingContinuation(customerId, businessId, unbound); await mount();
+  await click("Continue original Booking");
+  expect(bookingsApi.finalizeCustomerBooking).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("no confirmed price");
 });

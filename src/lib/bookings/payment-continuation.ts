@@ -7,6 +7,9 @@ const inputSchema = z.object({
   serviceLines: z.array(z.object({ serviceId: id, staffMembershipId: id, addonIds: z.array(id).max(50),
     pricingInput: z.object({ hours: z.number().positive().optional(), personCount: z.number().int().positive().optional() }).strict() }).strict()).min(1).max(50),
   customerCity: z.string().optional(), notes: z.string().max(2000).optional(), promoCode: z.string().max(200).optional(),
+  // Fix #1 — the accepted preview is part of the immutable request; optional only so a request
+  // saved before price confirmation existed can still be observed (never re-sent unbound).
+  acceptedQuoteDigest: z.string().regex(/^bq1_[a-f0-9]{64}$/).optional(),
   travelAddress: z.object({ city: z.string(), propertyType: z.string(), area: z.string(), streetName: z.string(),
     streetNumber: z.string(), floorUnit: z.string().optional(), aptRoom: z.string().optional(),
     additionalDirections: z.string().max(2000).optional() }).strict().optional(),

@@ -319,7 +319,15 @@ export interface CreateBookingInput {
   /** Batch 13 — customer-only, optional Promo Code. Server validates/computes everything;
    * never trust a client-computed discount. Ignored by `createManual`. */
   promoCode?: string;
+  /** Fix #1 — the `quoteDigest` of the preview the Customer explicitly confirmed. Mandatory on
+   * finalize/purchase (see AcceptedBookingInput); never sent to preview or manual creation. */
+  acceptedQuoteDigest?: string;
 }
+
+/** A finalize/purchase body: the Customer's selections bound to the exact preview they accepted.
+ * The server refuses with 409 BOOKING_QUOTE_CHANGED (nothing reserved or charged) when its fresh
+ * terms differ; the amount itself is never sent or trusted from the client. */
+export type AcceptedBookingInput = CreateBookingInput & { acceptedQuoteDigest: string };
 
 export interface CreateManualBookingInput extends CreateBookingInput {
   businessClientId: string;
@@ -356,6 +364,8 @@ export interface BookingCreationPreview {
   balanceDueCents: number;
   requiresSavedCard: boolean;
   hasSavedCard: boolean;
+  /** Opaque server witness of exactly these terms; echoed as `acceptedQuoteDigest` on Confirm. */
+  quoteDigest: string;
   /** Present only when a valid `promoCode` was submitted and resolved server-side. P2: the promo
    * discounts the booking price — `financials.totalCents`, `preTaxChargeCents` and
    * `balanceDueCents` are already post-promo. Never recompute any of them in the client. */
@@ -547,7 +557,7 @@ export const bookingsApi = {
       data: input,
     }),
 
-  finalizeCustomerBooking: (businessId: string, input: CreateBookingInput) =>
+  finalizeCustomerBooking: (businessId: string, input: AcceptedBookingInput) =>
     apiRequest<FinalizeBookingResult>({
       method: "POST",
       url: `/businesses/${businessId}/bookings/finalize`,

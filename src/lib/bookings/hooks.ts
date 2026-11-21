@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   bookingsApi,
+  type AcceptedBookingInput,
   type BookingDetail,
   type RescheduleAvailabilityResult,
   type CompleteVenuePaymentInput,
@@ -351,7 +352,7 @@ export const useFinalizeCustomerBookingMutation = () => {
   const customerSession = useAuthStore(customerPaymentSession);
 
   return useMutation({
-    mutationFn: ({ businessId, input }: { businessId: string; input: CreateBookingInput }) => {
+    mutationFn: ({ businessId, input }: { businessId: string; input: AcceptedBookingInput }) => {
       if (!customerSession || customerSession !== customerPaymentSession(useAuthStore.getState())) {
         throw new Error("Your session changed. Reopen the booking before confirming.");
       }

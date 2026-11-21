@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import LegacyPackageRecovery from "@/components/packages/LegacyPackageRecovery";
-import { apiRequest } from "@/lib/api/client";
+import { apiRequest, BooklyApiError } from "@/lib/api/client";
 import { packagesApi } from "@/lib/api/packages";
 import { useAuthStore } from "@/lib/auth/store";
 import { getStripe } from "@/lib/payments/stripe-client";
@@ -13,7 +13,8 @@ import { continueLegacyRecovery, LEGACY_BODY_TTL, LEGACY_POINTER_TTL, readLegacy
 vi.mock("@/lib/api/client", async (original) => ({ ...await original<object>(), apiRequest: vi.fn() }));
 vi.mock("@/lib/payments/stripe-client", () => ({ getStripe: vi.fn() }));
 const customer = "1".repeat(24), business = "2".repeat(24), service = "3".repeat(24), progress = "4".repeat(24), staff = "5".repeat(24), booking = "6".repeat(24);
-const input = { idempotencyKey: "original-legacy", startAt: "2030-08-21T07:00:00.000Z", serviceLines: [{ serviceId: service, staffMembershipId: staff, addonIds: [], pricingInput: {} }] };
+const input = { idempotencyKey: "original-legacy", startAt: "2030-08-21T07:00:00.000Z", serviceLines: [{ serviceId: service, staffMembershipId: staff, addonIds: [], pricingInput: {} }],
+  acceptedQuoteDigest: `bq1_${"a".repeat(64)}` };
 const redemption = { idempotencyKey: "original-redemption", startAt: input.startAt, staffMembershipId: staff, addonIds: [] };
 const save = (kind: "PACKAGE_PURCHASE" | "PACKAGE_REDEMPTION" = "PACKAGE_PURCHASE") => saveLegacyRecovery(customer, business, kind,
   kind === "PACKAGE_PURCHASE" ? service : progress, kind === "PACKAGE_PURCHASE" ? input : redemption);
@@ -179,4 +180,39 @@ it("real legacy status transport preserves explicit operation kind and package s
   await packagesApi.operationStatus(business, "PACKAGE_REDEMPTION", progress, "key");
   expect(apiRequest).toHaveBeenCalledWith({ method: "GET", url: `/businesses/${business}/bookings/packages/operations/status`,
     params: { kind: "PACKAGE_REDEMPTION", packageId: progress, idempotencyKey: "key" } });
+});
+
+it("Fix #1: a changed package price is refused, never re-sent, and frees the venue once the server holds nothing", async () => {
+  const record = save(); let writes = 0;
+  vi.mocked(apiRequest).mockImplementation(async (request) => {
+    if (request.method === "GET") return status(record, "NOT_OBSERVED") as never;
+    writes++;
+    expect(request.data).toMatchObject({ acceptedQuoteDigest: input.acceptedQuoteDigest });
+    throw new BooklyApiError({ message: "Price changed", status: 409, code: "BOOKING_QUOTE_CHANGED" });
+  });
+  await expect(continueLegacyRecovery(record, () => true)).rejects.toMatchObject({ code: "BOOKING_QUOTE_CHANGED" });
+  expect(writes).toBe(1);
+  expect(readLegacyRecovery(customer)).toHaveLength(0);
+  // A NEW request (fresh acceptance) is no longer blocked by the refused one.
+  expect(() => saveLegacyRecovery(customer, business, "PACKAGE_PURCHASE", service,
+    { ...input, idempotencyKey: "fresh-legacy", acceptedQuoteDigest: `bq1_${"b".repeat(64)}` })).not.toThrow();
+});
+
+it("Fix #1: a changed package price is kept for recovery while the server still holds the operation", async () => {
+  const record = save(); let reads = 0;
+  vi.mocked(apiRequest).mockImplementation(async (request) => {
+    if (request.method === "GET") return status(record, reads++ === 0 ? "NOT_OBSERVED" : "UNRESOLVED") as never;
+    throw new BooklyApiError({ message: "Price changed", status: 409, code: "BOOKING_QUOTE_CHANGED" });
+  });
+  await expect(continueLegacyRecovery(record, () => true)).rejects.toMatchObject({ code: "BOOKING_QUOTE_CHANGED" });
+  expect(readLegacyRecovery(customer)[0]?.record?.idempotencyKey).toBe(record.idempotencyKey);
+});
+
+it("Fix #1: a purchase saved without an accepted price is never sent unbound", async () => {
+  const unbound = { ...input, acceptedQuoteDigest: undefined };
+  const record = saveLegacyRecovery(customer, business, "PACKAGE_PURCHASE", service, unbound);
+  vi.mocked(apiRequest).mockResolvedValue(status(record, "NOT_OBSERVED"));
+  await expect(continueLegacyRecovery(record, () => true)).rejects.toThrow("Review the current package price");
+  expect(vi.mocked(apiRequest).mock.calls.every(([r]) => r.method === "GET")).toBe(true);
+  expect(readLegacyRecovery(customer)).toHaveLength(0);
 });

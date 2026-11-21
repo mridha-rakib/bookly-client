@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BooklyApiError } from "@/lib/api/client";
 import { packagesApi, type PackagePurchaseInput, type RedeemPackageSessionInput } from "@/lib/api/packages";
 import { useAuthStore } from "@/lib/auth/store";
 import { customerPaymentSession } from "@/lib/bookings/payment-session";
@@ -9,7 +10,8 @@ const address = z.object({ city: z.string(), propertyType: z.string(), area: z.s
   floorUnit: z.string().optional(), aptRoom: z.string().optional(), additionalDirections: z.string().max(2000).optional() }).strict();
 const common = { idempotencyKey: z.string().min(1).max(200), startAt: z.iso.datetime({ offset: true }),
   customerCity: z.string().optional(), travelAddress: address.optional(), notes: z.string().max(2000).optional() };
-const purchase = z.object({ ...common, promoCode: z.undefined().optional(), serviceLines: z.array(z.object({ serviceId: id, staffMembershipId: id,
+const purchase = z.object({ ...common, promoCode: z.undefined().optional(),
+  acceptedQuoteDigest: z.string().regex(/^bq1_[a-f0-9]{64}$/).optional(), serviceLines: z.array(z.object({ serviceId: id, staffMembershipId: id,
   addonIds: z.array(id).max(50), pricingInput: z.object({ hours: z.number().positive().optional(), personCount: z.number().int().positive().optional() }).strict() }).strict()).length(1) }).strict();
 const redemption = z.object({ ...common, staffMembershipId: id, addonIds: z.array(id).max(50).optional() }).strict();
 export const LEGACY_RECOVERY_CHANGED = "bookly:legacy-package-changed";
@@ -97,6 +99,19 @@ export function resolveLegacyRecovery(pointer: LegacyPointer, status: LegacyStat
   changed();
 }
 
+/** Retires a saved request ONLY on the server's word that it holds neither a claim nor a payment
+ * attempt for this key (state NOT_OBSERVED): nothing was reserved or charged. */
+export function discardUnobservedLegacyRecovery(pointer: LegacyPointer, status: LegacyStatus) {
+  assertLegacyStatus(pointer, status);
+  if (status.state !== "NOT_OBSERVED") throw Error("The original package request is still unresolved.");
+  const key = storageKey(pointer);
+  const current = pointerSchema.safeParse(JSON.parse(localStorage.getItem(key) ?? "null"));
+  if (!current.success || current.data.idempotencyKey !== pointer.idempotencyKey) return;
+  sessionStorage.removeItem(key);
+  localStorage.removeItem(key);
+  changed();
+}
+
 export const observeLegacyRecovery = async (pointer: LegacyPointer) => {
   const status = await packagesApi.operationStatus(pointer.businessId, pointer.kind, pointer.packageId, pointer.idempotencyKey);
   assertLegacyStatus(pointer, status);
@@ -116,10 +131,28 @@ export async function continueLegacyRecovery(record: LegacyRecord, live: () => b
   let status = await observeLegacyRecovery(record); guard();
   if (status.canDismiss) return status;
   if (!status.canResume) throw Error("The original package request is pending recovery. Check its status; do not pay again.");
+  const accepted = record.kind === "PACKAGE_PURCHASE" ? (record.input as PackagePurchaseInput).acceptedQuoteDigest : undefined;
+  if (record.kind === "PACKAGE_PURCHASE" && !accepted) {
+    // Saved before price confirmation existed: never re-sent unbound. With nothing held by the
+    // server it is retired so the Customer can review the current price and buy again.
+    if (status.state === "NOT_OBSERVED") discardUnobservedLegacyRecovery(record, status);
+    throw Error("Review the current package price and confirm again. Nothing was charged for this saved request.");
+  }
   const submit = () => record.kind === "PACKAGE_PURCHASE"
-    ? packagesApi.purchase(record.businessId, record.input as PackagePurchaseInput)
+    ? packagesApi.purchase(record.businessId, { ...(record.input as PackagePurchaseInput), acceptedQuoteDigest: accepted as string })
     : packagesApi.redeemSession(record.businessId, record.packageId, record.input as RedeemPackageSessionInput);
-  let result = await submit(); guard();
+  let result;
+  try { result = await submit(); } catch (error) {
+    // Fix #1 — the server refused a changed price before reserving or charging anything. Once it
+    // confirms it holds neither a claim nor a payment for this key, retire the saved request so
+    // the Customer reviews the new price under a fresh request instead of being locked out.
+    if (current() && error instanceof BooklyApiError && error.code === "BOOKING_QUOTE_CHANGED") {
+      const observed = await observeLegacyRecovery(record).catch(() => undefined);
+      if (observed && current() && observed.state === "NOT_OBSERVED") discardUnobservedLegacyRecovery(record, observed);
+    }
+    throw error;
+  }
+  guard();
   if ("clientSecret" in result) {
     const stripe = await getStripe(); guard();
     if (!stripe) throw Error("Payment authentication is unavailable. Your original request is retained.");

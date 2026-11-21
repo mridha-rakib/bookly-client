@@ -75,7 +75,11 @@ function RecoveryRequest({ record, operation, initialStatus, session, onResolved
         if (result.error) throw Error(result.error.message ?? "Authentication is incomplete. Your Booking is not confirmed.");
       }
       // Explicit action only. Stripe success never supplies Booking commitment authority.
-      await bookingsApi.finalizeCustomerBooking(record.businessId, record.input);
+      // Fix #1 — a saved request is only ever re-sent bound to the price the Customer accepted.
+      const acceptedQuoteDigest = record.input.acceptedQuoteDigest;
+      if (!acceptedQuoteDigest)
+        throw Error("This saved request has no confirmed price. Start a new booking to review the current price; no new request was sent.");
+      await bookingsApi.finalizeCustomerBooking(record.businessId, { ...record.input, acceptedQuoteDigest });
       if (active()) display(await read());
     } catch (cause) {
       if (!active()) return;

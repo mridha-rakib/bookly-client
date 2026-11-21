@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   packagesApi,
+  type AcceptedPackagePurchaseInput,
   type PackageRedemptionPreviewInput,
   type PackagePurchaseInput,
   type RedeemPackageSessionInput,
@@ -67,7 +68,7 @@ export const usePurchasePackageMutation = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ businessId, input }: { businessId: string; input: PackagePurchaseInput }) =>
+    mutationFn: ({ businessId, input }: { businessId: string; input: AcceptedPackagePurchaseInput }) =>
       packagesApi.purchase(businessId, input),
     onSuccess: (_result, variables) => {
       void invalidateBusinessBookingViews(queryClient, variables.businessId);

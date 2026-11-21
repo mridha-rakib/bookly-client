@@ -81,6 +81,8 @@ const codeMessages: Record<string, string> = {
     "The business doesn't serve the selected city for this service. Choose another eligible city.",
   AVAILABILITY_SLOT_NOT_BOOKABLE:
     "The selected time is no longer available. Please choose another available time.",
+  BOOKING_QUOTE_CHANGED:
+    "The price changed since you reviewed it. Nothing was charged. Please review the updated amount and confirm again.",
   BOOKING_ALREADY_STARTED:
     "This appointment has already started and can no longer be rescheduled online. Please contact the business.",
   PACKAGE_PROGRESS_BALANCE_NOT_SETTLED:

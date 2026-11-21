@@ -22,7 +22,7 @@ function quote(total = 10000, upfront = 2000, tax = 380, travel = 0): BookingCre
       serviceDiscountCents: 0, travelFeeCents: travel, eligiblePlatformFeeBasisCents: total - travel,
       platformFeeCents: upfront, depositCents: upfront, totalCents: total, balanceDueCents: total - upfront },
     preTaxChargeCents: upfront, taxCents: tax, dueNowCents: upfront, balanceDueCents: total - upfront,
-    requiresSavedCard: true, hasSavedCard: true,
+    requiresSavedCard: true, hasSavedCard: true, quoteDigest: `bq1_${"a".repeat(64)}`,
   };
 }
 

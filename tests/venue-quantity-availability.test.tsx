@@ -959,6 +959,55 @@ describe("F3B payment continuation and authoritative confirmation", () => {
     expect(Object.keys(localStorage).some((k) => k.includes(encodeURIComponent(key)))).toBe(true);
   });
 
+  it("Fix #1: Confirm binds the request to the exact preview on screen (no amount is sent)", async () => {
+    const shown = `bq1_${"1".repeat(64)}`;
+    fx.respond = (req) => req.url.endsWith("/bookings/preview") ? { lines: [], totals: {}, quoteDigest: shown } : defaultRespond(req);
+    await readyToPay();
+    await click(byText("Wizard continue"));
+    await waitFor(() => expect(host.textContent).toContain("Booking confirmed"));
+    const sent = lastPost("/bookings/finalize") as unknown as Record<string, unknown>;
+    expect(sent.acceptedQuoteDigest).toBe(shown);
+    expect(Object.keys(sent).some((key) => /cents|amount|total/i.test(key))).toBe(false);
+    expect(posts("/bookings/preview").every((r) => !("acceptedQuoteDigest" in (r.data ?? {})))).toBe(true);
+  });
+
+  it("Fix #1: a changed price is refused and never auto-retried; the fresh quote needs a NEW explicit Confirm under a new key", async () => {
+    const oldQuote = `bq1_${"1".repeat(64)}`, newQuote = `bq1_${"2".repeat(64)}`;
+    const server = { quote: oldQuote, finalizes: 0, firstKey: undefined as string | undefined };
+    fx.respond = (req) => {
+      if (req.url.endsWith("/bookings/preview")) return { lines: [], totals: {}, quoteDigest: server.quote };
+      if (req.url.endsWith("/bookings/operations/payment-status") && req.params?.idempotencyKey === server.firstKey)
+        return { state: "NOT_OBSERVED", businessId: VENUE_ID, idempotencyKey: server.firstKey, canDismiss: false, canResume: true };
+      if (req.url.endsWith("/bookings/finalize")) {
+        server.finalizes += 1;
+        if ((req.data as { acceptedQuoteDigest?: string }).acceptedQuoteDigest !== server.quote)
+          return Promise.reject(new BooklyApiError({ message: "changed", status: 409, code: "BOOKING_QUOTE_CHANGED" }));
+        return { id: "accepted-at-new-price", status: "UPCOMING" };
+      }
+      return defaultRespond(req);
+    };
+    await readyToPay();
+    server.firstKey = lastPost("/bookings/preview")!.idempotencyKey;
+    const previewsBefore = posts("/bookings/preview").length;
+    server.quote = newQuote; // The Business changes the price while the old quote is on screen.
+    await click(byText("Wizard continue"));
+    await waitFor(() => expect(host.textContent).toContain("The price changed since you reviewed it"));
+    // Re-quoted for display, but nothing re-submitted on the Customer's behalf.
+    await waitFor(() => expect(posts("/bookings/preview").length).toBeGreaterThan(previewsBefore));
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(server.finalizes).toBe(1);
+    expectNoConfirmation();
+    // Explicit fresh confirmation of the newly displayed quote.
+    await waitFor(() => expect(byText("Wizard continue").disabled).toBe(false));
+    await click(byText("Wizard continue"));
+    await waitFor(() => expect(host.textContent).toContain("Booking confirmed"));
+    const [first, second] = posts("/bookings/finalize").map((r) => r.data as { idempotencyKey: string; acceptedQuoteDigest: string });
+    expect(first).toMatchObject({ idempotencyKey: server.firstKey, acceptedQuoteDigest: oldQuote });
+    expect(second!.acceptedQuoteDigest).toBe(newQuote);
+    expect(second!.idempotencyKey).not.toBe(server.firstKey);
+    expect(Object.keys(localStorage).some((key) => key.includes(encodeURIComponent(server.firstKey!)))).toBe(false);
+  });
+
   it.each(["account", "epoch", "logout"])("ignores an old finalize response/cache seed after %s change", async (change) => {
     const pending = Promise.withResolvers<unknown>();
     finalizeResponses(() => pending.promise);
