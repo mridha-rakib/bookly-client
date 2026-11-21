@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { packageLifecycleApi, packageLifecycleError, type PackageLifecycleAction, type PackageLifecycleRequest, type PackageLifecycleResult, type PackageSessionQuote, type PackageSessionSelection } from "@/lib/api/package-lifecycle";
 import type { OwnedPackageView } from "@/lib/api/package-views";
 import { getStripe } from "@/lib/payments/stripe-client";
+import { formatActionOpensAt, useBoundaryNow } from "@/lib/bookings/action-timing";
 import { formatBookingMoney } from "@/lib/bookings/format";
 import { useAuthStore } from "@/lib/auth/store";
 import { bookingsApi, type RescheduleAvailabilityResult } from "@/lib/api/bookings";
@@ -185,6 +186,9 @@ export const sessionActionStorageKey = (userId: string | undefined, businessId: 
 type SessionActionProps = {
   businessId: string; progressId: string; bookingId?: string; enabled: boolean; management?: boolean;
   bookingStatus?: string;
+  /** Fix #5 — scheduled start; Complete and Mark no-show are not offered before it. */
+  bookingStartAt?: string;
+  bookingTimezone?: string;
   appointmentLabel?: string;
   outstandingBalanceCents?: number;
   /** Set for a recovery-only control (Booking no longer upcoming): a proven COMMITTED retires it. */
@@ -194,8 +198,11 @@ export function FirstClassSessionActions(props: SessionActionProps) {
   const actor = useAuthStore((s) => `${s.user?.id}:${s.cacheEpoch}`);
   return <SessionActionForm key={`${actor}:${props.businessId}:${props.progressId}:${props.bookingId}:${Boolean(props.management)}`} {...props} />;
 }
-function SessionActionForm({ businessId, progressId, bookingId, enabled, management = false, bookingStatus, appointmentLabel, outstandingBalanceCents, onRetired }: SessionActionProps) {
+function SessionActionForm({ businessId, progressId, bookingId, enabled, management = false, bookingStatus, bookingStartAt, bookingTimezone, appointmentLabel, outstandingBalanceCents, onRetired }: SessionActionProps) {
   const cache = useQueryClient();
+  const startMs = bookingStartAt ? new Date(bookingStartAt).getTime() : undefined;
+  const boundaryNow = useBoundaryNow(management && bookingStatus === "UPCOMING" ? [startMs] : []);
+  const notStarted = bookingStatus === "UPCOMING" && startMs !== undefined && boundaryNow < startMs;
   const choices = ([
     ["cancel", "Cancel appointment"], ["reschedule", "Reschedule appointment"],
     ["complete", "Complete"], ["mark-no-show", "Mark no-show for review"],
@@ -208,6 +215,7 @@ function SessionActionForm({ businessId, progressId, bookingId, enabled, managem
     if (!bookingStatus) return true;
     if (name === "no-show" || name === "reverse-no-show") return bookingStatus === "PENDING";
     if (name === "settlement") return bookingStatus === "UPCOMING" || bookingStatus === "COMPLETED";
+    if ((name === "complete" || name === "mark-no-show") && notStarted) return false;
     return bookingStatus === "UPCOMING";
   });
   const [pending, setPending] = useState<{ action: PackageLifecycleAction; input: PackageLifecycleRequest }>();
@@ -310,6 +318,7 @@ function SessionActionForm({ businessId, progressId, bookingId, enabled, managem
   return <section className={`${packageFormLayout} break-words space-y-4 rounded-xl border border-[#C6C6CB] bg-white p-4 sm:p-6`} aria-label="Package session actions" aria-busy={busy || recovering}>
     {bookingId && <p>{appointmentLabel ?? `Appointment ${bookingId}`}{bookingStatus ? ` · ${bookingStatus}` : ""}</p>}
     {!enabled && <p role="status">Package actions unavailable pending activation.</p>}
+    {management && notStarted && bookingStartAt && <p role="status">This appointment hasn&apos;t started yet. Complete and no-show become available from {formatActionOpensAt(new Date(bookingStartAt), bookingTimezone ?? "Europe/Nicosia")}.</p>}
     <fieldset className="space-y-4" disabled={!enabled || !restored || busy || Boolean(pending)}>
       <label>Action<select aria-label="Package session action" value={action} onChange={(e) => { setAction(e.target.value as PackageLifecycleAction); setConfirmed(false); }}>
         {!actionAvailable && <option value={action} disabled>{pending ? "Original retained action" : "Action no longer available"}</option>}

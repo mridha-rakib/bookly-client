@@ -35,7 +35,10 @@ const action = (text: string) => Array.from(host.querySelectorAll("button")).fin
 
 beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  // Keep appointments in the current visible week without changing the host clock.
+  // Fix #5 — a deterministic clock (Date only; timers stay real) at 15:00 on a fixed Wednesday,
+  // so the 10:00 appointment has started regardless of when the suite runs.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 10, 18, 15, 0, 0, 0));
   const start = new Date(); start.setHours(10, 0, 0, 0);
   fx.rows = [{ id: "selected-booking", firstClassPackage: false, reference: "BK-1", status: "UPCOMING",
     source: "BOOKLY_MANAGED", schedule: { startAt: start.toISOString(), endAt: new Date(start.getTime() + 3600000).toISOString(),
@@ -45,7 +48,7 @@ beforeEach(() => {
   fx.cancel.mockReset(); fx.waive.mockReset(); fx.error.mockReset(); fx.success.mockReset();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.useRealTimers(); });
 
 it.each(["owner-business", "supervisor-business"])("First-Class Calendar routes selected context from %s to existing detail", async (businessId) => {
   fx.rows[0]!.firstClassPackage = true;
@@ -94,4 +97,46 @@ it("does not submit cancellation twice before the pending mutation settles", asy
   await act(async () => { yes.click(); yes.click(); });
   expect(fx.cancel).toHaveBeenCalledOnce();
   expect(fx.success).not.toHaveBeenCalled();
+});
+
+// --- Fix #5: start-time boundaries in the Calendar action menu ---------------------------------
+const startMs = () => Date.parse(fx.rows[0]!.schedule.startAt);
+const label = (prefix: string) =>
+  Array.from(host.querySelectorAll("button")).find((b) => b.textContent?.trim().startsWith(prefix))!;
+
+it("does not offer Complete or a legacy No-show before the appointment starts", async () => {
+  vi.setSystemTime(startMs() - 60_000);
+  await mount(); await openCard();
+  expect(label("Complete").textContent).toContain("not started yet");
+  expect(label("Complete").disabled).toBe(true);
+  expect(label("No-show").textContent).toContain("not open yet");
+  expect(label("No-show").disabled).toBe(true);
+  await act(async () => label("Complete").click());
+  expect(fx.completion).not.toHaveBeenCalled();
+});
+
+it("offers Complete and a legacy No-show exactly from the scheduled start", async () => {
+  vi.setSystemTime(startMs());
+  await mount(); await openCard();
+  expect(action("Complete").disabled).toBe(false);
+  expect(action("No-show").disabled).toBe(false);
+});
+
+it("keeps a category window's own opening and closing boundaries", async () => {
+  const opensAt = new Date(startMs() + 15 * 60_000).toISOString();
+  const closesAt = new Date(startMs() + 120 * 60_000).toISOString();
+  fx.rows[0] = { ...fx.rows[0]!, noShowEligibilitySnapshot: { categoryKey: "beauty", opensAfterMinutes: 15, closesAfterMinutes: 120, opensAt, closesAt } } as BookingCalendarEntry;
+  for (const [at, text, disabled] of [
+    [startMs() + 5 * 60_000, "No-show (not open yet)", true],
+    [Date.parse(opensAt), "No-show", false],
+    [Date.parse(closesAt), "No-show (window closed)", true],
+  ] as const) {
+    vi.setSystemTime(at);
+    await mount(); await openCard();
+    expect(label("No-show").textContent?.trim()).toBe(text);
+    expect(label("No-show").disabled).toBe(disabled);
+    expect(action("Complete").disabled).toBe(false);
+    await act(async () => root.unmount());
+    root = createRoot(host);
+  }
 });

@@ -45,6 +45,9 @@ export const packageLifecycleApi = {
 };
 export function packageLifecycleError(error: unknown): string {
   if (error instanceof BooklyApiError) {
+    // Fix #5 — the server's specific early-completion refusal is more useful than the generic 409.
+    if (error.code === "BOOKING_COMPLETION_TOO_EARLY")
+      return "This appointment hasn't started yet. It can be completed from its scheduled start time.";
     const messages: Record<number, string> = {
       402: "Payment failed or a saved payment method is required. Booking is unconfirmed. Review payment settings before retrying the same request.",
       403: "Your current role or Business access does not permit this action.",

@@ -97,6 +97,8 @@ export function ManagementPackageSettlement({ businessId, bookingId }: { busines
   return view ? <>{role === "BUSINESS_OWNER" ? <SettlementCard view={view as PackageSettlementView} /> : <section aria-label="Package session" className="rounded-xl border p-4"><h2>Package session</h2><p>Session status: {view.session?.status ?? "Unavailable"}</p></section>}{view.packageProgressId && <FirstClassSessionActions
     businessId={businessId} progressId={view.packageProgressId} bookingId={bookingId}
     bookingStatus={view.session?.booking?.status}
+    bookingStartAt={view.session?.booking?.startAt}
+    bookingTimezone={view.session?.booking?.timezone}
     outstandingBalanceCents={role === "BUSINESS_OWNER" ? (view as PackageSettlementView).session?.booking?.outstandingBalanceCents : undefined}
     enabled={view.actionsAvailable && view.purchaseCompletion === "VERIFIED"} management />}</> : null;
 }

@@ -85,6 +85,10 @@ const codeMessages: Record<string, string> = {
     "The price changed since you reviewed it. Nothing was charged. Please review the updated amount and confirm again.",
   BOOKING_ALREADY_STARTED:
     "This appointment has already started and can no longer be rescheduled online. Please contact the business.",
+  BOOKING_COMPLETION_TOO_EARLY:
+    "This appointment hasn't started yet. It can be completed from its scheduled start time.",
+  BOOKING_NO_SHOW_BEFORE_START:
+    "This appointment hasn't started yet. A no-show can only be recorded after its scheduled start time.",
   PACKAGE_PROGRESS_BALANCE_NOT_SETTLED:
     "The remaining package balance must be settled before another session can be scheduled.",
   PACKAGE_PROGRESS_NO_SESSIONS_REMAINING: "This package has no sessions remaining.",

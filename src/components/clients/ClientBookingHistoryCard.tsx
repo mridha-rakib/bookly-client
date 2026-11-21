@@ -39,6 +39,7 @@ import { useBookingRescheduleAvailabilityQuery } from "@/lib/bookings/hooks";
 import type { AvailabilitySlot } from "@/lib/api/availability";
 import { isRescheduleSlotCurrent, matchesRescheduleContext, rescheduleContextKey } from "@/lib/bookings/reschedule-availability";
 import { toUserMessage } from "@/lib/auth/messages";
+import { completionWindow, formatActionOpensAt, useBoundaryNow } from "@/lib/bookings/action-timing";
 
 interface ClientBookingHistoryCardProps {
   /** The real Booking, exactly as returned by GET /businesses/:id/bookings/:id — every value
@@ -174,6 +175,11 @@ export default function ClientBookingHistoryCard({
   const remainingMs = deadlineMs !== undefined ? deadlineMs - now : undefined;
 
   const additionalChargeCents = booking.cancellationOutcome?.additionalChargeCents ?? 0;
+
+  // Fix #5 — Complete is offered only from the scheduled start; one timer flips it on time.
+  const startMs = new Date(booking.schedule.startAt).getTime();
+  const boundaryNow = useBoundaryNow(status === "UPCOMING" && showFooterActions ? [startMs] : []);
+  const completion = completionWindow(booking.schedule, boundaryNow);
 
   return (
     <div className="flex flex-col gap-4 w-full">
@@ -704,13 +710,21 @@ export default function ClientBookingHistoryCard({
           </button>
           {status === "UPCOMING" && (
             <button
-              onClick={onCompleteBooking}
-              className="h-[40px] w-full whitespace-nowrap rounded-lg bg-[#12B76A] px-6 text-xs font-semibold font-poppins text-white shadow-sm hover:bg-[#0F9F5C] lg:w-auto"
+              onClick={completion.state === "open" ? onCompleteBooking : undefined}
+              disabled={completion.state !== "open"}
+              aria-describedby={completion.state !== "open" ? `complete-unavailable-${booking.id}` : undefined}
+              className="h-[40px] w-full whitespace-nowrap rounded-lg bg-[#12B76A] px-6 text-xs font-semibold font-poppins text-white shadow-sm hover:bg-[#0F9F5C] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#12B76A] lg:w-auto"
             >
               {packageLines.length > 0 ? "Complete package session" : "Complete Booking"}
             </button>
           )}
         </div>
+      )}
+      {showFooterActions && !isFirstClass && status === "UPCOMING" && completion.state !== "open" && (
+        <p id={`complete-unavailable-${booking.id}`} role="status" className="w-full text-right font-poppins text-xs text-[#73726D]">
+          This appointment hasn&apos;t started yet. It can be completed from{" "}
+          {formatActionOpensAt(new Date(booking.schedule.startAt), booking.schedule.timezone)}.
+        </p>
       )}
 
       {/* RESCHEDULE MODAL — real availability, real slots */}

@@ -28,6 +28,7 @@ import { BUSINESS_BOOKING_STATUS_LABELS as BOOKING_STATUS_LABELS, BOOKING_STATUS
 import { formatTime12Hour } from "@/lib/staff/format";
 import { toast } from "@/components/ui/sonner";
 import { toUserMessage } from "@/lib/auth/messages";
+import { type ActionWindow, completionWindow, noShowWindow } from "@/lib/bookings/action-timing";
 import { bookingDayInterval, calendarDayHours, calendarDayLanes, calendarDayTimeline } from "@/lib/bookings/calendar-hours";
 import { useCalendarBlocksQuery, useChangeCalendarBlocksMutation } from "@/lib/business/availability-hooks";
 import { calendarInstantRangeState, calendarRange, createCalendarRangeState } from "@/lib/bookings/calendar-blocks";
@@ -238,27 +239,20 @@ export default function DashboardCalendar({
   };
 
   /**
-   * The category no-show eligibility window (Batch 21). The backend is authoritative and
-   * re-checks on submit; this is a truthful client-side hint only. Legacy bookings (no
-   * snapshot) are always "open".
+   * The no-show and completion time boundaries (Batch 21 category window; Fix #5 start-time
+   * minimum for legacy bookings and completion). The backend is authoritative and re-checks on
+   * submit; these are truthful client-side hints only.
    */
-  const noShowWindowState = (
-    booking: ReturnType<typeof findBooking>,
-  ): { state: "open" | "before" | "after"; opensAt?: Date; closesAt?: Date } => {
-    const snap = booking?.noShowEligibilitySnapshot;
-    if (!snap) return { state: "open" };
-    const opensAt = new Date(snap.opensAt);
-    const closesAt = new Date(snap.closesAt);
-    if (nowMs < opensAt.getTime()) return { state: "before", opensAt, closesAt };
-    if (nowMs >= closesAt.getTime()) return { state: "after", opensAt, closesAt };
-    return { state: "open", opensAt, closesAt };
-  };
+  const noShowWindowState = (booking: ReturnType<typeof findBooking>): ActionWindow =>
+    booking ? noShowWindow(booking, nowMs) : { state: "open" };
 
   const renderDropdown = (cardId: string, instanceKey: string) => {
     if (openDropdownCardId !== instanceKey) return null;
     const booking = findBooking(cardId);
     const isUpcoming = booking?.status === "UPCOMING";
     const noShow = noShowWindowState(booking);
+    const completion = booking ? completionWindow(booking.schedule, nowMs) : { state: "open" as const };
+    const completeTooEarly = completion.state === "before" && !booking?.firstClassPackage;
     return (
       <div
         onClick={(e) => e.stopPropagation()}
@@ -311,9 +305,14 @@ export default function DashboardCalendar({
         </button>
         {isUpcoming && (
           <>
-            <button disabled={Boolean(booking?.firstClassPackage && !onViewBookingClick)} className="px-4 py-2 hover:bg-neutral-50 text-left flex items-center gap-2 text-[#1C1B1C] font-medium cursor-pointer disabled:opacity-50" onClick={() => handleCompleteBooking(cardId)}>
+            <button
+              disabled={Boolean(booking?.firstClassPackage && !onViewBookingClick) || completeTooEarly}
+              title={completeTooEarly && booking ? `Can be completed from ${formatNoShowTimestamp(completion.opensAt as Date, booking.schedule.timezone)}` : undefined}
+              className="px-4 py-2 hover:bg-neutral-50 text-left flex items-center gap-2 text-[#1C1B1C] font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => !completeTooEarly && handleCompleteBooking(cardId)}
+            >
               <HugeiconsIcon icon={Tick01Icon} className="w-3.5 h-3.5 text-[#141B34] shrink-0" />
-              <span>{booking?.firstClassPackage ? "Manage package appointment" : "Complete"}</span>
+              <span>{booking?.firstClassPackage ? "Manage package appointment" : completeTooEarly ? "Complete (not started yet)" : "Complete"}</span>
             </button>
             <button className="px-4 py-2 hover:bg-neutral-50 text-left flex items-center gap-2 text-[#BA1A1A] font-medium cursor-pointer border-t border-neutral-100" onClick={() => handleCancelBooking(cardId)}>
               <HugeiconsIcon icon={Delete02Icon} className="w-3.5 h-3.5 text-[#BA1A1A] shrink-0" />
