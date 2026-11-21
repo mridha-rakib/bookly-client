@@ -37,6 +37,8 @@ const codeMessages: Record<string, string> = {
   STAFF_ROLE_NOT_ALLOWED: "That role cannot be assigned to a staff member.",
   STAFF_PHONE_INVALID: "Enter a valid phone number, including the country code.",
   STAFF_OWNER_ROW_NOT_EDITABLE: "The business owner cannot be edited or removed from Staff.",
+  STAFF_REMOVAL_BLOCKED_BY_BOOKINGS:
+    "This staff member has active or upcoming bookings. Resolve or reassign these appointments before removing or deactivating the staff member. Nothing was changed.",
   STAFF_TRANSACTION_UNAVAILABLE: "Staff changes cannot be completed right now. Please try again.",
   STAFF_TEMP_PASSWORD_EMAIL_FAILED:
     "The staff account was created, but the welcome email could not be sent.",
