@@ -23,6 +23,7 @@ import {
 
 import PackageActionControls from "@/components/packages/PackageActionControls";
 import BusinessPackageAppointmentHistory from "@/components/packages/BusinessPackageAppointmentHistory";
+import LegacyPackageBalancePanel from "@/components/packages/LegacyPackageBalancePanel";
 import { ManagementPackageSettlement } from "@/components/packages/FirstClassPackageIntegration";
 import type { BookingDetail } from "@/lib/api/bookings";
 import {
@@ -405,6 +406,9 @@ export default function ClientBookingHistoryCard({
                   <p className="font-poppins text-xs text-[#675A82]">
                     Package aggregate details are unavailable. Session identity is shown only from this booking&apos;s historical service line.
                   </p>
+                )}
+                {aggregate && !hidePackageFinancials && (
+                  <LegacyPackageBalancePanel businessId={businessId} packageId={aggregate.packageProgressId} />
                 )}
                 {aggregate && (
                   <BusinessPackageAppointmentHistory businessId={businessId} packageId={aggregate.packageProgressId} currentBookingId={booking.id} onViewBooking={onViewRelatedBooking} />

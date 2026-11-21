@@ -39,6 +39,9 @@ export const PACKAGE_SESSION_STATUS_PRESENTATION: Record<
 /** Convenience-only visibility hint. The server remains authoritative when the request runs. */
 export const isLikelyVoidEligible = (pkg: PackageProgress): boolean =>
   pkg.status !== "VOIDED" &&
+  // A balance already paid at the venue means the package was paid for; the server refuses the
+  // unused-package refund then, so never offer it.
+  pkg.balancePaymentRecorded !== true &&
   !pkg.sessions.some(
     (session) => session.status === "COMPLETED" || session.status === "FORFEITED",
   );

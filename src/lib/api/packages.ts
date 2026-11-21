@@ -48,6 +48,9 @@ export interface PackageProgress {
   balanceSettled: boolean;
   outstandingBalanceCents: number | null;
   settlementAvailable?: boolean;
+  /** True once a real venue payment is recorded against the purchase balance; the unused-package
+   * refund is then refused by the server. Absent for Supervisors and older API responses. */
+  balancePaymentRecorded?: boolean;
   sessions: PackageProgressSession[];
   originBookingId: string;
   purchaseSnapshot: {
@@ -124,12 +127,42 @@ export interface PackageActionResult {
   refundSettlement?: PackageProgress["voidRefundSettlement"];
 }
 
+/** Fix #3 — Owner-only Legacy Package purchase balance (server-authoritative amounts). */
+export interface LegacyPackageBalance {
+  packageProgressId: string;
+  originBookingId: string;
+  originBookingStatus: string;
+  currency: string;
+  originalBalanceCents: number;
+  paidCents: number;
+  outstandingCents: number;
+  settlementStatus: "NOT_REQUIRED" | "NOT_RECORDED" | "NOT_PAID" | "PARTIALLY_PAID" | "PAID_IN_FULL";
+  balanceSettled: boolean;
+  recordable: boolean;
+  blockedReason?: "SETTLED" | "PACKAGE_VOIDED" | "ORIGIN_NOT_FINAL" | "UPFRONT_REVERSED";
+  payments: Array<{ amountCents: number; recordedAt: string; source: "COMPLETION" | "BALANCE_RECORDING" }>;
+}
+
+export type RecordLegacyPackageBalanceInput =
+  | { settlement: "FULL"; expectedOutstandingCents: number; idempotencyKey: string; note?: string }
+  | {
+      settlement: "PARTIAL";
+      amountCents: number;
+      expectedOutstandingCents: number;
+      idempotencyKey: string;
+      note?: string;
+    };
+
 export const packagesApi = {
   operationStatus: (businessId: string, kind: LegacyPointer["kind"], packageId: string, idempotencyKey: string) =>
     apiRequest<LegacyStatus>({ method: "GET", url: `/businesses/${businessId}/bookings/packages/operations/status`,
       params: { kind, packageId, idempotencyKey } }),
   getForBusiness: (businessId: string, packageId: string) => apiRequest<PackageProgress>({ method: "GET", url: `/businesses/${businessId}/bookings/packages/${packageId}` }),
   cancelFuture: (businessId: string, packageId: string) => apiRequest<PackageActionResult>({ method: "POST", url: `/businesses/${businessId}/bookings/packages/${packageId}/cancel-future`, data: {} }),
+  getLegacyBalance: (businessId: string, packageId: string) =>
+    apiRequest<LegacyPackageBalance>({ method: "GET", url: `/businesses/${businessId}/bookings/packages/${packageId}/balance` }),
+  recordLegacyBalancePayment: (businessId: string, packageId: string, input: RecordLegacyPackageBalanceInput) =>
+    apiRequest<LegacyPackageBalance>({ method: "POST", url: `/businesses/${businessId}/bookings/packages/${packageId}/balance-payments`, data: input }),
   terminate: (businessId: string, packageId: string) => apiRequest<PackageActionResult>({ method: "POST", url: `/businesses/${businessId}/bookings/packages/${packageId}/terminate`, data: {} }),
   previewPurchase: (businessId: string, input: PackagePurchaseInput) =>
     apiRequest<BookingCreationPreview>({

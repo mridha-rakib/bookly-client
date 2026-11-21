@@ -8,6 +8,7 @@ import {
   type AcceptedPackagePurchaseInput,
   type PackageRedemptionPreviewInput,
   type PackagePurchaseInput,
+  type RecordLegacyPackageBalanceInput,
   type RedeemPackageSessionInput,
 } from "@/lib/api/packages";
 
@@ -17,6 +18,8 @@ export const packageKeys = {
   detail: (packageProgressId: string) => [...packageKeys.all, "detail", packageProgressId] as const,
   businessDetail: (businessId: string, packageProgressId: string) =>
     [...packageKeys.all, "business", businessId, "detail", packageProgressId] as const,
+  legacyBalance: (businessId: string, packageProgressId: string) =>
+    [...packageKeys.all, "business", businessId, "balance", packageProgressId] as const,
 };
 
 const customerBookingListsKey = ["customerBookings", "list"] as const;
@@ -142,6 +145,34 @@ export const useVoidPackageMutation = () => {
         queryKey: packageKeys.detail(variables.packageProgressId),
       });
       void queryClient.invalidateQueries({ queryKey: customerBookingListsKey });
+    },
+  });
+};
+
+/** Fix #3 — Owner-only Legacy Package purchase balance. */
+export const useLegacyPackageBalanceQuery = (
+  businessId: string,
+  packageProgressId: string,
+  { enabled = true }: { enabled?: boolean } = {},
+) =>
+  useQuery({
+    queryKey: packageKeys.legacyBalance(businessId, packageProgressId),
+    queryFn: () => packagesApi.getLegacyBalance(businessId, packageProgressId),
+    enabled: enabled && Boolean(businessId) && Boolean(packageProgressId),
+  });
+
+/** Records a real venue payment; every package/booking view is refreshed from the server after. */
+export const useRecordLegacyPackageBalanceMutation = (businessId: string, packageProgressId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RecordLegacyPackageBalanceInput) =>
+      packagesApi.recordLegacyBalancePayment(businessId, packageProgressId, input),
+    onSuccess: (balance) => {
+      queryClient.setQueryData(packageKeys.legacyBalance(businessId, packageProgressId), balance);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: packageKeys.all });
+      void invalidateBusinessBookingViews(queryClient, businessId);
     },
   });
 };
